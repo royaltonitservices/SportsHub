@@ -53,36 +53,178 @@ We are building a **presentation simulator**, not a production deployment.
 
 ### Layer Diagram
 ```
-Views (SwiftUI — purely declarative, zero logic)
-    ↓ observes
-ViewModels (@Observable — state + intent only)
-    ↓ calls via protocol
-Service Layer (protocol-defined interfaces)
-    ↓ implemented by
-SimulationEngine (now) → RealBackend (future drop-in)
-    ↓ persists via
-Repository Layer (SwiftData)
+┌──────────────────────────────────────────────────────────────┐
+│                        UI LAYER                              │
+│  SwiftUI Views — purely declarative, zero logic              │
+│  PlayerDashboardView, MatchView, LeaderboardView,            │
+│  ChallengeView, PresenterControlPanel (hidden)               │
+└──────────────────┬───────────────────────────────────────────┘
+                   │ observes via @Observable
+┌──────────────────▼───────────────────────────────────────────┐
+│                   VIEWMODEL LAYER                            │
+│  @Observable classes — state + intent only                   │
+│  DashboardViewModel, MatchViewModel,                         │
+│  LeaderboardViewModel, SessionViewModel                      │
+└──────────────────┬───────────────────────────────────────────┘
+                   │ calls via protocol
+┌──────────────────▼───────────────────────────────────────────┐
+│                SERVICE LAYER (protocols)                     │
+│  MatchServiceProtocol                                        │
+│  RatingServiceProtocol                                       │
+│  PlayerServiceProtocol                                       │
+│  LeaderboardServiceProtocol                                  │
+│  CommitmentServiceProtocol                                   │
+└──────────────────┬───────────────────────────────────────────┘
+                   │ implemented by (demo only)
+┌──────────────────▼───────────────────────────────────────────┐
+│             DEMO SERVICE IMPLEMENTATIONS                     │
+│  DemoMatchService, DemoRatingService, etc.                   │
+│  Thin wrappers — delegate all logic to DemoAuthority         │
+│  Replaced by RealMatchService etc. in production             │
+└──────────────────┬───────────────────────────────────────────┘
+                   │ calls
+┌──────────────────▼───────────────────────────────────────────┐
+│              DemoAuthority (Swift actor — singleton)         │
+│                                                              │
+│  Single source of truth — lives in process memory           │
+│  Shared by both simulator instances automatically            │
+│  Zero configuration, zero entitlements, zero disk I/O        │
+│  Serial execution — actor guarantees no race conditions      │
+│  Publishes state via AsyncStream to all registered clients   │
+│  PresenterOverrideStore lives here                           │
+│                                                              │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │              DOMAIN ENGINES (pure Swift)             │   │
+│  │  ELORatingEngine — pure functions, no side effects   │   │
+│  │  CommitmentEngine — penalty + strike logic           │   │
+│  │  ProgressionEngine — rank tiers, unlocks             │   │
+│  │  MatchmakingEngine — fairness scoring                │   │
+│  │  TrustEngine — safety flags (stubbed for demo)       │   │
+│  └──────────────────────────────────────────────────────┘   │
+│                                                              │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │              POLICY LAYER (constants)                │   │
+│  │  SportConfig — K-factor, rating floor per sport      │   │
+│  │  PenaltyPolicy — strike rules, timeouts              │   │
+│  │  ProgressionPolicy — rank thresholds, unlocks        │   │
+│  │  MatchRules — score reporting, dispute resolution    │   │
+│  └──────────────────────────────────────────────────────┘   │
+│                                                              │
+│  In-memory state:                                            │
+│  [PlayerRecord], [MatchRecord], [ChallengeRecord]            │
+│  Seeded deterministically at launch                          │
+│  Reset instantly via PresenterOverride                       │
+└──────────────────────────────────────────────────────────────┘
 ```
+
+### How DemoAuthority Works (Plain English)
+1. App launches on both simulators — both attach to the same `DemoAuthority.shared` actor in memory
+2. Both register as clients and receive an `AsyncStream<GameState>` — a live feed of state updates
+3. Simulator A (Aarush) takes an action — e.g. sends a challenge
+4. `DemoMatchService` calls `DemoAuthority.shared.sendChallenge(...)`
+5. Actor processes the command serially — applies domain rules — updates in-memory state
+6. Actor pushes new `GameState` snapshot to all registered `AsyncStream` subscribers
+7. Both ViewModels receive the update on their async streams
+8. Both UIs update simultaneously — no disk, no network, no notification, no configuration
 
 ### Core Principles
 - **MVVM** — Views know nothing about data sources
-- **Protocol-based services** — demo engine and real backend are interchangeable
+- **Protocol-based services** — demo implementations and real backend are interchangeable
+- **DemoAuthority singleton actor** — one authority, zero configuration, zero environment risk
+- **In-memory only** — no disk I/O, no entitlements, no App Groups, no Darwin notifications
+- **AsyncStream** — Swift-native push delivery from actor to all clients
 - **Rules engine is pure Swift** — no UI dependencies, no side effects, fully testable
-- **Deterministic simulation** — no randomness, no uncontrolled concurrency
-- **`UserSession`** model allows each simulator to act as a different player (Aarush / Manav)
-- **SwiftData shared container** simulates a live service between two simulators
+- **Deterministic** — actor serialises all mutations, seeded state is reproducible
+- **`UserSession`** — each simulator knows which player it is via UserDefaults
+- **Transport layer is a protocol** — DemoAuthority is one implementation, real backend is another
 
 ### Architecture Decisions (Locked)
 - Swift Concurrency (async/await + actors) — NO Combine, NO DispatchQueue
-- SwiftData for persistence
+- In-memory state only for demo — no SwiftData writes during demo flow
 - SwiftUI for all UI
-- Codable structs for all service-layer data shapes (JSON-ready for real backend)
-- UserDefaults only for lightweight session preferences
+- Codable structs for all state snapshots — identical shape to real API responses
+- AsyncStream for state delivery — zero configuration, Swift-native
+- UserDefaults for active player selection only
 - No hardcoded UI hacks that block backend replacement
+- `SportsHubCore` — shared framework target containing DemoAuthority + domain engines
+- `SportsHub` — iOS app target, imports SportsHubCore
+
+### Xcode Targets
+| Target | Type | Purpose |
+|---|---|---|
+| `SportsHub` | iOS App | Runs on both simulators |
+| `SportsHubCore` | Swift Framework | DemoAuthority + domain engines + service protocols |
+| `SportsHubTests` | Test Bundle | Unit tests for all engines |
+
+### Backend Replacement Path
+When real backend is ready, only the Demo Service implementations are replaced:
+
+| Now (Demo) | Future (Production) |
+|---|---|
+| `DemoMatchService` → `DemoAuthority` | `RemoteMatchService` → REST/WebSocket API |
+| `DemoRatingService` → `DemoAuthority` | `RemoteRatingService` → REST API |
+| In-memory `GameState` | Server-authoritative `GameState` via API responses |
+| `AsyncStream` from actor | `AsyncStream` from URLSession WebSocket |
+
+ViewModels, Views, domain engines — **zero changes required.**
+
+### Why In-Memory Singleton Is Correct for This Demo
+| Risk | App Group + Darwin | In-Memory DemoAuthority |
+|---|---|---|
+| Entitlement configuration | ❌ Must be correct | ✅ None required |
+| Simulator container behaviour | ❌ Can differ from device | ✅ Pure Swift — identical everywhere |
+| Signing configuration | ❌ Can break between machines | ✅ Not involved |
+| Setup steps before demo | ❌ Exists | ✅ Zero |
+| Communication failure | ❌ Possible | ✅ Impossible — same memory |
+| Race conditions | ❌ Possible across processes | ✅ Actor eliminates them |
+| Reset speed | ❌ Must clear disk + re-notify | ✅ One actor call — instant |
+| Backend replacement | ✅ Swap service | ✅ Swap service |
 
 ---
 
-## 📐 Engineering Philosophy
+## 🔭 Long-Term Production Vision (NOT current task)
+
+The real SportsHub platform will eventually include:
+- Real user accounts with authentication
+- Remote backend servers with persistent database
+- Real-time matchmaking queues
+- GPS arrival verification
+- Push notifications for challenges and match events
+- Moderation tools and reporting system
+- Media uploads (player profiles, highlights)
+- App Store distribution
+- Tournament brackets and ranked seasons
+
+**None of this is being built now.** The demo proves the product concept. The architecture is designed so production features slot in without redesigning anything above the service layer.
+
+## ⚠️ Demo vs Production — Explicit Differences
+
+| Concern | Demo (Now) | Production (Future) |
+|---|---|---|
+| Transport | `DemoAuthority` in-memory actor | Remote REST + WebSocket API |
+| Accounts | Hardcoded Aarush + Manav | Real auth (Sign in with Apple) |
+| Persistence | In-memory only | Server database + SwiftData cache |
+| Matchmaking | Scripted/deterministic | Real queue algorithm |
+| Arrival | Timer only | GPS verification |
+| Notifications | None | Push notifications (APNs) |
+| Moderation | Stubbed | Real moderation backend |
+| Distribution | Simulator only | App Store |
+
+## 🔁 Transport Replacement Plan
+
+`DemoAuthority` is a **temporary adapter** behind the service protocol layer.
+
+To replace it with a real backend:
+1. Implement `RemoteMatchService: MatchServiceProtocol`
+2. Implement `RemoteRatingService: RatingServiceProtocol`
+3. Implement `RemotePlayerService: PlayerServiceProtocol`
+4. Implement `RemoteLeaderboardService: LeaderboardServiceProtocol`
+5. Implement `RemoteCommitmentService: CommitmentServiceProtocol`
+6. Inject real implementations at app startup instead of demo implementations
+
+**Nothing above the service layer changes.** ViewModels, Views, and domain engines are untouched.
+
+
 
 When unsure, prioritize in this order:
 1. Demo reliability
@@ -308,4 +450,4 @@ class MyViewModel {
 
 | Date | Summary |
 |---|---|
-| 2026-02-17 | Project created with SwiftData template. Product vision received. Demo scope defined. Architecture confirmed. Ground-truth API docs saved — SwiftData, NavigationStack, Observation, SwiftUI iOS 26, Xcode 26.3. GitHub account connected (royaltonitservices). ⚠️ AI caused duplicate context files — now resolved, this file is the single source of truth. GitHub push still pending. Phase 1 not yet started. |
+| 2026-02-17 | Project created with SwiftData template. Product vision received. Demo scope defined. Full engineering validation completed (6 phases). Architecture iterated through 3 versions — shared SwiftData → WebSocket → App Group+Darwin → final: in-memory DemoAuthority actor. All decisions documented. GitHub connected (royaltonitservices). AI_CONTEXT.md is single source of truth. File structure not yet proposed. No code written yet. |
