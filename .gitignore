@@ -1,0 +1,25 @@
+# =========================
+# Xcode
+# =========================
+
+# User data (DO NOT COMMIT)
+xcuserdata/
+*.xcuserdatad/
+*.xcuserstate
+
+# Derived data
+DerivedData/
+build/
+
+# SwiftPM
+.swiftpm/
+.build/
+
+# macOS
+.DS_Store
+
+# Simulator
+*.simruntime
+
+# Logs
+*.log

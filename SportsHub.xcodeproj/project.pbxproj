@@ -6,27 +6,39 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		4ED66BC52F46B0C500308C10 /* SportsHubCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4ED66BB02F46B0C500308C10 /* SportsHubCore.framework */; };
+		4ED66BC62F46B0C500308C10 /* SportsHubCore.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 4ED66BB02F46B0C500308C10 /* SportsHubCore.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
-		4E1A741F2F44C6D300EC0F8B /* PBXContainerItemProxy */ = {
+		4ED66BC32F46B0C500308C10 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 4E1A74052F44C6D200EC0F8B /* Project object */;
 			proxyType = 1;
-			remoteGlobalIDString = 4E1A740C2F44C6D200EC0F8B;
-			remoteInfo = SportsHub;
-		};
-		4E1A74292F44C6D300EC0F8B /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 4E1A74052F44C6D200EC0F8B /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 4E1A740C2F44C6D200EC0F8B;
-			remoteInfo = SportsHub;
+			remoteGlobalIDString = 4ED66BAF2F46B0C500308C10;
+			remoteInfo = SportsHubCore;
 		};
 /* End PBXContainerItemProxy section */
 
+/* Begin PBXCopyFilesBuildPhase section */
+		4ED66BC72F46B0C500308C10 /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+				4ED66BC62F46B0C500308C10 /* SportsHubCore.framework in Embed Frameworks */,
+			);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
 		4E1A740D2F44C6D200EC0F8B /* SportsHub.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SportsHub.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		4E1A741E2F44C6D300EC0F8B /* SportsHubTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SportsHubTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		4E1A74282F44C6D300EC0F8B /* SportsHubUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SportsHubUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		4ED66BB02F46B0C500308C10 /* SportsHubCore.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = SportsHubCore.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		4ED66BCF2F46B2BD00308C10 /* Testing.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Testing.framework; path = Platforms/iPhoneOS.platform/Developer/Library/Frameworks/Testing.framework; sourceTree = DEVELOPER_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -48,14 +60,9 @@
 			path = SportsHub;
 			sourceTree = "<group>";
 		};
-		4E1A74212F44C6D300EC0F8B /* SportsHubTests */ = {
+		4ED66BB12F46B0C500308C10 /* SportsHubCore */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = SportsHubTests;
-			sourceTree = "<group>";
-		};
-		4E1A742B2F44C6D300EC0F8B /* SportsHubUITests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = SportsHubUITests;
+			path = SportsHubCore;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -65,17 +72,11 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				4ED66BC52F46B0C500308C10 /* SportsHubCore.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		4E1A741B2F44C6D300EC0F8B /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		4E1A74252F44C6D300EC0F8B /* Frameworks */ = {
+		4ED66BAD2F46B0C500308C10 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -89,8 +90,8 @@
 			isa = PBXGroup;
 			children = (
 				4E1A740F2F44C6D200EC0F8B /* SportsHub */,
-				4E1A74212F44C6D300EC0F8B /* SportsHubTests */,
-				4E1A742B2F44C6D300EC0F8B /* SportsHubUITests */,
+				4ED66BB12F46B0C500308C10 /* SportsHubCore */,
+				4ED66BCE2F46B2BD00308C10 /* Frameworks */,
 				4E1A740E2F44C6D200EC0F8B /* Products */,
 			);
 			sourceTree = "<group>";
@@ -99,13 +100,30 @@
 			isa = PBXGroup;
 			children = (
 				4E1A740D2F44C6D200EC0F8B /* SportsHub.app */,
-				4E1A741E2F44C6D300EC0F8B /* SportsHubTests.xctest */,
-				4E1A74282F44C6D300EC0F8B /* SportsHubUITests.xctest */,
+				4ED66BB02F46B0C500308C10 /* SportsHubCore.framework */,
 			);
 			name = Products;
 			sourceTree = "<group>";
 		};
+		4ED66BCE2F46B2BD00308C10 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				4ED66BCF2F46B2BD00308C10 /* Testing.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
+
+/* Begin PBXHeadersBuildPhase section */
+		4ED66BAB2F46B0C500308C10 /* Headers */ = {
+			isa = PBXHeadersBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXHeadersBuildPhase section */
 
 /* Begin PBXNativeTarget section */
 		4E1A740C2F44C6D200EC0F8B /* SportsHub */ = {
@@ -115,10 +133,12 @@
 				4E1A74092F44C6D200EC0F8B /* Sources */,
 				4E1A740A2F44C6D200EC0F8B /* Frameworks */,
 				4E1A740B2F44C6D200EC0F8B /* Resources */,
+				4ED66BC72F46B0C500308C10 /* Embed Frameworks */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				4ED66BC42F46B0C500308C10 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				4E1A740F2F44C6D200EC0F8B /* SportsHub */,
@@ -130,51 +150,28 @@
 			productReference = 4E1A740D2F44C6D200EC0F8B /* SportsHub.app */;
 			productType = "com.apple.product-type.application";
 		};
-		4E1A741D2F44C6D300EC0F8B /* SportsHubTests */ = {
+		4ED66BAF2F46B0C500308C10 /* SportsHubCore */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 4E1A74362F44C6D300EC0F8B /* Build configuration list for PBXNativeTarget "SportsHubTests" */;
+			buildConfigurationList = 4ED66BCC2F46B0C500308C10 /* Build configuration list for PBXNativeTarget "SportsHubCore" */;
 			buildPhases = (
-				4E1A741A2F44C6D300EC0F8B /* Sources */,
-				4E1A741B2F44C6D300EC0F8B /* Frameworks */,
-				4E1A741C2F44C6D300EC0F8B /* Resources */,
+				4ED66BAB2F46B0C500308C10 /* Headers */,
+				4ED66BAC2F46B0C500308C10 /* Sources */,
+				4ED66BAD2F46B0C500308C10 /* Frameworks */,
+				4ED66BAE2F46B0C500308C10 /* Resources */,
 			);
 			buildRules = (
 			);
 			dependencies = (
-				4E1A74202F44C6D300EC0F8B /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
-				4E1A74212F44C6D300EC0F8B /* SportsHubTests */,
+				4ED66BB12F46B0C500308C10 /* SportsHubCore */,
 			);
-			name = SportsHubTests;
+			name = SportsHubCore;
 			packageProductDependencies = (
 			);
-			productName = SportsHubTests;
-			productReference = 4E1A741E2F44C6D300EC0F8B /* SportsHubTests.xctest */;
-			productType = "com.apple.product-type.bundle.unit-test";
-		};
-		4E1A74272F44C6D300EC0F8B /* SportsHubUITests */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = 4E1A74392F44C6D300EC0F8B /* Build configuration list for PBXNativeTarget "SportsHubUITests" */;
-			buildPhases = (
-				4E1A74242F44C6D300EC0F8B /* Sources */,
-				4E1A74252F44C6D300EC0F8B /* Frameworks */,
-				4E1A74262F44C6D300EC0F8B /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-				4E1A742A2F44C6D300EC0F8B /* PBXTargetDependency */,
-			);
-			fileSystemSynchronizedGroups = (
-				4E1A742B2F44C6D300EC0F8B /* SportsHubUITests */,
-			);
-			name = SportsHubUITests;
-			packageProductDependencies = (
-			);
-			productName = SportsHubUITests;
-			productReference = 4E1A74282F44C6D300EC0F8B /* SportsHubUITests.xctest */;
-			productType = "com.apple.product-type.bundle.ui-testing";
+			productName = SportsHubCore;
+			productReference = 4ED66BB02F46B0C500308C10 /* SportsHubCore.framework */;
+			productType = "com.apple.product-type.framework";
 		};
 /* End PBXNativeTarget section */
 
@@ -189,13 +186,8 @@
 					4E1A740C2F44C6D200EC0F8B = {
 						CreatedOnToolsVersion = 26.3;
 					};
-					4E1A741D2F44C6D300EC0F8B = {
+					4ED66BAF2F46B0C500308C10 = {
 						CreatedOnToolsVersion = 26.3;
-						TestTargetID = 4E1A740C2F44C6D200EC0F8B;
-					};
-					4E1A74272F44C6D300EC0F8B = {
-						CreatedOnToolsVersion = 26.3;
-						TestTargetID = 4E1A740C2F44C6D200EC0F8B;
 					};
 				};
 			};
@@ -214,8 +206,7 @@
 			projectRoot = "";
 			targets = (
 				4E1A740C2F44C6D200EC0F8B /* SportsHub */,
-				4E1A741D2F44C6D300EC0F8B /* SportsHubTests */,
-				4E1A74272F44C6D300EC0F8B /* SportsHubUITests */,
+				4ED66BAF2F46B0C500308C10 /* SportsHubCore */,
 			);
 		};
 /* End PBXProject section */
@@ -228,14 +219,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		4E1A741C2F44C6D300EC0F8B /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		4E1A74262F44C6D300EC0F8B /* Resources */ = {
+		4ED66BAE2F46B0C500308C10 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -252,14 +236,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		4E1A741A2F44C6D300EC0F8B /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		4E1A74242F44C6D300EC0F8B /* Sources */ = {
+		4ED66BAC2F46B0C500308C10 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -269,15 +246,10 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
-		4E1A74202F44C6D300EC0F8B /* PBXTargetDependency */ = {
+		4ED66BC42F46B0C500308C10 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = 4E1A740C2F44C6D200EC0F8B /* SportsHub */;
-			targetProxy = 4E1A741F2F44C6D300EC0F8B /* PBXContainerItemProxy */;
-		};
-		4E1A742A2F44C6D300EC0F8B /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = 4E1A740C2F44C6D200EC0F8B /* SportsHub */;
-			targetProxy = 4E1A74292F44C6D300EC0F8B /* PBXContainerItemProxy */;
+			target = 4ED66BAF2F46B0C500308C10 /* SportsHubCore */;
+			targetProxy = 4ED66BC32F46B0C500308C10 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -467,83 +439,77 @@
 			};
 			name = Release;
 		};
-		4E1A74372F44C6D300EC0F8B /* Debug */ = {
+		4ED66BC82F46B0C500308C10 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
+				BUILD_LIBRARY_FOR_DISTRIBUTION = YES;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DYLIB_COMPATIBILITY_VERSION = 1;
+				DYLIB_CURRENT_VERSION = 1;
+				DYLIB_INSTALL_NAME_BASE = "@rpath";
+				ENABLE_MODULE_VERIFIER = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = royaltonitservices.SportsHubTests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				MODULE_VERIFIER_SUPPORTED_LANGUAGES = "objective-c objective-c++";
+				MODULE_VERIFIER_SUPPORTED_LANGUAGE_STANDARDS = "gnu17 gnu++20";
+				PRODUCT_BUNDLE_IDENTIFIER = royaltonitservices.SportsHubCore;
+				PRODUCT_NAME = "$(TARGET_NAME:c99extidentifier)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_INSTALL_MODULE = YES;
+				SWIFT_INSTALL_OBJC_HEADER = NO;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/SportsHub.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/SportsHub";
+				VERSIONING_SYSTEM = "apple-generic";
+				VERSION_INFO_PREFIX = "";
 			};
 			name = Debug;
 		};
-		4E1A74382F44C6D300EC0F8B /* Release */ = {
+		4ED66BC92F46B0C500308C10 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
+				BUILD_LIBRARY_FOR_DISTRIBUTION = YES;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DYLIB_COMPATIBILITY_VERSION = 1;
+				DYLIB_CURRENT_VERSION = 1;
+				DYLIB_INSTALL_NAME_BASE = "@rpath";
+				ENABLE_MODULE_VERIFIER = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = royaltonitservices.SportsHubTests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				MODULE_VERIFIER_SUPPORTED_LANGUAGES = "objective-c objective-c++";
+				MODULE_VERIFIER_SUPPORTED_LANGUAGE_STANDARDS = "gnu17 gnu++20";
+				PRODUCT_BUNDLE_IDENTIFIER = royaltonitservices.SportsHubCore;
+				PRODUCT_NAME = "$(TARGET_NAME:c99extidentifier)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_INSTALL_MODULE = YES;
+				SWIFT_INSTALL_OBJC_HEADER = NO;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/SportsHub.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/SportsHub";
-			};
-			name = Release;
-		};
-		4E1A743A2F44C6D300EC0F8B /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = royaltonitservices.SportsHubUITests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				STRING_CATALOG_GENERATE_SYMBOLS = NO;
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_TARGET_NAME = SportsHub;
-			};
-			name = Debug;
-		};
-		4E1A743B2F44C6D300EC0F8B /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = royaltonitservices.SportsHubUITests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				STRING_CATALOG_GENERATE_SYMBOLS = NO;
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_TARGET_NAME = SportsHub;
+				VERSIONING_SYSTEM = "apple-generic";
+				VERSION_INFO_PREFIX = "";
 			};
 			name = Release;
 		};
@@ -568,20 +534,11 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		4E1A74362F44C6D300EC0F8B /* Build configuration list for PBXNativeTarget "SportsHubTests" */ = {
+		4ED66BCC2F46B0C500308C10 /* Build configuration list for PBXNativeTarget "SportsHubCore" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				4E1A74372F44C6D300EC0F8B /* Debug */,
-				4E1A74382F44C6D300EC0F8B /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		4E1A74392F44C6D300EC0F8B /* Build configuration list for PBXNativeTarget "SportsHubUITests" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				4E1A743A2F44C6D300EC0F8B /* Debug */,
-				4E1A743B2F44C6D300EC0F8B /* Release */,
+				4ED66BC82F46B0C500308C10 /* Debug */,
+				4ED66BC92F46B0C500308C10 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
