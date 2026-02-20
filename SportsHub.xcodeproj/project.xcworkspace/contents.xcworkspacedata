@@ -10,4 +10,10 @@
    <FileRef
       location = "group:ContentView.swift">
    </FileRef>
+   <FileRef
+      location = "group:SportsHubCoreAuthorityDemoAuthority.swift">
+   </FileRef>
+   <FileRef
+      location = "group:ContentView 2.swift">
+   </FileRef>
 </Workspace>

@@ -2,6 +2,12 @@
 # Xcode
 # =========================
 
+DerivedData/
+build/
+xcuserdata/
+*.xcuserstate
+.DS_Store
+
 # User data (DO NOT COMMIT)
 xcuserdata/
 *.xcuserdatad/

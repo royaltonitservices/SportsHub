@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import SportsHubCore
 
 @main
 struct SportsHubApp: App {

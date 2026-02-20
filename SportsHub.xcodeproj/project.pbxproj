@@ -46,8 +46,38 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
+				SportsHubCoreEnginesCommitmentEngine.swift,
+				SportsHubCoreEnginesELORatingEngine.swift,
+				SportsHubCoreModelsCommitmentRecord.swift,
+				SportsHubCoreModelsMatchResult.swift,
+				SportsHubCoreModelsPlayer.swift,
+				SportsHubCoreModelsProgressionRecord.swift,
+				SportsHubCoreModelsRatingRecord.swift,
+				SportsHubCoreModelsSport.swift,
+				SportsHubCorePolicyMatchRules.swift,
+				SportsHubCorePolicyPenaltyPolicy.swift,
+				SportsHubCorePolicyProgressionPolicy.swift,
+				SportsHubCorePolicySportConfig.swift,
 			);
 			target = 4E1A740C2F44C6D200EC0F8B /* SportsHub */;
+		};
+		4EB02F762F4801E600197054 /* Exceptions for "SportsHub" folder in "SportsHubCore" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				SportsHubCoreEnginesCommitmentEngine.swift,
+				SportsHubCoreEnginesELORatingEngine.swift,
+				SportsHubCoreModelsCommitmentRecord.swift,
+				SportsHubCoreModelsMatchResult.swift,
+				SportsHubCoreModelsPlayer.swift,
+				SportsHubCoreModelsProgressionRecord.swift,
+				SportsHubCoreModelsRatingRecord.swift,
+				SportsHubCoreModelsSport.swift,
+				SportsHubCorePolicyMatchRules.swift,
+				SportsHubCorePolicyPenaltyPolicy.swift,
+				SportsHubCorePolicyProgressionPolicy.swift,
+				SportsHubCorePolicySportConfig.swift,
+			);
+			target = 4ED66BAF2F46B0C500308C10 /* SportsHubCore */;
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
@@ -56,6 +86,7 @@
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
 				4E1A74302F44C6D300EC0F8B /* Exceptions for "SportsHub" folder in "SportsHub" target */,
+				4EB02F762F4801E600197054 /* Exceptions for "SportsHub" folder in "SportsHubCore" target */,
 			);
 			path = SportsHub;
 			sourceTree = "<group>";
