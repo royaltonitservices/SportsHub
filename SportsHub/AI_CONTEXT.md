@@ -27,6 +27,26 @@
 - Demo clarity > architectural completeness
 - One small step at a time
 
+### Demo Icon Policy (Friday Demo Only)
+
+For demo speed and momentum:
+
+• Do NOT introduce external design tools  
+• Do NOT require Figma, Canva, or downloads  
+• Do NOT generate new image assets programmatically  
+
+Instead:
+
+Use a temporary placeholder app icon created locally and installed via Xcode Assets catalog.
+
+Requirements:
+• One simple 1024x1024 PNG
+• Solid background
+• Simple initials ("SH")
+• Purpose: make app feel real on simulator home screen
+
+This icon is temporary and will be replaced post-demo.
+
 ---
 
 ## 🧭 Product Vision
