@@ -4,9 +4,8 @@
 //
 //  Created by Aarush Khanna on 2/17/26.
 //
-//  Friday demo interface.
-//  Shows players + ratings, a Simulate Match button, and a live match log.
-//  Players and ratings are sourced from DemoAuthority via DemoViewModel.
+//  SportsHub Home Experience.
+//  Product-focused interface showing player status, challenge action, and recent activity.
 
 import SwiftUI
 import SportsHubCore
@@ -14,28 +13,25 @@ import SportsHubCore
 struct ContentView: View {
 
     @State private var viewModel = DemoViewModel()
+    @State private var highlightHeader = false
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                
-                // --------------------------------------------------------
-                // PLAYER IDENTITY SELECTOR
-                // --------------------------------------------------------
-                VStack(spacing: 12) {
-                    Text("You are:")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+            ScrollView {
+                VStack(spacing: 24) {
                     
+                    // --------------------------------------------------------
+                    // PLAYER IDENTITY SELECTOR (Compact)
+                    // --------------------------------------------------------
                     HStack(spacing: 12) {
                         ForEach(viewModel.players) { player in
                             Button {
                                 viewModel.currentPlayerID = player.id
                             } label: {
                                 Text("I am \(player.name)")
-                                    .font(.headline)
-                                    .padding(.horizontal, 20)
-                                    .padding(.vertical, 12)
+                                    .font(.subheadline.bold())
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 10)
                                     .frame(maxWidth: .infinity)
                                     .background(
                                         viewModel.currentPlayerID == player.id
@@ -52,80 +48,173 @@ struct ContentView: View {
                         }
                     }
                     .padding(.horizontal)
-                }
-                .padding(.vertical, 16)
-                .background(Color(.systemGroupedBackground))
-                
-                Picker("Sport", selection: $viewModel.selectedSport) {
-                    Text("Basketball").tag(Sport.basketball)
-                    Text("Football").tag(Sport.football)
-                    Text("Soccer").tag(Sport.soccer)
-                    Text("Tennis").tag(Sport.tennis)
-                }
-                .pickerStyle(.segmented)
-                .padding()
-                
-                List {
+                    .padding(.top, 8)
                     
                     // --------------------------------------------------------
-                    // SECTION 1: Players
+                    // SECTION 1: PLAYER HEADER
                     // --------------------------------------------------------
-                    Section("Players") {
-                        ForEach(viewModel.players) { player in
-                            HStack {
-                                VStack(alignment: .leading) {
-                                    Text(player.name)
-                                        .font(.headline)
-                                    
-                                    Text(player.rankLabel)
+                    if let currentPlayer = viewModel.currentPlayer {
+                        VStack(spacing: 16) {
+                            
+                            VStack(spacing: 8) {
+                                Text("You are")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                                
+                                Text(currentPlayer.name)
+                                    .font(.system(size: 32, weight: .bold))
+                            }
+                            
+                            HStack(spacing: 32) {
+                                VStack(spacing: 4) {
+                                    Text(viewModel.sportDisplayName)
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
+                                    Text(String(format: "%.0f", currentPlayer.rating))
+                                        .font(.title.bold())
+                                        .monospacedDigit()
+                                        .contentTransition(.numericText())
                                 }
                                 
-                                Spacer()
-                                
-                                Text(String(format: "%.0f", player.rating))
-                                    .font(.headline)
-                                    .monospacedDigit()
+                                VStack(spacing: 4) {
+                                    Text("Rank")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                    Text(currentPlayer.rankLabel)
+                                        .font(.title3.bold())
+                                        .foregroundStyle(.blue)
+                                        .contentTransition(.interpolate)
+                                }
                             }
                         }
+                        .padding(.vertical, 24)
+                        .frame(maxWidth: .infinity)
+                        .background(
+                            Color(.systemGroupedBackground)
+                                .overlay(
+                                    highlightHeader
+                                        ? Color.blue.opacity(0.15)
+                                        : Color.clear
+                                )
+                        )
+                        .cornerRadius(16)
+                        .padding(.horizontal)
+                        .animation(.easeInOut(duration: 0.3), value: currentPlayer.rating)
+                        .animation(.easeInOut(duration: 0.3), value: highlightHeader)
                     }
                     
                     // --------------------------------------------------------
-                    // SECTION 2: Action
+                    // SPORT PICKER
                     // --------------------------------------------------------
-                    Section("Action") {
-                        Button("Simulate Match") {
-                            viewModel.simulateMatch()
+                    VStack(spacing: 8) {
+                        Text("Select Sport")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        
+                        Picker("Sport", selection: $viewModel.selectedSport) {
+                            Text("Basketball").tag(Sport.basketball)
+                            Text("Football").tag(Sport.football)
+                            Text("Soccer").tag(Sport.soccer)
+                            Text("Tennis").tag(Sport.tennis)
                         }
-                        .frame(maxWidth: .infinity, alignment: .center)
+                        .pickerStyle(.segmented)
                     }
+                    .padding(.horizontal)
                     
                     // --------------------------------------------------------
-                    // SECTION 3: Match Log
+                    // SECTION 2: PRIMARY ACTION CARD
+                    // --------------------------------------------------------
+                    VStack(spacing: 16) {
+                        
+                        VStack(spacing: 8) {
+                            Text("Ready to Compete")
+                                .font(.title2.bold())
+                            
+                            Text("Challenge an opponent and prove your skills")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.center)
+                        }
+                        
+                        Button {
+                            withAnimation {
+                                viewModel.simulateMatch()
+                                
+                                // Trigger highlight flash
+                                highlightHeader = true
+                                Task {
+                                    try? await Task.sleep(for: .milliseconds(300))
+                                    highlightHeader = false
+                                }
+                            }
+                        } label: {
+                            Text("Challenge Opponent")
+                                .font(.headline)
+                                .foregroundStyle(.white)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 16)
+                                .background(Color.blue)
+                                .cornerRadius(12)
+                        }
+                    }
+                    .padding(24)
+                    .background(Color(.systemGroupedBackground))
+                    .cornerRadius(16)
+                    .padding(.horizontal)
+                    
+                    // --------------------------------------------------------
+                    // SECTION 3: RECENT ACTIVITY
                     // --------------------------------------------------------
                     if !viewModel.matchLog.isEmpty {
-                        Section("Match Log") {
-                            ForEach(viewModel.matchLog) { entry in
-                                HStack(spacing: 4) {
-                                    Text(entry.winnerName)
-                                        .foregroundStyle(.green)
-                                    Text("beat")
-                                        .foregroundStyle(.secondary)
-                                    Text(entry.loserName)
-                                        .foregroundStyle(.red)
-                                    Spacer()
-                                    Text(String(format: "+%.0f", entry.ratingChange))
-                                        .foregroundStyle(.green)
-                                        .monospacedDigit()
+                        VStack(alignment: .leading, spacing: 12) {
+                            
+                            Text("Recent Activity")
+                                .font(.headline)
+                                .padding(.horizontal)
+                            
+                            VStack(spacing: 8) {
+                                ForEach(viewModel.matchLog) { entry in
+                                    HStack(spacing: 8) {
+                                        Text(entry.winnerName)
+                                            .font(.subheadline.bold())
+                                            .foregroundStyle(.green)
+                                        
+                                        Text("beat")
+                                            .font(.subheadline)
+                                            .foregroundStyle(.secondary)
+                                        
+                                        Text(entry.loserName)
+                                            .font(.subheadline)
+                                            .foregroundStyle(.red)
+                                        
+                                        Spacer()
+                                        
+                                        Text(String(format: "+%.0f", entry.ratingChange))
+                                            .font(.subheadline.bold())
+                                            .foregroundStyle(.green)
+                                            .monospacedDigit()
+                                    }
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 12)
+                                    .background(Color(.systemGroupedBackground))
+                                    .cornerRadius(8)
+                                    .transition(.asymmetric(
+                                        insertion: .move(edge: .top).combined(with: .opacity),
+                                        removal: .opacity
+                                    ))
                                 }
-                                .font(.subheadline)
                             }
+                            .padding(.horizontal)
                         }
+                        .padding(.vertical, 8)
                     }
+                    
+                    Spacer(minLength: 24)
                 }
+                .animation(.spring(response: 0.4, dampingFraction: 0.7), value: viewModel.matchLog.count)
             }
-            .navigationTitle("SportsHub Demo")
+            .navigationTitle("SportsHub")
+            .navigationBarTitleDisplayMode(.inline)
         }
         .task {
             await viewModel.startListening()

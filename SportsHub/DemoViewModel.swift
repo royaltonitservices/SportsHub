@@ -60,6 +60,22 @@ final class DemoViewModel {
     var currentPlayerName: String {
         players.first(where: { $0.id == currentPlayerID })?.name ?? "Select Player"
     }
+    
+    var currentPlayer: DemoPlayer? {
+        guard let id = currentPlayerID else { return nil }
+        return players.first(where: { $0.id == id })
+    }
+    
+    var sportDisplayName: String {
+        switch selectedSport {
+        case .basketball: return "Basketball"
+        case .football: return "Football"
+        case .soccer: return "Soccer"
+        case .tennis: return "Tennis"
+        @unknown default:
+            return "Sport"
+        }
+    }
 
     var players: [DemoPlayer] {
         gameState.players.map {
