@@ -17,54 +17,110 @@ struct ContentView: View {
 
     var body: some View {
         NavigationStack {
-            List {
-
+            VStack(spacing: 0) {
+                
                 // --------------------------------------------------------
-                // SECTION 1: Players
+                // PLAYER IDENTITY SELECTOR
                 // --------------------------------------------------------
-                Section("Players") {
-                    ForEach(viewModel.players) { player in
-                        HStack {
-                            Text(player.name)
-                                .font(.headline)
-                            Spacer()
-                            Text(String(format: "%.0f", player.rating))
-                                .font(.headline)
-                                .monospacedDigit()
-                                .foregroundStyle(.secondary)
+                VStack(spacing: 12) {
+                    Text("You are:")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    
+                    HStack(spacing: 12) {
+                        ForEach(viewModel.players) { player in
+                            Button {
+                                viewModel.currentPlayerID = player.id
+                            } label: {
+                                Text("I am \(player.name)")
+                                    .font(.headline)
+                                    .padding(.horizontal, 20)
+                                    .padding(.vertical, 12)
+                                    .frame(maxWidth: .infinity)
+                                    .background(
+                                        viewModel.currentPlayerID == player.id
+                                            ? Color.blue
+                                            : Color.gray.opacity(0.2)
+                                    )
+                                    .foregroundStyle(
+                                        viewModel.currentPlayerID == player.id
+                                            ? .white
+                                            : .primary
+                                    )
+                                    .cornerRadius(8)
+                            }
                         }
                     }
+                    .padding(.horizontal)
                 }
-
-                // --------------------------------------------------------
-                // SECTION 2: Action
-                // --------------------------------------------------------
-                Section("Action") {
-                    Button("Simulate Match") {
-                        viewModel.simulateMatch()
-                    }
-                    .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.vertical, 16)
+                .background(Color(.systemGroupedBackground))
+                
+                Picker("Sport", selection: $viewModel.selectedSport) {
+                    Text("Basketball").tag(Sport.basketball)
+                    Text("Football").tag(Sport.football)
+                    Text("Soccer").tag(Sport.soccer)
+                    Text("Tennis").tag(Sport.tennis)
                 }
-
-                // --------------------------------------------------------
-                // SECTION 3: Match Log
-                // --------------------------------------------------------
-                if !viewModel.matchLog.isEmpty {
-                    Section("Match Log") {
-                        ForEach(viewModel.matchLog) { entry in
-                            HStack(spacing: 4) {
-                                Text(entry.winnerName)
-                                    .foregroundStyle(.green)
-                                Text("beat")
-                                    .foregroundStyle(.secondary)
-                                Text(entry.loserName)
-                                    .foregroundStyle(.red)
+                .pickerStyle(.segmented)
+                .padding()
+                
+                List {
+                    
+                    // --------------------------------------------------------
+                    // SECTION 1: Players
+                    // --------------------------------------------------------
+                    Section("Players") {
+                        ForEach(viewModel.players) { player in
+                            HStack {
+                                VStack(alignment: .leading) {
+                                    Text(player.name)
+                                        .font(.headline)
+                                    
+                                    Text(player.rankLabel)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                
                                 Spacer()
-                                Text(String(format: "+%.0f", entry.ratingChange))
-                                    .foregroundStyle(.green)
+                                
+                                Text(String(format: "%.0f", player.rating))
+                                    .font(.headline)
                                     .monospacedDigit()
                             }
-                            .font(.subheadline)
+                        }
+                    }
+                    
+                    // --------------------------------------------------------
+                    // SECTION 2: Action
+                    // --------------------------------------------------------
+                    Section("Action") {
+                        Button("Simulate Match") {
+                            viewModel.simulateMatch()
+                        }
+                        .frame(maxWidth: .infinity, alignment: .center)
+                    }
+                    
+                    // --------------------------------------------------------
+                    // SECTION 3: Match Log
+                    // --------------------------------------------------------
+                    if !viewModel.matchLog.isEmpty {
+                        Section("Match Log") {
+                            ForEach(viewModel.matchLog) { entry in
+                                HStack(spacing: 4) {
+                                    Text(entry.winnerName)
+                                        .foregroundStyle(.green)
+                                    Text("beat")
+                                        .foregroundStyle(.secondary)
+                                    Text(entry.loserName)
+                                        .foregroundStyle(.red)
+                                    Spacer()
+                                    Text(String(format: "+%.0f", entry.ratingChange))
+                                        .foregroundStyle(.green)
+                                        .monospacedDigit()
+                                }
+                                .font(.subheadline)
+                            }
                         }
                     }
                 }

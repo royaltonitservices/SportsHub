@@ -17,12 +17,12 @@ import SportsHubCore
 // MARK: - Demo Player
 // ---------------------------------------------------------------------------
 
-/// A lightweight in-memory player record for the Friday demo.
+/// A lightweight view-facing projection of a Player from GameState.
 struct DemoPlayer: Identifiable {
-    let id: UUID = UUID()
+    let id: UUID          // stable — mirrors Player.id from authority
     var name: String
     var rating: Double
-    var matchCount: Int = 0
+    var matchCount: Int
 }
 
 // ---------------------------------------------------------------------------
@@ -47,52 +47,75 @@ final class DemoViewModel {
 
     // MARK: - State (observed by ContentView)
 
-    /// The three demo players. Published automatically via @Observable.
-    var players: [DemoPlayer] = [
-        DemoPlayer(name: "Aarush", rating: SportConfig.initialRating),
-        DemoPlayer(name: "Arnav",  rating: SportConfig.initialRating),
-        DemoPlayer(name: "Player C", rating: SportConfig.initialRating)
-    ]
+    /// Latest authoritative snapshot from DemoAuthority.
+    /// Updated on every publish — never mutated directly.
+    private(set) var gameState: GameState = GameState()
 
     /// Last 5 match results, newest first.
+    /// Maintained locally — GameState carries raw MatchResults,
+    /// this is the display-ready projection for the match log section.
     var matchLog: [MatchLogEntry] = []
+
+    /// View-facing player list derived from the latest GameState.
+    /// Uses basketball rating as the primary display value.
+    var players: [DemoPlayer] {
+        gameState.players.map { player in
+            DemoPlayer(
+                id:         player.id,
+                name:       player.name,
+                rating:     player.rating(for: .basketball),
+                matchCount: player.matchCount(for: .basketball)
+            )
+        }
+    }
+
+    // MARK: - Authority Subscription
+
+    /// Seeds DemoAuthority (only if empty), then subscribes and listens
+    /// for all state changes. Call once from ContentView's .task modifier
+    /// — runs for the view's lifetime. Safe to re-enter after SwiftUI
+    /// task restarts because seeding is skipped when players already exist.
+    func startListening() async {
+        let initialState = await DemoAuthority.shared.subscribe()
+
+        // Seed only when the authority has no players yet.
+        // Prevents reseeding if SwiftUI restarts the task.
+        if gameState.players.isEmpty {
+            await DemoAuthority.shared.seedPlayers()
+        }
+
+        for await state in initialState {
+            gameState = state
+        }
+    }
 
     // MARK: - Match Simulation
 
-    /// Randomly picks a winner and loser from `players`,
-    /// runs the ELO engine, updates ratings, and appends to the log.
+    /// Picks a random winner and loser from GameState players,
+    /// computes ELO delta, and pushes the result to DemoAuthority.
+    /// Never mutates local state — authority publishes the update back.
     func simulateMatch() {
-        // Need at least 2 players.
-        guard players.count >= 2 else { return }
+        let current = gameState.players
+        guard current.count >= 2 else { return }
 
-        // Pick two distinct random indices.
-        let firstIndex  = Int.random(in: 0..<players.count)
-        var secondIndex = Int.random(in: 0..<players.count - 1)
+        let firstIndex  = Int.random(in: 0..<current.count)
+        var secondIndex = Int.random(in: 0..<current.count - 1)
         if secondIndex >= firstIndex { secondIndex += 1 }
 
-        // Randomly assign winner / loser roles.
         let (winnerIndex, loserIndex): (Int, Int) = Bool.random()
             ? (firstIndex, secondIndex)
             : (secondIndex, firstIndex)
 
-        let winner = players[winnerIndex]
-        let loser  = players[loserIndex]
+        let winner = current[winnerIndex]
+        let loser  = current[loserIndex]
 
-        // Ask the pure ELO engine for the rating delta.
         let delta = ELORatingEngine.calculateDelta(
-            winnerRating:     winner.rating,
-            winnerMatchCount: winner.matchCount,
-            loserRating:      loser.rating,
-            loserMatchCount:  loser.matchCount
+            winnerRating:     winner.rating(for: .basketball),
+            winnerMatchCount: winner.matchCount(for: .basketball),
+            loserRating:      loser.rating(for: .basketball),
+            loserMatchCount:  loser.matchCount(for: .basketball)
         )
 
-        // Apply results back to the players array.
-        players[winnerIndex].rating      = delta.winnerNewRating
-        players[winnerIndex].matchCount += 1
-        players[loserIndex].rating       = delta.loserNewRating
-        players[loserIndex].matchCount  += 1
-
-        // Prepend log entry; keep only the 5 most recent.
         let entry = MatchLogEntry(
             winnerName:   winner.name,
             loserName:    loser.name,
@@ -100,5 +123,14 @@ final class DemoViewModel {
         )
         matchLog.insert(entry, at: 0)
         if matchLog.count > 5 { matchLog.removeLast() }
+
+        Task {
+            await DemoAuthority.shared.applyMatchResult(
+                winnerID: winner.id,
+                loserID:  loser.id,
+                sport:    .basketball,
+                delta:    delta
+            )
+        }
     }
 }

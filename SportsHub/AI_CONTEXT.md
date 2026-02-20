@@ -1,17 +1,37 @@
 # Project: Sports Hub
-**Created:** 2026-02-17
-**Last Updated:** 2026-02-17 (update this date manually when resuming a new session)
-**Developer:** Aarush Khanna
-**Platform:** iOS (iPhone) — dual iPhone 17 Pro simulators for demo
-**Minimum Deployment Target:** TBD (confirm from Xcode project settings)
-**Swift Version:** Swift 6
+**Created:** 2026-02-17  
+**Last Updated:** 2026-02-19 (updated after demo scope freeze and initial implementation)  
+**Developer:** Aarush Khanna  
+**Platform:** iOS (iPhone) — dual iPhone 17 Pro simulators for Friday demo  
+**Minimum Deployment Target:** TBD (confirm from Xcode project settings)  
+**Swift Version:** Swift 6  
 **Xcode Version:** 26.3 (17C519)
+
+---
+
+## 🎯 CURRENT MODE: FRIDAY DEMO PREPARATION
+
+**Demo objective:** Deliver the clearest possible live demonstration of core concept working across two simulators.
+
+**NOT building:** Full architecture, persistence, networking, challenge system, presenter control panel, service protocols, tests.
+
+**Building:** Minimal working demo showing:
+1. Player identity selection ("You are Aarush" / "You are Manav")
+2. Sport switching (Basketball / Football / Soccer / Tennis)
+3. Live rating updates across both simulators
+4. Rank labels derived from rating
+
+**Constraints:**
+- Modify existing files only — no new architectural layers
+- Minimal code changes
+- Demo clarity > architectural completeness
+- One small step at a time
 
 ---
 
 ## 🧭 Product Vision
 
-SportsHub is a **competitive integrity platform** for real-world sports.
+SportsHub is a **competitive integrity platform** for real-world sports.  
 It is NOT a scheduling app or a social app.
 
 Core promise: **Fairness and trust**, like ranked matchmaking in online games — applied to physical sports.
@@ -30,159 +50,286 @@ The product succeeds if and only if the fairness engine works correctly.
 
 ---
 
-## 🎯 Current Assignment — Demo Mode
+## 🏗️ Current Architecture (As Implemented)
 
-We are building a **presentation simulator**, not a production deployment.
+### Simplified Demo Architecture
 
-### Demo Rules
-- Runs 100% locally — no internet, no permissions required
-- Never crashes during live presentation
-- Uses **fake data, real rules** — ELO math is correct, penalties are enforced
-- Two simulated users: **Aarush** and **Manav**
-- Both run on **one Mac with two iPhone simulators** feeling like two separate phones
-- Hidden **Presenter Control Panel** for instant recovery, result overrides, time jumps, full reset
-
-### Demo Sports Scope
-- **Basketball** — primary, actively demonstrated
-- **Football, Soccer, Tennis** — visible in UI, switching must change ratings/challenges/leaderboards
-- Rating engine is **shared across sports** with per-sport configuration parameters
-
----
-
-## 🏗️ Architecture
-
-### Layer Diagram
 ```
-┌──────────────────────────────────────────────────────────────┐
-│                        UI LAYER                              │
-│  SwiftUI Views — purely declarative, zero logic              │
-│  PlayerDashboardView, MatchView, LeaderboardView,            │
-│  ChallengeView, PresenterControlPanel (hidden)               │
-└──────────────────┬───────────────────────────────────────────┘
+┌────────────────────────────────────────────────────┐
+│              UI LAYER (SwiftUI)                    │
+│  ContentView — demo interface                      │
+│  - Player list with ratings                        │
+│  - "Simulate Match" button                         │
+│  - Match log (last 5 results)                      │
+│  - Sport picker (pending)                          │
+│  - Player identity selector (pending)              │
+└──────────────────┬─────────────────────────────────┘
                    │ observes via @Observable
-┌──────────────────▼───────────────────────────────────────────┐
-│                   VIEWMODEL LAYER                            │
-│  @Observable classes — state + intent only                   │
-│  DashboardViewModel, MatchViewModel,                         │
-│  LeaderboardViewModel, SessionViewModel                      │
-└──────────────────┬───────────────────────────────────────────┘
-                   │ calls via protocol
-┌──────────────────▼───────────────────────────────────────────┐
-│                SERVICE LAYER (protocols)                     │
-│  MatchServiceProtocol                                        │
-│  RatingServiceProtocol                                       │
-│  PlayerServiceProtocol                                       │
-│  LeaderboardServiceProtocol                                  │
-│  CommitmentServiceProtocol                                   │
-└──────────────────┬───────────────────────────────────────────┘
-                   │ implemented by (demo only)
-┌──────────────────▼───────────────────────────────────────────┐
-│             DEMO SERVICE IMPLEMENTATIONS                     │
-│  DemoMatchService, DemoRatingService, etc.                   │
-│  Thin wrappers — delegate all logic to DemoAuthority         │
-│  Replaced by RealMatchService etc. in production             │
-└──────────────────┬───────────────────────────────────────────┘
-                   │ calls
-┌──────────────────▼───────────────────────────────────────────┐
-│              DemoAuthority (Swift actor — singleton)         │
-│                                                              │
-│  Single source of truth — lives in process memory           │
-│  Shared by both simulator instances automatically            │
-│  Zero configuration, zero entitlements, zero disk I/O        │
-│  Serial execution — actor guarantees no race conditions      │
-│  Publishes state via AsyncStream to all registered clients   │
-│  PresenterOverrideStore lives here                           │
-│                                                              │
-│  ┌──────────────────────────────────────────────────────┐   │
-│  │              DOMAIN ENGINES (pure Swift)             │   │
-│  │  ELORatingEngine — pure functions, no side effects   │   │
-│  │  CommitmentEngine — penalty + strike logic           │   │
-│  │  ProgressionEngine — rank tiers, unlocks             │   │
-│  │  MatchmakingEngine — fairness scoring                │   │
-│  │  TrustEngine — safety flags (stubbed for demo)       │   │
-│  └──────────────────────────────────────────────────────┘   │
-│                                                              │
-│  ┌──────────────────────────────────────────────────────┐   │
-│  │              POLICY LAYER (constants)                │   │
-│  │  SportConfig — K-factor, rating floor per sport      │   │
-│  │  PenaltyPolicy — strike rules, timeouts              │   │
-│  │  ProgressionPolicy — rank thresholds, unlocks        │   │
-│  │  MatchRules — score reporting, dispute resolution    │   │
-│  └──────────────────────────────────────────────────────┘   │
-│                                                              │
-│  In-memory state:                                            │
-│  [PlayerRecord], [MatchRecord], [ChallengeRecord]            │
-│  Seeded deterministically at launch                          │
-│  Reset instantly via PresenterOverride                       │
-└──────────────────────────────────────────────────────────────┘
+┌──────────────────▼─────────────────────────────────┐
+│           VIEWMODEL LAYER                          │
+│  DemoViewModel (@Observable, @MainActor)           │
+│  - Subscribes to DemoAuthority via AsyncStream     │
+│  - Projects GameState → UI-friendly DemoPlayer     │
+│  - simulateMatch() — triggers random match         │
+│  - matchLog — last 5 match results                 │
+└──────────────────┬─────────────────────────────────┘
+                   │ calls directly (no service layer)
+┌──────────────────▼─────────────────────────────────┐
+│      DemoAuthority (Swift actor — singleton)       │
+│                                                    │
+│  In-memory state:                                  │
+│  - players: [Player]                               │
+│  - matches: [MatchResult]                          │
+│                                                    │
+│  Functions:                                        │
+│  - seedPlayers() — creates Aarush + Manav          │
+│  - subscribe() → AsyncStream<GameState>            │
+│  - applyMatchResult(...) — updates ratings         │
+│  - publish() — notifies all subscribers            │
+│                                                    │
+│  Calls:                                            │
+│  - ELORatingEngine.calculateDelta(...)             │
+└──────────────────┬─────────────────────────────────┘
+                   │ uses
+┌──────────────────▼─────────────────────────────────┐
+│         DOMAIN ENGINES (pure functions)            │
+│  ELORatingEngine — ELO math, K-factor schedule     │
+│  CommitmentEngine — strike + cooldown logic        │
+│  (ProgressionEngine — NOT IMPLEMENTED YET)         │
+│  (MatchmakingEngine — NOT IMPLEMENTED, NOT NEEDED) │
+│  (TrustEngine — NOT IMPLEMENTED, NOT NEEDED)       │
+└──────────────────┬─────────────────────────────────┘
+                   │ reads from
+┌──────────────────▼─────────────────────────────────┐
+│          POLICY LAYER (constants)                  │
+│  SportConfig — K-factor, initial rating, ELO scale │
+│  PenaltyPolicy — strike thresholds, cooldowns      │
+│  ProgressionPolicy — rank tier thresholds          │
+│  MatchRules — fairness scale factor                │
+└────────────────────────────────────────────────────┘
 ```
 
-### How DemoAuthority Works (Plain English)
-1. App launches on both simulators — both attach to the same `DemoAuthority.shared` actor in memory
-2. Both register as clients and receive an `AsyncStream<GameState>` — a live feed of state updates
-3. Simulator A (Aarush) takes an action — e.g. sends a challenge
-4. `DemoMatchService` calls `DemoAuthority.shared.sendChallenge(...)`
-5. Actor processes the command serially — applies domain rules — updates in-memory state
-6. Actor pushes new `GameState` snapshot to all registered `AsyncStream` subscribers
-7. Both ViewModels receive the update on their async streams
-8. Both UIs update simultaneously — no disk, no network, no notification, no configuration
+### How It Works (Plain English)
+1. App launches → `DemoViewModel.startListening()` runs in `.task` modifier
+2. ViewModel subscribes to `DemoAuthority.shared.subscribe()`
+3. DemoAuthority seeds players (Aarush + Manav) if empty
+4. DemoAuthority yields initial `GameState` via `AsyncStream`
+5. ViewModel receives `GameState`, projects it to `[DemoPlayer]`
+6. UI updates automatically via `@Observable`
+7. User taps "Simulate Match" → random match is simulated
+8. `ELORatingEngine.calculateDelta(...)` computes rating changes
+9. `DemoAuthority.applyMatchResult(...)` updates in-memory state
+10. DemoAuthority publishes new `GameState` to all subscribers
+11. Both simulators (if running) receive update simultaneously
+12. Both UIs update live — no disk, no network, no configuration
 
-### Core Principles
-- **MVVM** — Views know nothing about data sources
-- **Protocol-based services** — demo implementations and real backend are interchangeable
-- **DemoAuthority singleton actor** — one authority, zero configuration, zero environment risk
-- **In-memory only** — no disk I/O, no entitlements, no App Groups, no Darwin notifications
-- **AsyncStream** — Swift-native push delivery from actor to all clients
-- **Rules engine is pure Swift** — no UI dependencies, no side effects, fully testable
-- **Deterministic** — actor serialises all mutations, seeded state is reproducible
-- **`UserSession`** — each simulator knows which player it is via UserDefaults
-- **Transport layer is a protocol** — DemoAuthority is one implementation, real backend is another
-
-### Architecture Decisions (Locked)
-- Swift Concurrency (async/await + actors) — NO Combine, NO DispatchQueue
-- In-memory state only for demo — no SwiftData writes during demo flow
-- SwiftUI for all UI
-- Codable structs for all state snapshots — identical shape to real API responses
-- AsyncStream for state delivery — zero configuration, Swift-native
-- UserDefaults for active player selection only
-- No hardcoded UI hacks that block backend replacement
-- `SportsHubCore` — shared framework target containing DemoAuthority + domain engines
-- `SportsHub` — iOS app target, imports SportsHubCore
-
-### Xcode Targets
-| Target | Type | Purpose |
-|---|---|---|
-| `SportsHub` | iOS App | Runs on both simulators |
-| `SportsHubCore` | Swift Framework | DemoAuthority + domain engines + service protocols |
-| `SportsHubTests` | Test Bundle | Unit tests for all engines |
-
-### Backend Replacement Path
-When real backend is ready, only the Demo Service implementations are replaced:
-
-| Now (Demo) | Future (Production) |
-|---|---|
-| `DemoMatchService` → `DemoAuthority` | `RemoteMatchService` → REST/WebSocket API |
-| `DemoRatingService` → `DemoAuthority` | `RemoteRatingService` → REST API |
-| In-memory `GameState` | Server-authoritative `GameState` via API responses |
-| `AsyncStream` from actor | `AsyncStream` from URLSession WebSocket |
-
-ViewModels, Views, domain engines — **zero changes required.**
-
-### Why In-Memory Singleton Is Correct for This Demo
-| Risk | App Group + Darwin | In-Memory DemoAuthority |
-|---|---|---|
-| Entitlement configuration | ❌ Must be correct | ✅ None required |
-| Simulator container behaviour | ❌ Can differ from device | ✅ Pure Swift — identical everywhere |
-| Signing configuration | ❌ Can break between machines | ✅ Not involved |
-| Setup steps before demo | ❌ Exists | ✅ Zero |
-| Communication failure | ❌ Possible | ✅ Impossible — same memory |
-| Race conditions | ❌ Possible across processes | ✅ Actor eliminates them |
-| Reset speed | ❌ Must clear disk + re-notify | ✅ One actor call — instant |
-| Backend replacement | ✅ Swap service | ✅ Swap service |
+### Why In-Memory Singleton Works
+- **Zero configuration** — no entitlements, no App Groups, no signing hassles
+- **Guaranteed delivery** — same memory space, actor serializes mutations
+- **Instant reset** — one actor call clears everything
+- **Perfect for demo** — both simulators share one process on macOS
+- **Backend-ready** — service protocol layer can wrap this later
 
 ---
 
-## 🔭 Long-Term Production Vision (NOT current task)
+## 📦 Current Implementation Status
+
+### ✅ IMPLEMENTED — SportsHubCore Framework
+
+| Component | File | Description |
+|-----------|------|-------------|
+| **Models** | | |
+| `Player` | `SportsHubCoreModelsPlayer.swift` | Player with per-sport ratings + match counts |
+| `Sport` | `SportsHubCoreModelsSport.swift` | Enum: basketball, football, soccer, tennis |
+| `MatchResult` | `SportsHubCoreModelsMatchResult.swift` | Winner/loser/sport/date |
+| `CommitmentRecord` | `SportsHubCoreModelsCommitmentRecord.swift` | Strike tracking per player per sport |
+| `ProgressionRecord` | `SportsHubCoreModelsProgressionRecord.swift` | Rank tier + rating (model exists, engine not implemented) |
+| `RankTier` | Same file | Enum: rookie, bronze, silver, gold, platinum, elite |
+| `PenaltyState` | Same as CommitmentRecord | Enum: clear, warned, cooldown |
+| **Engines** | | |
+| `ELORatingEngine` | `SportsHubCoreEnginesELORatingEngine.swift` | ✅ Pure functions: expectedScore, calculateDelta |
+| `CommitmentEngine` | `SportsHubCoreEnginesCommitmentEngine.swift` | ✅ Pure functions: penaltyState, applyStrike |
+| **Policies** | | |
+| `SportConfig` | `SportsHubCorePolicySportConfig.swift` | ✅ K-factor schedule (40→24→16), initial rating (1000), ELO scale (400) |
+| `PenaltyPolicy` | `SportsHubCorePolicyPenaltyPolicy.swift` | ✅ Strike thresholds (1/2/3), cooldown durations (24h/72h) |
+| `ProgressionPolicy` | `SportsHubCorePolicyProgressionPolicy.swift` | ✅ Rank tier thresholds (900, 1100, 1300, 1500, 1700) |
+| `MatchRules` | `SportsHubCorePolicyMatchRules.swift` | ✅ Fairness scale factor (400) |
+
+### ✅ IMPLEMENTED — SportsHub App Target
+
+| Component | File | Description |
+|-----------|------|-------------|
+| `SportsHubApp` | `SportsHubApp.swift` | App entry point, launches ContentView |
+| `DemoAuthority` | `DemoAuthority.swift` | ✅ Singleton actor, in-memory state, AsyncStream pub/sub, seedPlayers(), applyMatchResult() |
+| `DemoViewModel` | `DemoViewModel.swift` | ✅ @Observable, subscribes to DemoAuthority, projects GameState → DemoPlayer, simulateMatch() |
+| `ContentView` | `ContentView.swift` | ✅ List with players, ratings, "Simulate Match" button, match log (last 5) |
+| `DemoPlayer` | DemoViewModel.swift | ✅ UI projection struct: id, name, rating, matchCount |
+| `MatchLogEntry` | DemoViewModel.swift | ✅ UI projection struct for match log |
+
+### ⬜ NOT IMPLEMENTED (Intentionally Deferred for Demo)
+
+| Component | Reason |
+|-----------|--------|
+| `ProgressionEngine` | Not needed yet — rank label will be computed inline in ViewModel |
+| `MatchmakingEngine` | Not needed for demo — no matchmaking UI |
+| `TrustEngine` | Not needed for demo — stubbed for future |
+| Service protocols | Not needed for demo — ViewModel calls DemoAuthority directly |
+| Demo service implementations | Not needed for demo — no protocol layer |
+| Presenter control panel | Not needed for minimal demo |
+| Challenge system | Not needed for minimal demo — only "Simulate Match" |
+| Unit tests | Deferred — focus is Friday demo, not TDD |
+| Persistence | Not needed — in-memory only |
+| UserSession | Not needed — identity will be selected in UI, stored in ViewModel only |
+
+---
+
+## 🎯 Friday Demo Scope (LOCKED)
+
+### What the Demo MUST Show
+1. ✅ Two players (Aarush + Manav) with separate ratings per sport
+2. ✅ "Simulate Match" button triggers rating updates
+3. ✅ Live match log shows last 5 results
+4. 🔜 Player identity selector ("I am Aarush" / "I am Manav")
+5. 🔜 Sport picker (Basketball / Football / Soccer / Tennis)
+6. 🔜 Rank labels displayed next to ratings (Rookie / Amateur / Pro / Elite)
+7. 🔜 Ratings update when sport is switched
+8. 🔜 Both simulators see updates simultaneously
+
+### Demo Rank Tiers (Simplified for Friday)
+| Tier | Rating Range |
+|------|--------------|
+| Rookie | < 1000 |
+| Amateur | 1000 – 1199 |
+| Pro | 1200 – 1399 |
+| Elite | 1400+ |
+
+*(Different from `ProgressionPolicy` — intentional simplification for demo clarity)*
+
+### Known Demo Shortcuts
+- No persistence — state resets on app relaunch
+- No challenge flow — only random simulation
+- No presenter control panel — manual relaunch to reset
+- Rank tiers computed inline — no `ProgressionEngine` call
+- Player identity stored in ViewModel only — no UserDefaults
+- Match log only shows winner's delta — not both players' changes
+
+---
+
+## 🔧 Xcode Targets (Confirmed)
+
+| Target | Type | Files |
+|--------|------|-------|
+| `SportsHub` | iOS App | `SportsHubApp.swift`, `ContentView.swift`, `DemoViewModel.swift`, `DemoAuthority.swift` |
+| `SportsHubCore` | Swift Framework | All models, engines, policies (imported by SportsHub) |
+| `SportsHubTests` | Test Bundle | (Not yet implemented) |
+
+---
+
+## 💬 Notes for AI Assistant
+
+### Workflow Rules (NON-NEGOTIABLE)
+1. **READ before writing** — always check current file state
+2. **SHOW before doing** — propose changes, wait for confirmation
+3. **One step at a time** — no multi-step edits without approval
+4. **Modify, don't create** — prefer editing existing files
+5. **Minimal code** — smallest change that works
+6. **No redesigns** — architecture is frozen for Friday demo
+7. **Ask if uncertain** — better to check than break
+
+### Boundaries (What You CANNOT Do)
+- ❌ Create new architectural layers
+- ❌ Add persistence (SwiftData, UserDefaults for state)
+- ❌ Add networking
+- ❌ Add Combine or DispatchQueue
+- ❌ Refactor engines
+- ❌ Change DemoAuthority concurrency model
+- ❌ Rename targets
+- ❌ Reorganize folders
+- ❌ Create duplicate files
+- ❌ Delete files
+
+### What You MAY Do
+- ✅ Read existing files
+- ✅ Propose small incremental changes
+- ✅ Modify DemoViewModel and ContentView for demo features
+- ✅ Add computed properties for rank labels
+- ✅ Update AI_CONTEXT.md to reflect current state
+
+### Developer Context
+- Non-technical — explain in plain English
+- Friday demo deadline — prioritize clarity over completeness
+- Two simulators on one Mac — architecture supports this already
+
+### Technical Constraints
+- Swift 6, Swift Concurrency only (no Combine, no DispatchQueue)
+- SwiftUI for all UI
+- `@Observable` for ViewModels (not `ObservableObject`)
+- Pure functions for all engines (no side effects)
+- Actor serialization for DemoAuthority (no race conditions)
+
+---
+
+## 🔧 Developer Environment (Confirmed)
+- **Xcode 26.3 (17C519)** — RC release, includes Swift 6.2.3
+- **SDKs:** iOS 26.2, iPadOS 26.2, tvOS 26.2, macOS 26.2, visionOS 26.2
+- **On-device debugging:** iOS 15+, tvOS 15+, watchOS 8+, visionOS
+- **Requires:** macOS Sequoia 15.6 or later
+- **Claude Agent** (Anthropic) — enabled, active agent
+- **OpenAI Codex** — also available
+- **MCP (Model Context Protocol)** — open standard
+
+### ⚠️ Known Issues in Xcode 26.3 RC
+| Issue | Impact | Workaround |
+|-------|--------|------------|
+| Denying Claude access to project in Desktop/Downloads/Documents is permanent | HIGH | Move project outside Desktop/Downloads/Documents |
+| Pasting files into coding assistant doesn't reliably send contents | Medium | Move file to project, tell agent location |
+| "Generate fix for issue" may crash Xcode | Medium | Don't use that button — ask agent to fix |
+| Agent settings changes may not apply until Xcode relaunch | Low | Relaunch Xcode after settings changes |
+
+---
+
+## 📋 Confirmed API Documentation
+
+### SwiftUI Observation Framework (iOS 17.0+)
+- `@Observable` macro — attach to class to make it observable
+- `Observable` protocol — type emits notifications when data changes
+- `@ObservationIgnored` — disables tracking on specific property
+- SwiftUI integration: `@Observable` works with `@State`, `@Environment`, `@Bindable`
+- Pattern:
+```swift
+@Observable
+class MyViewModel {
+    var someState: String = ""
+    @ObservationIgnored private var internalOnly: String = ""
+}
+```
+
+### SwiftUI NavigationStack (iOS 16.0+)
+- `NavigationStack` — creates stack managing navigation state
+- `init(root:)` — stack manages its own state
+- `init(path:root:)` — externally controlled state via `Binding`
+- `NavigationLink(value:label:)` — pushes views by value type
+- `.navigationDestination(for:destination:)` — associates data type with destination
+
+### Swift Concurrency
+- `actor` — reference type with serial execution
+- `async`/`await` — asynchronous function calls
+- `AsyncStream` — stream of values delivered asynchronously
+- `Task` — unit of asynchronous work
+- `@MainActor` — ensures code runs on main thread
+
+---
+
+## 📅 Session Log
+
+| Date | Summary |
+|---|---|
+| 2026-02-17 | Project created with SwiftData template. Product vision received. Demo scope defined. Full engineering validation completed (6 phases). Architecture iterated through 3 versions — shared SwiftData → WebSocket → App Group+Darwin → final: in-memory DemoAuthority actor. All decisions documented. GitHub connected (royaltonitservices). AI_CONTEXT.md is single source of truth. File structure not yet proposed. No code written yet. |
+| 2026-02-19 | Implementation phase began. Built SportsHubCore framework: all models (Player, Sport, MatchResult, CommitmentRecord, ProgressionRecord), ELORatingEngine (pure functions), CommitmentEngine (pure functions), all policy structs (SportConfig, PenaltyPolicy, ProgressionPolicy, MatchRules). Built SportsHub app: DemoAuthority actor (singleton, AsyncStream pub/sub, seedPlayers, applyMatchResult), DemoViewModel (@Observable, subscribes to authority, projects state), ContentView (player list, Simulate Match button, match log). Demo works but lacks: player identity selector, sport picker, rank labels. Friday demo scope frozen: minimal UI changes only, no new architecture, no persistence, no challenge system, no tests. AI_CONTEXT.md updated to reflect current state. Next: add player identity + sport picker + rank labels to existing ContentView and DemoViewModel. |
+
+---
+
+## 🔭 Long-Term Production Vision (NOT Current Task)
 
 The real SportsHub platform will eventually include:
 - Real user accounts with authentication
@@ -195,7 +342,9 @@ The real SportsHub platform will eventually include:
 - App Store distribution
 - Tournament brackets and ranked seasons
 
-**None of this is being built now.** The demo proves the product concept. The architecture is designed so production features slot in without redesigning anything above the service layer.
+**None of this is being built now.** The demo proves the product concept.
+
+---
 
 ## ⚠️ Demo vs Production — Explicit Differences
 
@@ -204,250 +353,13 @@ The real SportsHub platform will eventually include:
 | Transport | `DemoAuthority` in-memory actor | Remote REST + WebSocket API |
 | Accounts | Hardcoded Aarush + Manav | Real auth (Sign in with Apple) |
 | Persistence | In-memory only | Server database + SwiftData cache |
-| Matchmaking | Scripted/deterministic | Real queue algorithm |
-| Arrival | Timer only | GPS verification |
+| Matchmaking | Random simulation | Real queue algorithm |
+| Arrival | N/A | GPS verification |
 | Notifications | None | Push notifications (APNs) |
 | Moderation | Stubbed | Real moderation backend |
 | Distribution | Simulator only | App Store |
 
-## 🔁 Transport Replacement Plan
-
-`DemoAuthority` is a **temporary adapter** behind the service protocol layer.
-
-To replace it with a real backend:
-1. Implement `RemoteMatchService: MatchServiceProtocol`
-2. Implement `RemoteRatingService: RatingServiceProtocol`
-3. Implement `RemotePlayerService: PlayerServiceProtocol`
-4. Implement `RemoteLeaderboardService: LeaderboardServiceProtocol`
-5. Implement `RemoteCommitmentService: CommitmentServiceProtocol`
-6. Inject real implementations at app startup instead of demo implementations
-
-**Nothing above the service layer changes.** ViewModels, Views, and domain engines are untouched.
-
-
-
-When unsure, prioritize in this order:
-1. Demo reliability
-2. Product rule accuracy
-3. Code clarity
-4. UI polish
-5. Feature completeness
-
 ---
 
-## 🔨 Build Sequence
+*This file is the single source of truth. Always update after meaningful work. Never create duplicate context files.*
 
-| Phase | Deliverable | Status |
-|-------|-------------|--------|
-| 1 | Domain models + Rules Engine (ELO, penalties, progression) | 🔜 Not started |
-| 2 | Service protocols (contracts before implementation) | 🔜 Not started |
-| 3 | Simulation engine (demo data behind service protocol) | 🔜 Not started |
-| 4 | SwiftData repositories | 🔜 Not started |
-| 5 | ViewModels | 🔜 Not started |
-| 6 | Core SwiftUI views | 🔜 Not started |
-| 7 | Presenter Control Panel (hidden demo recovery) | 🔜 Not started |
-| 8 | Polish & HIG compliance | 🔜 Not started |
-
----
-
-## 📦 Key Files & Their Roles
-
-| File | Role |
-|------|------|
-| `SportsHubApp.swift` | App entry point. ModelContainer wired up for SwiftData. |
-| `AI_CONTEXT.md` | Living project brief. Updated automatically each session. |
-| `SportsHubTests.swift` | Unit test target using Swift Testing (`@Test` macros). |
-| `SportsHubUITests.swift` | UI test target. |
-| `SportsHubUITestsLaunchTests.swift` | Launch UI tests. |
-
-> More files will be added as phases begin. This table is updated automatically.
-
----
-
-## 🏃 Domain / Feature Areas
-
-| Area | Description |
-|------|-------------|
-| **ELO Rating Engine** | Shared engine, per-sport config (Basketball, Football, Soccer, Tennis) |
-| **Match Lifecycle** | Challenge → Accept → Play → Report → Resolve |
-| **Commitment System** | Attendance tracking, penalty rules, no-show enforcement |
-| **Progression System** | Rank tiers, unlocks, tournament access |
-| **Leaderboards** | Per-sport, filterable by region/skill tier |
-| **Trust & Safety** | Reporting, moderation hooks (stubbed for demo) |
-| **Presenter Control Panel** | Hidden UI for demo override, time travel, full reset |
-
----
-
-## 🧪 Testing Strategy
-
-- Rules engine → **100% unit tested with Swift Testing BEFORE implementation** (TDD)
-- ViewModels → tested with mock service implementations
-- UI → UI tests for critical demo paths (login, match flow, leaderboard)
-- No test is skipped because "it's a demo" — rules must be mathematically correct
-
----
-
-## 🐛 Known Issues
-*(None yet)*
-
----
-
-### Xcode 26.3 (17C519) — What's New (Ground Truth)
-- **Coding Intelligence** — natural language coding assistant, Coding Tools for inline fixes/docs/changes
-  - Requires Mac with Apple silicon + macOS Tahoe
-  - Supports Claude (Anthropic) and OpenAI models
-- **`#Playground` macro** — preview non-UI Swift code inline (NEW in Xcode 26)
-- **Redesigned Tab experience** — easier file navigation
-- **Localization catalog enhancements**
-- **Instruments — NEW tools in Xcode 26:**
-  - `Processor Trace` — hardware-assisted CPU tracing (Apple silicon)
-  - `CPU Counter` — hardware-assisted CPU performance counters
-  - **SwiftUI Instrument** — visualizes how data changes affect SwiftUI view updates ⬅️ directly useful for SportsHub
-- **XCUIAutomation** — record, run, maintain UI tests; replay in multiple locales/devices/conditions
-- **Icon Composer** — creates layered Liquid Glass icons from single design for iPhone/iPad/Mac/Watch
-  - Multi-layer icon format with Liquid Glass properties
-  - Dynamic lighting preview, appearance mode annotation
-  - Exports flattened version for marketing
-- **macOS Tahoe** — required OS for Xcode 26 intelligence features
-
-## 🔧 Developer Environment (Confirmed)
-- **Xcode 26.3 (17C519)** — RC release, includes Swift 6.2.3
-- **SDKs:** iOS 26.2, iPadOS 26.2, tvOS 26.2, macOS 26.2, visionOS 26.2
-- **On-device debugging:** iOS 15+, tvOS 15+, watchOS 8+, visionOS
-- **Requires:** macOS Sequoia 15.6 or later
-- **Claude Agent** (Anthropic) — enabled, this IS the active agent for this session
-- **OpenAI Codex** — also available
-- **MCP (Model Context Protocol)** — open standard, any compatible agent can connect
-
-### ⚠️ Known Issues in Xcode 26.3 RC — Affects Our Workflow
-| Issue | Impact on SportsHub | Workaround |
-|---|---|---|
-| Denying Claude access to project in Desktop/Downloads/Documents is **permanent** — no retry | **HIGH** — if project is on Desktop, move it now | Move project outside Desktop/Downloads/Documents |
-| Pasting files into coding assistant doesn't reliably send contents | Medium — affects doc pasting | Move file to project directory, tell agent its location |
-| "Allow agents to use integrated internet access tools" only applies to Codex, **not Claude** | Low — we don't need internet | Manually allow each web command for Claude if needed |
-| `#Preview` / `#Playground` may fail after "Run snippet" tool | Low | Build active scheme to clear error |
-| "Generate fix for issue" may crash Xcode | Medium | Don't use that specific button — ask me to fix instead |
-| Agent settings changes may not apply until Xcode relaunch | Low | Relaunch Xcode after changing agent settings |
-
-## 💬 Notes for AI Assistant
-- Developer is non-technical — explain decisions in plain English alongside code
-- ALWAYS update this file automatically after any meaningful session work
-- ALWAYS use `str_replace` for edits — never rewrite whole files unless asked
-- NEVER create duplicate files — check before creating anything
-- NEVER delete files — only the developer deletes files
-- Xcode version is **26.3 (17C519)** — treat as authoritative
-- Use Swift Testing (`@Test`, `#expect`, `#require`) — not XCTest
-- Prefer `@Observable` over `ObservableObject`
-- No Combine, no DispatchQueue — Swift Concurrency only
-- This file (`AI_CONTEXT.md`) is the **single source of truth** — no other context files should exist
-
-## 📋 Confirmed API Documentation (Pasted by Developer — Treat as Ground Truth)
-
-### SwiftData (iOS 17.0+ / confirmed current as of 2026)
-- `@Model` macro — converts Swift class into SwiftData managed model
-- `@Attribute` macro — customises property behaviour (options, originalName, hashModifier)
-- `@Relationship` macro — defines relationships with deleteRule, min/max counts, inverse
-- `@Transient` macro — excludes property from persistence
-- `@Unique` macro — enforces uniqueness constraints on key paths
-- `@Index` macro — creates binary or R-tree indices
-- `@Query` macro — fetches model instances in SwiftUI views, auto-updates view on changes
-- `ModelContainer` — manages schema and storage configuration
-- `ModelContext` — insert, update, delete, save models
-- `FetchDescriptor` — criteria + sort order for fetches
-- `modelContext` environment value — access context in any SwiftUI view
-- `.modelContainer()` / `.modelContext()` view modifiers
-- `DataStore` protocol — custom storage backend (key for our demo → real backend swap)
-- `DefaultStore` — Core Data backed default store
-- History/audit trail APIs available (`HistoryDescriptor`, `HistoryTransaction`, etc.)
-### NavigationStack (iOS 16.0+ / confirmed current as of 2026)
-- `NavigationStack` — `@MainActor @preconcurrency struct NavigationStack<Data, Root> where Root: View`
-- `init(root:)` — creates stack managing its own navigation state
-- `init(path:root:)` — creates stack with externally controlled navigation state via `Binding`
-- `NavigationLink(value:label:)` — pushes views by value type
-- `.navigationDestination(for:destination:)` — associates a data type with a destination view
-- `.navigationDestination(isPresented:destination:)` — binding-based push
-- `.navigationDestination(item:destination:)` — optional binding push
-- `NavigationPath` — type-erased path for stacks that navigate to multiple data types
-- Pattern: `@State private var path: [MyType] = []` then `NavigationStack(path: $path)`
-### Observation Framework (iOS 17.0+ / confirmed current as of 2026)
-- `@Observable` macro — attach to a class to make it observable (declares + implements `Observable` protocol at compile time)
-- `Observable` protocol — type emits notifications when underlying data changes
-- `@ObservationIgnored` — disables observation tracking on a specific property
-- `@ObservationTracked` — synthesizes accessors for a property (explicit, usually automatic)
-- `ObservationRegistrar` — provides storage for tracking (used internally, rarely directly)
-- `withObservationTracking(_:onChange:)` — tracks property access in apply closure, fires onChange when those specific properties change
-- `Observations` — async sequence of transactional changes to `@Observable` types
-- **Key rule:** Only properties accessed inside the tracking closure are observed — not all properties
-- **SwiftUI integration:** `@Observable` classes work directly with `@State`, `@Environment`, and `@Bindable` — no need for `@StateObject` or `@ObservedObject`
-- **Pattern for ViewModels:**
-```swift
-@Observable
-class MyViewModel {
-    var someState: String = ""
-    @ObservationIgnored private var internalOnly: String = ""
-}
-```
-### SwiftUI Updates — iOS 26 / June 2025 (Xcode 26 — Ground Truth)
-
-#### Liquid Glass & Visual Design (NEW in iOS 26)
-- `glassEffect(_:in:)` — apply Liquid Glass to any view
-- `.buttonStyle(.glass)` — Liquid Glass on `Button`
-- `ToolbarSpacer` — visual break between Liquid Glass toolbar items
-- `scrollEdgeEffectStyle(_:for:)` — scroll edge effect style
-- `backgroundExtensionEffect()` — duplicates/mirrors/blurs views at safe area edges
-- `tabBarMinimizeBehavior(_:)` — tab bar minimization behaviour
-
-#### Tab View (NEW in iOS 26)
-- `TabViewBottomAccessoryPlacement` — adjust accessory content by tab position
-- Search tab role — search field replaces tab bar
-
-#### WebView (NEW in iOS 26)
-- `WebView` + `WebPage` — full browser control in SwiftUI
-
-#### Drag and Drop (NEW in iOS 26)
-- `draggable(containerItemID:containerNamespace:)` — drag multiple items
-- `dragContainer(for:itemID:in:_:)` — container for draggable views
-
-#### Animation (NEW in iOS 26)
-- `Animatable()` macro — synthesizes custom animatable data
-- `Slider` — tick marks now supported, appear automatically with `step`
-- `windowResizeAnchor(_:)` — window anchor on resize
-
-#### Text & Editing (NEW in iOS 26)
-- `TextEditor` now supports `AttributedString` directly
-- `AttributedTextSelection` — selection handling with attributed text
-- `AttributedTextFormattingDefinition` — context-specific text styling rules
-- `FindContext` — find navigator for text editing views
-
-#### Accessibility (NEW in iOS 26)
-- `AssistiveAccess` scene type for iOS/iPadOS
-
-#### HDR (NEW in iOS 26)
-- `Color.ResolvedHDR` — RGBA + HDR headroom
-
-#### UIKit/AppKit Integration (NEW in iOS 26)
-- `UIHostingSceneDelegate` — SwiftUI scenes hosted in UIKit
-- `NSHostingSceneRepresentation` — SwiftUI scenes in AppKit
-- `NSGestureRecognizerRepresentable` — AppKit gesture recognizers in SwiftUI
-
-#### Also confirmed available (from June 2024 section)
-- `NavigationStack` path-based navigation ✅ (already documented above)
-- `TabView` with `sidebarAdaptable`, `tabBarOnly`, `grouped` styles
-- `TabSection` — nested tabs
-- `tabViewCustomization(_:)` — user-customizable tab views
-- `presentationSizing(_:)` — sheet sizing with `.form`, `.page`, or custom
-- `scrollPosition(_:anchor:)` — programmatic scroll to view/offset/edge
-- `MeshGradient` — mesh gradients with grid of points and colors
-- `Entry()` macro — for `EnvironmentValues`, `Transaction`, `ContainerValues`
-- `Previewable()` macro — dynamic properties inline in previews
-- `PreviewModifier` — inject shared dependencies into previews
-
-⚠️ **iOS 26 NOTE:** Liquid Glass APIs (`glassEffect`, `.buttonStyle(.glass)`, `ToolbarSpacer`) are NEW and only available on iOS 26+. Do not use without availability checks for older targets.
-
----
-
-## 📅 Session Log
-
-| Date | Summary |
-|---|---|
-| 2026-02-17 | Project created with SwiftData template. Product vision received. Demo scope defined. Full engineering validation completed (6 phases). Architecture iterated through 3 versions — shared SwiftData → WebSocket → App Group+Darwin → final: in-memory DemoAuthority actor. All decisions documented. GitHub connected (royaltonitservices). AI_CONTEXT.md is single source of truth. File structure not yet proposed. No code written yet. |

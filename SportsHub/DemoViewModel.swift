@@ -21,6 +21,15 @@ struct DemoPlayer: Identifiable {
     var name: String
     var rating: Double
     var matchCount: Int
+    
+    var rankLabel: String {
+        switch rating {
+        case ..<1000: return "Rookie"
+        case 1000..<1200: return "Amateur"
+        case 1200..<1400: return "Pro"
+        default: return "Elite"
+        }
+    }
 }
 
 // MARK: - Match Log Entry
@@ -41,14 +50,24 @@ final class DemoViewModel {
     private(set) var gameState: DemoAuthority.GameState = DemoAuthority.GameState()
 
     var matchLog: [MatchLogEntry] = []
+    
+    // MARK: - Player Identity (Demo Only)
+    
+    var currentPlayerID: UUID?
+    
+    var selectedSport: Sport = .basketball
+    
+    var currentPlayerName: String {
+        players.first(where: { $0.id == currentPlayerID })?.name ?? "Select Player"
+    }
 
     var players: [DemoPlayer] {
         gameState.players.map {
             DemoPlayer(
                 id: $0.id,
                 name: $0.name,
-                rating: $0.rating(for: .basketball),
-                matchCount: $0.matchCount(for: .basketball)
+                rating: $0.rating(for: selectedSport),
+                matchCount: $0.matchCount(for: selectedSport)
             )
         }
     }
@@ -83,10 +102,10 @@ final class DemoViewModel {
         let loser  = winner.id == current[first].id ? current[second] : current[first]
 
         let delta = ELORatingEngine.calculateDelta(
-            winnerRating: winner.rating(for: .basketball),
-            winnerMatchCount: winner.matchCount(for: .basketball),
-            loserRating: loser.rating(for: .basketball),
-            loserMatchCount: loser.matchCount(for: .basketball)
+            winnerRating: winner.rating(for: selectedSport),
+            winnerMatchCount: winner.matchCount(for: selectedSport),
+            loserRating: loser.rating(for: selectedSport),
+            loserMatchCount: loser.matchCount(for: selectedSport)
         )
 
         matchLog.insert(
@@ -106,7 +125,7 @@ final class DemoViewModel {
             await DemoAuthority.shared.applyMatchResult(
                 winnerID: winner.id,
                 loserID: loser.id,
-                sport: .basketball,
+                sport: selectedSport,
                 delta: delta
             )
         }
