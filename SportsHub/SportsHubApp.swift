@@ -10,6 +10,10 @@ import SwiftData
 
 @main
 struct SportsHubApp: App {
+    @StateObject private var sessionManager = SessionManager.shared
+    @AppStorage("isDarkMode") private var isDarkMode = true
+    @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
+    
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
             Item.self,
@@ -25,7 +29,24 @@ struct SportsHubApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            Group {
+                if !hasCompletedOnboarding {
+                    OnboardingView()
+                        .environmentObject(sessionManager)
+                } else if sessionManager.isAuthenticated {
+                    if sessionManager.isAdmin {
+                        AdminDashboardView()
+                            .environmentObject(sessionManager)
+                    } else {
+                        MainTabView()
+                            .environmentObject(sessionManager)
+                    }
+                } else {
+                    AuthenticationView()
+                        .environmentObject(sessionManager)
+                }
+            }
+            .preferredColorScheme(isDarkMode ? .dark : .light)
         }
         .modelContainer(sharedModelContainer)
     }

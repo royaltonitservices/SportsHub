@@ -6,6 +6,42 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		4E1969552F6C65AD000277D0 /* ResultSubmissionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E1969542F6C65AD000277D0 /* ResultSubmissionView.swift */; };
+		4E1969572F6C9309000277D0 /* DisputeDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E1969562F6C9309000277D0 /* DisputeDetailView.swift */; };
+		4E288EA92F6E335200387E29 /* TennisCourtPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E288EA82F6E335200387E29 /* TennisCourtPickerView.swift */; };
+		4EC0B81F2F5FBB0C001DC532 /* PremiumModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EC0B81E2F5FBB0C001DC532 /* PremiumModels.swift */; };
+		4EC0B8212F5FBB28001DC532 /* PremiumAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EC0B8202F5FBB28001DC532 /* PremiumAPIClient.swift */; };
+		4EC0B8232F5FBB85001DC532 /* AICoachFloatingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EC0B8222F5FBB85001DC532 /* AICoachFloatingView.swift */; };
+		4EC0B8252F5FBF42001DC532 /* GoalsSurveyView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EC0B8242F5FBF42001DC532 /* GoalsSurveyView.swift */; };
+		4EC0B8272F5FBF7C001DC532 /* SmartwatchSyncView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EC0B8262F5FBF7C001DC532 /* SmartwatchSyncView.swift */; };
+		4EC0B8292F5FC12E001DC532 /* TournamentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EC0B8282F5FC12E001DC532 /* TournamentView.swift */; };
+		4EC0B82B2F5FC1E5001DC532 /* PremiumSubscriptionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EC0B82A2F5FC1E5001DC532 /* PremiumSubscriptionView.swift */; };
+		4EC0B82F2F627732001DC532 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EC0B82E2F627732001DC532 /* OnboardingView.swift */; };
+		4EC0B8312F627902001DC532 /* GroupChatsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EC0B8302F627902001DC532 /* GroupChatsView.swift */; };
+		4EC0B8332F627932001DC532 /* HighlightsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EC0B8322F627932001DC532 /* HighlightsView.swift */; };
+		4EC0B8352F627969001DC532 /* WorkoutBuilderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EC0B8342F627968001DC532 /* WorkoutBuilderView.swift */; };
+		4EC0B8372F6279AA001DC532 /* PerformanceGraphsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EC0B8362F6279AA001DC532 /* PerformanceGraphsView.swift */; };
+		4EC0B8392F6469D5001DC532 /* TrainingSessionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EC0B8382F6469D5001DC532 /* TrainingSessionView.swift */; };
+		4EC0B83B2F646D2B001DC532 /* DrillLibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EC0B83A2F646D2B001DC532 /* DrillLibraryView.swift */; };
+		4EC0B83D2F646D45001DC532 /* DrillDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EC0B83C2F646D45001DC532 /* DrillDetailView.swift */; };
+		4EC0B83F2F6474F6001DC532 /* ChallengeCreationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EC0B83E2F6474F6001DC532 /* ChallengeCreationView.swift */; };
+		4EC0B8412F64755A001DC532 /* ProofSubmissionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EC0B8402F64755A001DC532 /* ProofSubmissionView.swift */; };
+		4EC0B8432F6475CE001DC532 /* TeamLobbyView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EC0B8422F6475CE001DC532 /* TeamLobbyView.swift */; };
+		4EC0B8452F64764A001DC532 /* DirectMessageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EC0B8442F64764A001DC532 /* DirectMessageView.swift */; };
+		4EC0B8472F6476EB001DC532 /* AICoachLevelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EC0B8462F6476EB001DC532 /* AICoachLevelView.swift */; };
+		4EC0B8492F647D11001DC532 /* BadgeSystemView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EC0B8482F647D11001DC532 /* BadgeSystemView.swift */; };
+		4EC0B84B2F64A5FD001DC532 /* DailyReadinessView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EC0B84A2F64A5FD001DC532 /* DailyReadinessView.swift */; };
+		4EC0B84D2F64AE89001DC532 /* SkillProgressionModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EC0B84C2F64AE89001DC532 /* SkillProgressionModels.swift */; };
+		4EC0B84F2F64AEBF001DC532 /* SkillProgressionEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EC0B84E2F64AEBF001DC532 /* SkillProgressionEngine.swift */; };
+		4EC0B8512F64AEF2001DC532 /* SkillProgressionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EC0B8502F64AEF2001DC532 /* SkillProgressionView.swift */; };
+		4EC0B8532F64C7F4001DC532 /* AICoachChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EC0B8522F64C7F4001DC532 /* AICoachChatView.swift */; };
+		4EC0B8552F650BC5001DC532 /* NotificationsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EC0B8542F650BC5001DC532 /* NotificationsView.swift */; };
+		4EC0B8572F650BE9001DC532 /* MessagesListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EC0B8562F650BE9001DC532 /* MessagesListView.swift */; };
+		4EC6943A2F6DB41C00518941 /* DisputeHistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EC694392F6DB41C00518941 /* DisputeHistoryView.swift */; };
+		4EC6943C2F6DB85300518941 /* FriendsListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EC6943B2F6DB85300518941 /* FriendsListView.swift */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		4E86B1B32F5AB3740027B3C2 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -24,9 +60,42 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		4E1969542F6C65AD000277D0 /* ResultSubmissionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResultSubmissionView.swift; sourceTree = "<group>"; };
+		4E1969562F6C9309000277D0 /* DisputeDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DisputeDetailView.swift; sourceTree = "<group>"; };
+		4E288EA82F6E335200387E29 /* TennisCourtPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TennisCourtPickerView.swift; sourceTree = "<group>"; };
 		4E86B1A12F5AB3730027B3C2 /* SportsHub.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SportsHub.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		4E86B1B22F5AB3740027B3C2 /* SportsHubTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SportsHubTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		4E86B1BC2F5AB3740027B3C2 /* SportsHubUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SportsHubUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		4EC0B81E2F5FBB0C001DC532 /* PremiumModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PremiumModels.swift; sourceTree = "<group>"; };
+		4EC0B8202F5FBB28001DC532 /* PremiumAPIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PremiumAPIClient.swift; sourceTree = "<group>"; };
+		4EC0B8222F5FBB85001DC532 /* AICoachFloatingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AICoachFloatingView.swift; sourceTree = "<group>"; };
+		4EC0B8242F5FBF42001DC532 /* GoalsSurveyView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoalsSurveyView.swift; sourceTree = "<group>"; };
+		4EC0B8262F5FBF7C001DC532 /* SmartwatchSyncView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartwatchSyncView.swift; sourceTree = "<group>"; };
+		4EC0B8282F5FC12E001DC532 /* TournamentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TournamentView.swift; sourceTree = "<group>"; };
+		4EC0B82A2F5FC1E5001DC532 /* PremiumSubscriptionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PremiumSubscriptionView.swift; sourceTree = "<group>"; };
+		4EC0B82E2F627732001DC532 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
+		4EC0B8302F627902001DC532 /* GroupChatsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupChatsView.swift; sourceTree = "<group>"; };
+		4EC0B8322F627932001DC532 /* HighlightsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HighlightsView.swift; sourceTree = "<group>"; };
+		4EC0B8342F627968001DC532 /* WorkoutBuilderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutBuilderView.swift; sourceTree = "<group>"; };
+		4EC0B8362F6279AA001DC532 /* PerformanceGraphsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerformanceGraphsView.swift; sourceTree = "<group>"; };
+		4EC0B8382F6469D5001DC532 /* TrainingSessionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrainingSessionView.swift; sourceTree = "<group>"; };
+		4EC0B83A2F646D2B001DC532 /* DrillLibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DrillLibraryView.swift; sourceTree = "<group>"; };
+		4EC0B83C2F646D45001DC532 /* DrillDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DrillDetailView.swift; sourceTree = "<group>"; };
+		4EC0B83E2F6474F6001DC532 /* ChallengeCreationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChallengeCreationView.swift; sourceTree = "<group>"; };
+		4EC0B8402F64755A001DC532 /* ProofSubmissionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProofSubmissionView.swift; sourceTree = "<group>"; };
+		4EC0B8422F6475CE001DC532 /* TeamLobbyView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TeamLobbyView.swift; sourceTree = "<group>"; };
+		4EC0B8442F64764A001DC532 /* DirectMessageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DirectMessageView.swift; sourceTree = "<group>"; };
+		4EC0B8462F6476EB001DC532 /* AICoachLevelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AICoachLevelView.swift; sourceTree = "<group>"; };
+		4EC0B8482F647D11001DC532 /* BadgeSystemView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BadgeSystemView.swift; sourceTree = "<group>"; };
+		4EC0B84A2F64A5FD001DC532 /* DailyReadinessView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DailyReadinessView.swift; sourceTree = "<group>"; };
+		4EC0B84C2F64AE89001DC532 /* SkillProgressionModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkillProgressionModels.swift; sourceTree = "<group>"; };
+		4EC0B84E2F64AEBF001DC532 /* SkillProgressionEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkillProgressionEngine.swift; sourceTree = "<group>"; };
+		4EC0B8502F64AEF2001DC532 /* SkillProgressionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkillProgressionView.swift; sourceTree = "<group>"; };
+		4EC0B8522F64C7F4001DC532 /* AICoachChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AICoachChatView.swift; sourceTree = "<group>"; };
+		4EC0B8542F650BC5001DC532 /* NotificationsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationsView.swift; sourceTree = "<group>"; };
+		4EC0B8562F650BE9001DC532 /* MessagesListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessagesListView.swift; sourceTree = "<group>"; };
+		4EC694392F6DB41C00518941 /* DisputeHistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DisputeHistoryView.swift; sourceTree = "<group>"; };
+		4EC6943B2F6DB85300518941 /* FriendsListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FriendsListView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -92,6 +161,39 @@
 				4E86B1B52F5AB3740027B3C2 /* SportsHubTests */,
 				4E86B1BF2F5AB3740027B3C2 /* SportsHubUITests */,
 				4E86B1A22F5AB3730027B3C2 /* Products */,
+				4EC0B81E2F5FBB0C001DC532 /* PremiumModels.swift */,
+				4EC0B8202F5FBB28001DC532 /* PremiumAPIClient.swift */,
+				4EC0B8222F5FBB85001DC532 /* AICoachFloatingView.swift */,
+				4EC0B8242F5FBF42001DC532 /* GoalsSurveyView.swift */,
+				4EC0B8262F5FBF7C001DC532 /* SmartwatchSyncView.swift */,
+				4EC0B8282F5FC12E001DC532 /* TournamentView.swift */,
+				4EC0B82A2F5FC1E5001DC532 /* PremiumSubscriptionView.swift */,
+				4EC0B82E2F627732001DC532 /* OnboardingView.swift */,
+				4EC0B8302F627902001DC532 /* GroupChatsView.swift */,
+				4EC0B8322F627932001DC532 /* HighlightsView.swift */,
+				4EC0B8342F627968001DC532 /* WorkoutBuilderView.swift */,
+				4EC0B8362F6279AA001DC532 /* PerformanceGraphsView.swift */,
+				4EC0B8382F6469D5001DC532 /* TrainingSessionView.swift */,
+				4EC0B83A2F646D2B001DC532 /* DrillLibraryView.swift */,
+				4EC0B83C2F646D45001DC532 /* DrillDetailView.swift */,
+				4EC0B83E2F6474F6001DC532 /* ChallengeCreationView.swift */,
+				4EC0B8402F64755A001DC532 /* ProofSubmissionView.swift */,
+				4EC0B8422F6475CE001DC532 /* TeamLobbyView.swift */,
+				4EC0B8442F64764A001DC532 /* DirectMessageView.swift */,
+				4EC0B8462F6476EB001DC532 /* AICoachLevelView.swift */,
+				4EC0B8482F647D11001DC532 /* BadgeSystemView.swift */,
+				4EC0B84A2F64A5FD001DC532 /* DailyReadinessView.swift */,
+				4EC0B84C2F64AE89001DC532 /* SkillProgressionModels.swift */,
+				4EC0B84E2F64AEBF001DC532 /* SkillProgressionEngine.swift */,
+				4EC0B8502F64AEF2001DC532 /* SkillProgressionView.swift */,
+				4EC0B8522F64C7F4001DC532 /* AICoachChatView.swift */,
+				4EC0B8542F650BC5001DC532 /* NotificationsView.swift */,
+				4EC0B8562F650BE9001DC532 /* MessagesListView.swift */,
+				4E1969542F6C65AD000277D0 /* ResultSubmissionView.swift */,
+				4E1969562F6C9309000277D0 /* DisputeDetailView.swift */,
+				4EC694392F6DB41C00518941 /* DisputeHistoryView.swift */,
+				4EC6943B2F6DB85300518941 /* FriendsListView.swift */,
+				4E288EA82F6E335200387E29 /* TennisCourtPickerView.swift */,
 			);
 			sourceTree = "<group>";
 		};
@@ -249,6 +351,39 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				4EC0B8472F6476EB001DC532 /* AICoachLevelView.swift in Sources */,
+				4EC0B84B2F64A5FD001DC532 /* DailyReadinessView.swift in Sources */,
+				4EC0B8232F5FBB85001DC532 /* AICoachFloatingView.swift in Sources */,
+				4EC6943A2F6DB41C00518941 /* DisputeHistoryView.swift in Sources */,
+				4EC0B8452F64764A001DC532 /* DirectMessageView.swift in Sources */,
+				4EC0B8352F627969001DC532 /* WorkoutBuilderView.swift in Sources */,
+				4EC0B8332F627932001DC532 /* HighlightsView.swift in Sources */,
+				4EC0B8392F6469D5001DC532 /* TrainingSessionView.swift in Sources */,
+				4EC0B8212F5FBB28001DC532 /* PremiumAPIClient.swift in Sources */,
+				4EC0B8552F650BC5001DC532 /* NotificationsView.swift in Sources */,
+				4EC0B8372F6279AA001DC532 /* PerformanceGraphsView.swift in Sources */,
+				4E288EA92F6E335200387E29 /* TennisCourtPickerView.swift in Sources */,
+				4E1969572F6C9309000277D0 /* DisputeDetailView.swift in Sources */,
+				4EC0B82B2F5FC1E5001DC532 /* PremiumSubscriptionView.swift in Sources */,
+				4EC0B8292F5FC12E001DC532 /* TournamentView.swift in Sources */,
+				4EC0B8252F5FBF42001DC532 /* GoalsSurveyView.swift in Sources */,
+				4EC0B84D2F64AE89001DC532 /* SkillProgressionModels.swift in Sources */,
+				4E1969552F6C65AD000277D0 /* ResultSubmissionView.swift in Sources */,
+				4EC0B8532F64C7F4001DC532 /* AICoachChatView.swift in Sources */,
+				4EC6943C2F6DB85300518941 /* FriendsListView.swift in Sources */,
+				4EC0B84F2F64AEBF001DC532 /* SkillProgressionEngine.swift in Sources */,
+				4EC0B8512F64AEF2001DC532 /* SkillProgressionView.swift in Sources */,
+				4EC0B83B2F646D2B001DC532 /* DrillLibraryView.swift in Sources */,
+				4EC0B83D2F646D45001DC532 /* DrillDetailView.swift in Sources */,
+				4EC0B8432F6475CE001DC532 /* TeamLobbyView.swift in Sources */,
+				4EC0B81F2F5FBB0C001DC532 /* PremiumModels.swift in Sources */,
+				4EC0B8572F650BE9001DC532 /* MessagesListView.swift in Sources */,
+				4EC0B82F2F627732001DC532 /* OnboardingView.swift in Sources */,
+				4EC0B8312F627902001DC532 /* GroupChatsView.swift in Sources */,
+				4EC0B8412F64755A001DC532 /* ProofSubmissionView.swift in Sources */,
+				4EC0B83F2F6474F6001DC532 /* ChallengeCreationView.swift in Sources */,
+				4EC0B8492F647D11001DC532 /* BadgeSystemView.swift in Sources */,
+				4EC0B8272F5FBF7C001DC532 /* SmartwatchSyncView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

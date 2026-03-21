@@ -1,0 +1,629 @@
+//
+//  APIModels.swift
+//  SportsHub
+//
+//  API response models matching backend schemas
+//
+
+import Foundation
+
+// MARK: - Auth Models
+struct LoginResponse: Codable {
+    let accessToken: String
+    let tokenType: String
+    
+    enum CodingKeys: String, CodingKey {
+        case accessToken = "access_token"
+        case tokenType = "token_type"
+    }
+}
+
+struct SignupRequest: Codable {
+    let email: String
+    let username: String
+    let password: String
+    let displayName: String
+    let dateOfBirth: String
+    
+    enum CodingKeys: String, CodingKey {
+        case email, username, password
+        case displayName = "display_name"
+        case dateOfBirth = "date_of_birth"
+    }
+}
+
+struct UserResponse: Codable {
+    let id: String
+    let email: String
+    let username: String
+    let fullName: String
+    let isAdmin: Bool
+    let createdAt: String
+    
+    enum CodingKeys: String, CodingKey {
+        case id, email, username
+        case fullName = "full_name"
+        case isAdmin = "is_admin"
+        case createdAt = "created_at"
+    }
+}
+
+// MARK: - Sport Profile Models
+struct SportProfileResponse: Codable {
+    let id: String
+    let userId: String
+    let sport: String
+    let rating: Int
+    let gamesPlayed: Int
+    let wins: Int
+    let losses: Int
+    let winStreak: Int
+    let highestRating: Int
+    let rankTier: String
+    let isProvisional: Bool
+    let provisionalGames: Int
+    
+    enum CodingKeys: String, CodingKey {
+        case id
+        case userId = "user_id"
+        case sport, rating
+        case gamesPlayed = "games_played"
+        case wins, losses
+        case winStreak = "win_streak"
+        case highestRating = "highest_rating"
+        case rankTier = "rank_tier"
+        case isProvisional = "is_provisional"
+        case provisionalGames = "provisional_games"
+    }
+    
+    var winRate: Double {
+        guard gamesPlayed > 0 else { return 0 }
+        return Double(wins) / Double(gamesPlayed) * 100
+    }
+}
+
+// MARK: - Matchmaking Models
+struct OpponentResponse: Codable {
+    let userId: String
+    let username: String
+    let fullName: String
+    let rating: Int
+    let gamesPlayed: Int
+    let wins: Int
+    let losses: Int
+    let rankTier: String
+    let matchQuality: String?
+    let availableNow: Bool?
+    let lastActive: String?
+    let trustScore: Double?
+    let completionRate: Double?
+    let matchesCompleted: Int?
+    let trustTier: String?  // Phase 4: "trusted", "standard", "caution", "restricted"
+    let disputeRate: Double?  // Phase 4: Percentage of matches disputed
+
+    enum CodingKeys: String, CodingKey {
+        case userId = "user_id"
+        case username
+        case fullName = "full_name"
+        case rating
+        case gamesPlayed = "games_played"
+        case wins, losses
+        case rankTier = "rank_tier"
+        case matchQuality = "match_quality"
+        case availableNow = "available_now"
+        case lastActive = "last_active"
+        case trustScore = "trust_score"
+        case completionRate = "completion_rate"
+        case matchesCompleted = "matches_completed"
+        case trustTier = "trust_tier"
+        case disputeRate = "dispute_rate"
+    }
+
+    var winRate: Double {
+        guard gamesPlayed > 0 else { return 0 }
+        return Double(wins) / Double(gamesPlayed) * 100
+    }
+}
+
+// MARK: - Leaderboard Models
+struct LeaderboardEntry: Codable {
+    let rank: Int
+    let userId: String
+    let username: String
+    let fullName: String
+    let rating: Int
+    let gamesPlayed: Int
+    let wins: Int
+    let losses: Int
+    let rankTier: String
+    
+    enum CodingKeys: String, CodingKey {
+        case rank
+        case userId = "user_id"
+        case username
+        case fullName = "full_name"
+        case rating
+        case gamesPlayed = "games_played"
+        case wins, losses
+        case rankTier = "rank_tier"
+    }
+}
+
+// MARK: - Challenge Models
+struct CreateChallengeRequest: Codable {
+    let opponentId: String
+    let sport: String
+    let matchType: String
+    let friendsOnly: Bool
+    
+    enum CodingKeys: String, CodingKey {
+        case opponentId = "opponent_id"
+        case sport
+        case matchType = "match_type"
+        case friendsOnly = "friends_only"
+    }
+}
+
+struct ChallengeResponse: Codable, Identifiable {
+    let id: String
+    let challengerId: String
+    let opponentId: String
+    let sport: String
+    let matchType: String
+    let status: String
+    let createdAt: String
+
+    // Phase 3: Submission tracking
+    let challengerSubmittedScore: String?  // Format: "21-18" or null
+    let opponentSubmittedScore: String?    // Format: "21-18" or null
+    let acceptedAt: String?
+    let completedAt: String?
+
+    let winnerUserId: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case challengerId = "challenger_id"
+        case opponentId = "opponent_id"
+        case sport
+        case matchType = "match_type"
+        case status
+        case createdAt = "created_at"
+        case challengerSubmittedScore = "challenger_submitted_score"
+        case opponentSubmittedScore = "opponent_submitted_score"
+        case acceptedAt = "accepted_at"
+        case completedAt = "completed_at"
+        case winnerUserId = "winner_user_id"
+    }
+}
+
+struct SubmitResultRequest: Codable {
+    let score: Int
+    let opponentScore: Int
+    
+    enum CodingKeys: String, CodingKey {
+        case score
+        case opponentScore = "opponent_score"
+    }
+}
+
+struct SubmitMatchResultRequest: Codable {
+    let challengeId: String
+    let winnerId: String
+    let scoreData: String?
+
+    enum CodingKeys: String, CodingKey {
+        case challengeId = "challenge_id"
+        case winnerId = "winner_id"
+        case scoreData = "score_data"
+    }
+}
+
+// MARK: - Dispute Models (Phase 3)
+struct DisputeResponse: Codable, Identifiable {
+    let id: String
+    let challengeId: String
+    let initiatorId: String
+    let reason: String
+    let status: String  // "pending", "under_review", "resolved", "rejected"
+    let adminNotes: String?
+    let createdAt: String
+    let resolvedAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case challengeId = "challenge_id"
+        case initiatorId = "initiator_id"
+        case reason, status
+        case adminNotes = "admin_notes"
+        case createdAt = "created_at"
+        case resolvedAt = "resolved_at"
+    }
+}
+
+struct CreateDisputeRequest: Codable {
+    let challengeId: String
+    let reason: String
+
+    enum CodingKeys: String, CodingKey {
+        case challengeId = "challenge_id"
+        case reason
+    }
+}
+
+// MARK: - Phase 4 Evidence Models
+struct EvidenceRequirementResponse: Codable {
+    let challengeId: String
+    let requirement: String  // "optional", "recommended", "required"
+    let reason: String
+    let isDisputed: Bool
+    let userTrustTier: String
+    let opponentTrustTier: String
+
+    enum CodingKeys: String, CodingKey {
+        case challengeId = "challenge_id"
+        case requirement, reason
+        case isDisputed = "is_disputed"
+        case userTrustTier = "user_trust_tier"
+        case opponentTrustTier = "opponent_trust_tier"
+    }
+}
+
+struct EvidenceUploadResponse: Codable {
+    let message: String
+    let evidenceId: String
+    let wasRequired: Bool
+    let status: String
+
+    enum CodingKeys: String, CodingKey {
+        case message
+        case evidenceId = "evidence_id"
+        case wasRequired = "was_required"
+        case status
+    }
+}
+
+struct EvidenceResponse: Codable, Identifiable {
+    let id: String
+    let challengeId: String
+    let submitterId: String
+    let evidenceType: String
+    let fileUrl: String
+    let thumbnailUrl: String?
+    let description: String?
+    let status: String
+    let isRequired: Bool
+    let reviewNotes: String?
+    let createdAt: String
+    let reviewedAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case challengeId = "challenge_id"
+        case submitterId = "submitter_id"
+        case evidenceType = "evidence_type"
+        case fileUrl = "file_url"
+        case thumbnailUrl = "thumbnail_url"
+        case description, status
+        case isRequired = "is_required"
+        case reviewNotes = "review_notes"
+        case createdAt = "created_at"
+        case reviewedAt = "reviewed_at"
+    }
+}
+
+// MARK: - Friends Models
+struct FriendshipResponse: Codable, Identifiable {
+    let id: String
+    let userAId: String
+    let userBId: String
+    let status: String  // pending, accepted, blocked, declined
+    let createdAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case userAId = "user_a_id"
+        case userBId = "user_b_id"
+        case status
+        case createdAt = "created_at"
+    }
+}
+
+struct FriendStatusResponse: Codable {
+    let status: String  // none, pending, accepted, blocked, declined
+    let isFriend: Bool
+    let isPending: Bool
+    let isBlocked: Bool
+    let initiatedByMe: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case status
+        case isFriend = "is_friend"
+        case isPending = "is_pending"
+        case isBlocked = "is_blocked"
+        case initiatedByMe = "initiated_by_me"
+    }
+}
+
+struct FriendRequest: Codable {
+    let targetUserId: String
+
+    enum CodingKeys: String, CodingKey {
+        case targetUserId = "target_user_id"
+    }
+}
+
+// MARK: - Messages Models
+struct DirectMessageResponse: Codable, Identifiable {
+    let id: String
+    let senderId: String
+    let receiverId: String
+    let content: String
+    let sentAt: String
+    let readAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case senderId = "sender_id"
+        case receiverId = "receiver_id"
+        case content
+        case sentAt = "sent_at"
+        case readAt = "read_at"
+    }
+}
+
+struct MessageCreateRequest: Codable {
+    let receiverId: String
+    let content: String
+
+    enum CodingKeys: String, CodingKey {
+        case receiverId = "receiver_id"
+        case content
+    }
+}
+
+struct ConversationPreview: Codable, Identifiable {
+    let friendId: String
+    let friendUsername: String
+    let friendDisplayName: String
+    let friendAvatarSeed: String?
+    let lastMessage: String
+    let lastMessageTime: String
+    let unreadCount: Int
+
+    var id: String { friendId }
+
+    enum CodingKeys: String, CodingKey {
+        case friendId = "friend_id"
+        case friendUsername = "friend_username"
+        case friendDisplayName = "friend_display_name"
+        case friendAvatarSeed = "friend_avatar_seed"
+        case lastMessage = "last_message"
+        case lastMessageTime = "last_message_time"
+        case unreadCount = "unread_count"
+    }
+}
+
+// MARK: - Posts Models
+struct PostResponse: Codable {
+    let id: String
+    let userId: String
+    let username: String
+    let content: String
+    let sport: String?
+    let likesCount: Int
+    let commentsCount: Int
+    let createdAt: String
+    let isLiked: Bool
+    
+    enum CodingKeys: String, CodingKey {
+        case id
+        case userId = "user_id"
+        case username, content, sport
+        case likesCount = "likes_count"
+        case commentsCount = "comments_count"
+        case createdAt = "created_at"
+        case isLiked = "is_liked"
+    }
+}
+
+struct CreatePostRequest: Codable {
+    let content: String
+    let sport: String?
+}
+
+// MARK: - Clips Models
+struct ClipResponse: Codable {
+    let id: String
+    let userId: String
+    let username: String
+    let title: String
+    let description: String?
+    let sport: String
+    let videoUrl: String
+    let thumbnailUrl: String?
+    let viewsCount: Int
+    let likesCount: Int
+    let createdAt: String
+    let isLiked: Bool
+    
+    enum CodingKeys: String, CodingKey {
+        case id
+        case userId = "user_id"
+        case username, title, description, sport
+        case videoUrl = "video_url"
+        case thumbnailUrl = "thumbnail_url"
+        case viewsCount = "views_count"
+        case likesCount = "likes_count"
+        case createdAt = "created_at"
+        case isLiked = "is_liked"
+    }
+}
+
+struct CreateClipRequest: Codable {
+    let title: String
+    let description: String?
+    let sport: String
+    let videoUrl: String
+    let thumbnailUrl: String?
+    
+    enum CodingKeys: String, CodingKey {
+        case title, description, sport
+        case videoUrl = "video_url"
+        case thumbnailUrl = "thumbnail_url"
+    }
+}
+
+// MARK: - Activity Models
+struct ActivityItem: Codable {
+    let type: String
+    let userId: String
+    let username: String
+    let sport: String
+    let matchType: String?
+    let opponentUsername: String?
+    let winnerUsername: String?
+    let userScore: Int?
+    let opponentScore: Int?
+    let ratingChange: Int?
+    let createdAt: String
+    
+    enum CodingKeys: String, CodingKey {
+        case type
+        case userId = "user_id"
+        case username, sport
+        case matchType = "match_type"
+        case opponentUsername = "opponent_username"
+        case winnerUsername = "winner_username"
+        case userScore = "user_score"
+        case opponentScore = "opponent_score"
+        case ratingChange = "rating_change"
+        case createdAt = "created_at"
+    }
+}
+
+// MARK: - Badge Models
+struct BadgeResponse: Codable {
+    let id: String
+    let name: String
+    let description: String
+    let category: String
+    let rarity: String
+    let icon: String
+    let requirement: BadgeRequirement
+    let isEarned: Bool
+    let progress: Int
+    
+    enum CodingKeys: String, CodingKey {
+        case id, name, description, category, rarity, icon, requirement
+        case isEarned = "is_earned"
+        case progress
+    }
+}
+
+struct BadgeRequirement: Codable {
+    let type: String
+    let value: Int
+}
+
+struct UserBadgeResponse: Codable {
+    let badgeId: String
+    let name: String
+    let description: String
+    let category: String
+    let rarity: String
+    let icon: String
+    let sport: String
+    let earnedAt: String
+    
+    enum CodingKeys: String, CodingKey {
+        case badgeId = "badge_id"
+        case name, description, category, rarity, icon, sport
+        case earnedAt = "earned_at"
+    }
+}
+
+// MARK: - Team Models
+struct TeamResponse: Codable {
+    let id: String
+    let name: String
+    let sport: String
+    let captainId: String
+    let rating: Int
+    let gamesPlayed: Int
+    let wins: Int
+    let losses: Int
+    let createdAt: String
+    
+    enum CodingKeys: String, CodingKey {
+        case id, name, sport
+        case captainId = "captain_id"
+        case rating
+        case gamesPlayed = "games_played"
+        case wins, losses
+        case createdAt = "created_at"
+    }
+}
+
+// MARK: - Generic Response
+struct MessageResponse: Codable {
+    let message: String
+}
+
+// MARK: - Tennis Court Models
+struct TennisCourt: Codable, Identifiable {
+    let id: String
+    let name: String
+    let address: String
+    let city: String
+    let state: String
+    let postalCode: String?
+    let latitude: Double
+    let longitude: Double
+    
+    // Venue access information
+    let venueType: String
+    let requiresReservation: Bool
+    let requiresMembership: Bool
+    let hourlyRate: Double?
+    let currency: String?
+    
+    // Court details
+    let surfaceType: String?
+    let numCourts: Int
+    let hasLights: Bool
+    let indoor: Bool
+    
+    // Contact and availability
+    let phone: String?
+    let website: String?
+    let hoursOfOperation: String?
+    
+    // Metadata
+    let createdAt: String
+    let isVerified: Bool
+    let addedBy: String?
+    
+    // Optional distance field (populated by nearby search)
+    let distanceMiles: Double?
+    
+    enum CodingKeys: String, CodingKey {
+        case id, name, address, city, state
+        case postalCode = "postal_code"
+        case latitude, longitude
+        case venueType = "venue_type"
+        case requiresReservation = "requires_reservation"
+        case requiresMembership = "requires_membership"
+        case hourlyRate = "hourly_rate"
+        case currency
+        case surfaceType = "surface_type"
+        case numCourts = "num_courts"
+        case hasLights = "has_lights"
+        case indoor, phone, website
+        case hoursOfOperation = "hours_of_operation"
+        case createdAt = "created_at"
+        case isVerified = "is_verified"
+        case addedBy = "added_by"
+        case distanceMiles = "distance_miles"
+    }
+}
