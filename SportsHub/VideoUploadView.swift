@@ -13,6 +13,8 @@ struct VideoUploadView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject var sessionManager: SessionManager
     
+    let onClipUploaded: () -> Void
+    
     @State private var selectedSport: Sport = .basketball
     @State private var title = ""
     @State private var description = ""
@@ -223,54 +225,71 @@ struct VideoUploadView: View {
                 videoURL = movie.url
             }
         } catch {
-            errorMessage = "Failed to load video: \(error.localizedDescription)"
+            errorMessage = "We couldn't load this video. Try selecting a different video."
             showError = true
         }
     }
     
+    private func mapUploadErrorToUserFriendly(_ error: Error) -> String {
+        let errorDescription = error.localizedDescription.lowercased()
+        
+        if errorDescription.contains("not found") || errorDescription.contains("404") {
+            return "We couldn't upload your clip right now. Please try again."
+        } else if errorDescription.contains("internal server error") || errorDescription.contains("500") {
+            return "Our servers are having trouble. Please try again in a moment."
+        } else if errorDescription.contains("network") || errorDescription.contains("connection") {
+            return "Check your internet connection and try again."
+        } else if errorDescription.contains("timeout") {
+            return "The upload took too long. Try a shorter clip or check your connection."
+        } else if errorDescription.contains("unauthorized") || errorDescription.contains("401") {
+            return "Your session expired. Please log in again."
+        } else if errorDescription.contains("too large") || errorDescription.contains("file size") {
+            return "This video is too large. Try a shorter clip under 500 MB."
+        } else {
+            return "We couldn't upload your clip. Please try again."
+        }
+    }
+    
     private func uploadVideo() {
-        guard videoURL != nil else { return }
+        guard let videoURL = videoURL else { return }
         
         isUploading = true
         uploadProgress = 0.0
         
-        // TODO: Implement actual video upload to backend/CDN
-        // This is a placeholder that simulates upload progress
-        
         Task {
-            // Simulate upload progress
-            for i in 1...10 {
-                try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
-                uploadProgress = Double(i) / 10.0
-            }
-            
-            // TODO: Call backend API to create clip record
-            // For now, we'll just simulate success
-            
-            // Simulated API call
             do {
-                // Generate a placeholder URL for the uploaded video
-                let videoUrlString = "https://cdn.sportshub.example.com/clips/\(UUID().uuidString).mp4"
+                // Update progress indicator
+                await MainActor.run {
+                    uploadProgress = 0.1
+                }
                 
-                let request = CreateClipRequest(
+                // Actually upload the video file to backend
+                _ = try await APIClient.shared.uploadClipVideo(
+                    videoURL: videoURL,
                     title: title,
-                    description: description.isEmpty ? nil : description,
                     sport: selectedSport.rawValue,
-                    videoUrl: videoUrlString,
-                    thumbnailUrl: nil
+                    description: description.isEmpty ? nil : description
                 )
                 
-                _ = try await APIClient.shared.createClip(request: request)
-                
-                // Success - dismiss the view
+                // Update progress
                 await MainActor.run {
+                    uploadProgress = 1.0
+                }
+                
+                // Small delay to show completion
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                
+                // Success - trigger refresh and dismiss
+                await MainActor.run {
+                    onClipUploaded()
                     dismiss()
                 }
             } catch {
                 await MainActor.run {
-                    errorMessage = "Failed to upload clip: \(error.localizedDescription)"
+                    errorMessage = mapUploadErrorToUserFriendly(error)
                     showError = true
                     isUploading = false
+                    uploadProgress = 0.0
                 }
             }
         }
@@ -293,6 +312,6 @@ struct VideoFile: Transferable {
 }
 
 #Preview {
-    VideoUploadView()
+    VideoUploadView(onClipUploaded: {})
         .environmentObject(SessionManager.shared)
 }

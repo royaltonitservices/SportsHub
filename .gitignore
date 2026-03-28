@@ -30,3 +30,5 @@ backend/sportshub.db
 
 # Logs
 *.log
+backend/uploads/
+backend/uploads/

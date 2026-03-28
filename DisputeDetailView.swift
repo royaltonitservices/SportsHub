@@ -404,7 +404,7 @@ struct DisputeDetailView: View {
             await onResolved()
             dismiss()
         } catch {
-            errorMessage = "Failed to submit dispute: \(error.localizedDescription)"
+            errorMessage = "We couldn't submit your dispute. Please try again."
         }
 
         isSubmitting = false

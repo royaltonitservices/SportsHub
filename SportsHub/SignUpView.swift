@@ -78,8 +78,6 @@ struct SignUpView: View {
 
     private var ageWarningMessage: String? {
         guard !isAtLeast13 else { return nil }
-        let calendar = Calendar.current
-        let age = calendar.dateComponents([.year], from: dateOfBirth, to: Date()).year ?? 0
         return "You must be at least 13 years old to create an account"
     }
 
@@ -120,7 +118,7 @@ struct SignUpView: View {
                             .autocorrectionDisabled()
                             .focused($focusedField, equals: .email)
                             .onSubmit { focusedField = .username }
-                            .onChange(of: email) { _ in clearErrorIfNeeded() }
+                            .onChange(of: email) { _, _ in clearErrorIfNeeded() }
 
                             if !email.isEmpty && !isEmailValid {
                                 ValidationMessage(text: "Enter a valid email address")
@@ -138,7 +136,7 @@ struct SignUpView: View {
                             .autocorrectionDisabled()
                             .focused($focusedField, equals: .username)
                             .onSubmit { focusedField = .password }
-                            .onChange(of: username) { _ in clearErrorIfNeeded() }
+                            .onChange(of: username) { _, _ in clearErrorIfNeeded() }
 
                             if !username.isEmpty && !isUsernameValid {
                                 ValidationMessage(text: "Username must be at least 3 characters (letters, numbers, _ or - only)")
@@ -155,7 +153,7 @@ struct SignUpView: View {
                             .textContentType(.newPassword)
                             .focused($focusedField, equals: .password)
                             .onSubmit { focusedField = .confirmPassword }
-                            .onChange(of: password) { _ in clearErrorIfNeeded() }
+                            .onChange(of: password) { _, _ in clearErrorIfNeeded() }
 
                             if !password.isEmpty && !isPasswordValid {
                                 ValidationMessage(text: "Password must be at least 8 characters")
@@ -172,7 +170,7 @@ struct SignUpView: View {
                             .textContentType(.newPassword)
                             .focused($focusedField, equals: .confirmPassword)
                             .onSubmit { signUp() }
-                            .onChange(of: confirmPassword) { _ in clearErrorIfNeeded() }
+                            .onChange(of: confirmPassword) { _, _ in clearErrorIfNeeded() }
 
                             if !confirmPassword.isEmpty && !passwordsMatch {
                                 ValidationMessage(text: "Passwords do not match")
@@ -196,7 +194,7 @@ struct SignUpView: View {
                                 .padding(Spacing.md)
                                 .background(Color.appSurface)
                                 .clipShape(RoundedRectangle(cornerRadius: CornerRadius.medium))
-                                .onChange(of: dateOfBirth) { _ in clearErrorIfNeeded() }
+                                .onChange(of: dateOfBirth) { _, _ in clearErrorIfNeeded() }
 
                                 if let ageWarning = ageWarningMessage {
                                     ValidationMessage(text: ageWarning)

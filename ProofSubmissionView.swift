@@ -137,7 +137,7 @@ struct ProofSubmissionView: View {
                                     .cornerRadius(10)
                             }
                             .disabled(capturedPhotos.count >= 3)
-                            .onChange(of: selectedMedia) { newItems in
+                            .onChange(of: selectedMedia) { _, newItems in
                                 Task {
                                     await loadPhotos(from: newItems)
                                 }

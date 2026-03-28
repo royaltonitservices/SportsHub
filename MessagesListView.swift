@@ -112,7 +112,7 @@ struct MessagesListView: View {
         do {
             conversations = try await APIClient.shared.getAllConversations()
         } catch {
-            errorMessage = "Failed to load conversations: \(error.localizedDescription)"
+            errorMessage = "We couldn't load your messages. Check your connection and try again."
         }
 
         isLoading = false

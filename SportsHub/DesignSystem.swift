@@ -10,16 +10,23 @@ import SwiftUI
 // MARK: - Colors
 
 extension Color {
-    static let appBackground = Color(hex: 0x0A0A0A)
-    static let appSurface = Color(hex: 0x1A1A1A)
-    static let appSurfaceElevated = Color(hex: 0x2A2A2A)
+    // Adaptive backgrounds - change based on color scheme
+    static let appBackground = Color("AppBackground", bundle: nil, light: Color(hex: 0xF5F5F5), dark: Color(hex: 0x0A0A0A))
+    static let appSurface = Color("AppSurface", bundle: nil, light: Color.white, dark: Color(hex: 0x1A1A1A))
+    static let appSurfaceElevated = Color("AppSurfaceElevated", bundle: nil, light: Color(hex: 0xFFFFFF), dark: Color(hex: 0x2A2A2A))
+    static let appCardBackground = Color("AppCardBackground", bundle: nil, light: Color.white, dark: Color(hex: 0x1A1A1A))
+    
+    // Adaptive text - change based on color scheme
+    static let appTextPrimary = Color("AppTextPrimary", bundle: nil, light: Color(hex: 0x1A1A1A), dark: Color.white)
+    static let appTextSecondary = Color("AppTextSecondary", bundle: nil, light: Color(hex: 0x666666), dark: Color(hex: 0xA0A0A0))
+    
+    // Adaptive borders - change based on color scheme
+    static let appBorder = Color("AppBorder", bundle: nil, light: Color(hex: 0xE0E0E0), dark: Color(hex: 0x333333))
+    
+    // Brand colors - stay consistent across themes
     static let appPrimary = Color(hex: 0xFF6B35)
-    static let appAccent = Color(hex: 0xFF8C42)  // Lighter orange
+    static let appAccent = Color(hex: 0xFF8C42)
     static let appSecondary = Color(hex: 0xA0A0A0)
-    static let appTextPrimary = Color.white
-    static let appTextSecondary = Color(hex: 0xA0A0A0)
-    static let appBorder = Color(hex: 0x333333)
-    static let appCardBackground = Color(hex: 0x1A1A1A)
     static let appSuccess = Color(hex: 0x4CAF50)
     static let appError = Color(hex: 0xF44336)
     
@@ -31,6 +38,20 @@ extension Color {
             blue: Double(hex & 0xFF) / 255,
             opacity: alpha
         )
+    }
+    
+    // Helper initializer for adaptive colors
+    init(_ name: String, bundle: Bundle?, light: Color, dark: Color) {
+        self.init(UIColor { traitCollection in
+            switch traitCollection.userInterfaceStyle {
+            case .light:
+                return UIColor(light)
+            case .dark:
+                return UIColor(dark)
+            default:
+                return UIColor(dark)
+            }
+        })
     }
 }
 

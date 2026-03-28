@@ -41,7 +41,20 @@ class AIOrchestrator:
     def __init__(self, db: Session):
         self.db = db
         self.settings = get_settings()
-        self.client = OpenAI(api_key=self.settings.openai_api_key)
+
+        # Make OpenAI client optional - gracefully degrade if no API key
+        try:
+            if self.settings.openai_api_key and not self.settings.openai_api_key.startswith("sk-proj"):
+                self.client = OpenAI(api_key=self.settings.openai_api_key)
+                self.has_openai = True
+            else:
+                self.client = None
+                self.has_openai = False
+                print("[AI Orchestrator] OpenAI API key not configured - using template-based coaching")
+        except Exception as e:
+            self.client = None
+            self.has_openai = False
+            print(f"[AI Orchestrator] OpenAI initialization failed: {e} - using template-based coaching")
 
     # MARK: - Conversational AI Coach (Premium)
 
@@ -72,8 +85,15 @@ class AIOrchestrator:
                 "follow_up_questions": ["question1"]
             }
         """
-        # Aggregate all context
+        # PRIORITY FIX 2: Update persistent coaching context from user message
+        self._update_coach_context(user_id, sport, user_message)
+
+        # Aggregate all context (includes saved coaching context now)
         context = self._aggregate_user_context(user_id, sport)
+
+        # Load saved coaching context
+        saved_context = self._load_coach_context_into_dict(user_id, sport)
+        context.update(saved_context)
 
         # Build conversational prompt
         system_prompt = self._build_coach_system_prompt(sport)
@@ -84,26 +104,31 @@ class AIOrchestrator:
             history=conversation_history
         )
 
-        try:
-            # Call GPT-4.1
-            response = self.client.chat.completions.create(
-                model=self.settings.openai_model,
-                messages=messages,
-                max_tokens=self.settings.openai_max_tokens,
-                temperature=self.settings.openai_temperature
-            )
+        # Use OpenAI if available, otherwise use intelligent templates
+        if self.has_openai and self.client:
+            try:
+                # Call GPT-4.1
+                response = self.client.chat.completions.create(
+                    model=self.settings.openai_model,
+                    messages=messages,
+                    max_tokens=self.settings.openai_max_tokens,
+                    temperature=self.settings.openai_temperature
+                )
 
-            coach_response = response.choices[0].message.content
+                coach_response = response.choices[0].message.content
 
-            # Parse structured response
-            parsed = self._parse_coach_response(coach_response)
+                # Parse structured response
+                parsed = self._parse_coach_response(coach_response)
 
-            return parsed
+                return parsed
 
-        except Exception as e:
-            print(f"[AI Orchestrator] GPT-4.1 call failed: {e}")
-            # Fallback to template-based response
-            return self._fallback_coach_response(user_message, context)
+            except Exception as e:
+                print(f"[AI Orchestrator] GPT-4.1 call failed: {e}")
+                # Fallback to template-based response
+                return self._fallback_coach_response(user_message, context, sport)
+        else:
+            # No OpenAI available - use intelligent template-based coaching
+            return self._fallback_coach_response(user_message, context, sport)
 
     async def generate_proactive_checkin(
         self,
@@ -411,6 +436,96 @@ Return as JSON:
                 "next_session_recommendations": ["Maintain current intensity"]
             }
 
+    # MARK: - Coaching Context Management (PRIORITY FIX 2: Persistent Memory)
+
+    def _get_or_create_coach_context(self, user_id: UUID, sport: models.Sport):
+        """Get existing coaching context or create new one"""
+        context = self.db.query(models.CoachContext).filter(
+            models.CoachContext.user_id == user_id,
+            models.CoachContext.sport == sport
+        ).first()
+
+        if not context:
+            context = models.CoachContext(
+                user_id=user_id,
+                sport=sport,
+                weak_points=[],
+                goals=[],
+                recent_recommendations=[],
+                mentioned_skills=[]
+            )
+            self.db.add(context)
+            self.db.commit()
+            self.db.refresh(context)
+
+        return context
+
+    def _update_coach_context(self, user_id: UUID, sport: models.Sport, user_message: str):
+        """Extract and save coaching context from user message"""
+        context = self._get_or_create_coach_context(user_id, sport)
+        msg_lower = user_message.lower()
+
+        # Extract weak points
+        weak_point_keywords = ['weak', 'struggle', 'bad at', 'need help with', 'not good at']
+        if any(keyword in msg_lower for keyword in weak_point_keywords):
+            # Try to extract the specific skill
+            skills = self._get_sport_skills(sport)
+            for skill in skills:
+                if skill.lower() in msg_lower:
+                    weak_points = json.loads(context.weak_points) if isinstance(context.weak_points, str) else context.weak_points
+                    if skill.lower() not in [wp.lower() for wp in weak_points]:
+                        weak_points.append(skill.lower())
+                        context.weak_points = json.dumps(weak_points[-10:])  # Keep last 10
+
+        # Extract goals
+        goal_keywords = ['goal', 'want to', 'trying to', 'hoping to', 'working toward']
+        if any(keyword in msg_lower for keyword in goal_keywords):
+            goals = json.loads(context.goals) if isinstance(context.goals, str) else context.goals
+            # Store the full goal statement (cleaned)
+            goal_text = user_message.strip()
+            if goal_text not in goals:
+                goals.append(goal_text)
+                context.goals = json.dumps(goals[-5:])  # Keep last 5 goals
+
+        # Extract time preference
+        time_match = None
+        for num in ['5', '10', '15', '20', '30', '45', '60']:
+            if num in user_message and 'minute' in msg_lower:
+                time_match = int(num)
+                break
+        if time_match:
+            context.preferred_training_duration = time_match
+
+        # Update last interaction time
+        context.last_interaction = datetime.now()
+        context.updated_at = datetime.now()
+
+        self.db.commit()
+        return context
+
+    def _save_recommendation(self, user_id: UUID, sport: models.Sport, recommendation: str):
+        """Save a recommendation to avoid repeating it"""
+        context = self._get_or_create_coach_context(user_id, sport)
+        recent = json.loads(context.recent_recommendations) if isinstance(context.recent_recommendations, str) else context.recent_recommendations
+        recent.append({
+            'recommendation': recommendation[:200],  # Truncate
+            'timestamp': datetime.now().isoformat()
+        })
+        context.recent_recommendations = json.dumps(recent[-5:])  # Keep last 5
+        self.db.commit()
+
+    def _load_coach_context_into_dict(self, user_id: UUID, sport: models.Sport) -> Dict:
+        """Load saved coaching context into context dict for AI prompts"""
+        coach_context = self._get_or_create_coach_context(user_id, sport)
+
+        return {
+            'saved_weak_points': json.loads(coach_context.weak_points) if isinstance(coach_context.weak_points, str) else coach_context.weak_points,
+            'saved_goals': json.loads(coach_context.goals) if isinstance(coach_context.goals, str) else coach_context.goals,
+            'preferred_duration': coach_context.preferred_training_duration,
+            'training_focus': coach_context.training_focus,
+            'recent_recommendations': json.loads(coach_context.recent_recommendations) if isinstance(coach_context.recent_recommendations, str) else coach_context.recent_recommendations
+        }
+
     # MARK: - Context Aggregation
 
     def _aggregate_user_context(self, user_id: UUID, sport: models.Sport) -> Dict:
@@ -434,7 +549,7 @@ Return as JSON:
         ).first()
 
         if sport_profile:
-            context['elo_rating'] = sport_profile.elo_rating
+            context['elo_rating'] = sport_profile.rating
             context['games_played'] = sport_profile.games_played
             context['wins'] = sport_profile.wins
             context['losses'] = sport_profile.losses
@@ -611,23 +726,510 @@ IMPORTANT:
 
         if sport_profile.games_played < 5:
             return "beginner"
-        elif sport_profile.elo_rating < 1200:
+        elif sport_profile.rating < 1200:
             return "beginner"
-        elif sport_profile.elo_rating < 1600:
+        elif sport_profile.rating < 1600:
             return "intermediate"
         else:
             return "advanced"
 
     # MARK: - Fallback Responses
 
-    def _fallback_coach_response(self, user_message: str, context: Dict) -> Dict:
-        """Template-based fallback when API fails"""
+    def _fallback_coach_response(self, user_message: str, context: Dict, sport: models.Sport) -> Dict:
+        """Intelligent template-based coaching when OpenAI unavailable"""
+        msg_lower = user_message.lower()
+
+        # Workout request - provide STRUCTURED, time-based workout plans
+        if any(word in msg_lower for word in ['workout', 'train', 'practice', 'drill', 'exercise']):
+            # Extract time duration
+            time_match = None
+            for num in ['5', '10', '15', '20', '30', '45', '60']:
+                if num in user_message:
+                    time_match = int(num)
+                    break
+
+            # Default to 20 minutes if not specified
+            if not time_match:
+                time_match = 20
+
+            # Generate structured workout based on time and recovery
+            recovery_score = context.get('recovery_score', 75)
+            structured_workout = self._generate_structured_workout(
+                sport=sport,
+                duration_minutes=time_match,
+                recovery_score=recovery_score,
+                skill_level=context.get('skill_level', 'intermediate')
+            )
+
+            response = f"Here's your structured {time_match}-minute {sport.value} workout:\n\n"
+            response += structured_workout
+            response += f"\n\n💡 Tip: Focus on form over speed. You've got this!"
+
+            return {
+                "response": response,
+                "suggested_actions": ["Open Train section", "Log this session"],
+                "tone": "motivating",
+                "follow_up_questions": ["How did the workout feel?"]
+            }
+
+        # Improvement/weakness focus
+        if any(word in msg_lower for word in ['improve', 'better', 'weak', 'struggle', 'help with']):
+            weak_point = self._extract_skill(msg_lower, sport)
+            if weak_point:
+                drills = self._get_skill_drills(sport, weak_point)
+                response = f"Let's work on your {weak_point}! Here's what I recommend:\n\n"
+                response += "\n".join(f"{i+1}. {drill}" for i, drill in enumerate(drills[:3]))
+                response += f"\n\nFocus on quality over quantity - consistency is key!"
+            else:
+                response = f"I'd love to help you improve! What specific skill would you like to work on? Your main areas in {sport.value} could be:\n\n"
+                response += "\n".join(f"• {skill}" for skill in self._get_sport_skills(sport)[:4])
+
+            return {
+                "response": response,
+                "suggested_actions": ["View training drills", "Set a goal"],
+                "tone": "supportive",
+                "follow_up_questions": ["What feels most challenging for you?"]
+            }
+
+        # Recovery/tiredness
+        if any(word in msg_lower for word in ['tired', 'sore', 'rest', 'recovery', 'fatigue']):
+            recovery_score = context.get('recovery_score')
+            if recovery_score and recovery_score < 50:
+                response = "I noticed your recovery score is low. Your body's telling you something important! Consider:\n\n"
+                response += "• Active recovery (light movement, stretching)\n"
+                response += "• Extra sleep tonight\n"
+                response += "• Proper hydration and nutrition\n\n"
+                response += "Taking care of recovery is just as important as training hard."
+            else:
+                response = "It's smart to listen to your body! Here's what you can do:\n\n"
+                response += "• Take a rest day if you need it\n"
+                response += "• Try light active recovery\n"
+                response += "• Focus on mobility work\n\n"
+                response += "Recovery is when your body actually gets stronger!"
+
+            return {
+                "response": response,
+                "suggested_actions": ["View recovery tips", "Track sleep"],
+                "tone": "concerned",
+                "follow_up_questions": ["How are you sleeping lately?"]
+            }
+
+        # Match prep
+        if any(word in msg_lower for word in ['match', 'game', 'compete', 'tournament', 'opponent']):
+            response = f"Let's get you ready! Here's your {sport.value} match prep:\n\n"
+            response += "• Warm up thoroughly (15-20 mins)\n"
+            response += "• Review your game plan and strategy\n"
+            response += "• Focus on your strengths\n"
+            response += "• Stay confident - you've put in the work!\n\n"
+            response += "How are you feeling about your match?"
+
+            return {
+                "response": response,
+                "suggested_actions": ["View pre-match routine", "Check opponent stats"],
+                "tone": "motivating",
+                "follow_up_questions": ["When is your match?"]
+            }
+
+        # General/greeting
+        win_rate = context.get('win_rate', 0)
+        recent_matches = context.get('recent_match_count', 0)
+        last_result = context.get('last_match_result')
+
+        if recent_matches > 0 and last_result == 'win':
+            response = f"Great to hear from you! I saw you won your last match - nice work! What would you like to focus on today?"
+        elif recent_matches > 0 and last_result == 'loss':
+            response = f"Hey! Every match is a learning opportunity. What would you like to work on to come back stronger?"
+        elif win_rate > 0.6:
+            response = f"You're on a roll with a {win_rate*100:.0f}% win rate! What's next on your training agenda?"
+        else:
+            response = f"Ready to level up your {sport.value} game? I'm here to help! What would you like to work on?"
+
         return {
-            "response": "I'm here to help you improve! What would you like to work on today?",
-            "suggested_actions": ["Practice fundamentals", "Review your goals"],
+            "response": response,
+            "suggested_actions": ["Get a workout", "Review my progress", "Set new goals"],
             "tone": "supportive",
-            "follow_up_questions": ["What's your main focus right now?"]
+            "follow_up_questions": ["What's your main focus this week?"]
         }
+
+    def _get_sport_workouts(self, sport: models.Sport) -> List[str]:
+        """Get sport-specific workout drills"""
+        workouts = {
+            models.Sport.BASKETBALL: [
+                "Ball handling: 5 mins of figure-8s, between legs, behind back",
+                "Shooting: 25 free throws, then 20 mid-range jumpers from 5 spots",
+                "Conditioning: 10 suicide runs at game speed",
+                "Defense: Defensive slides across court, 3 sets of 30 seconds"
+            ],
+            models.Sport.SOCCER: [
+                "Dribbling: Cone weaving drill, both feet, increase speed gradually",
+                "Passing: Wall passes for accuracy, 50 reps each foot",
+                "Shooting: 20 shots from edge of box, focus on placement",
+                "Conditioning: 10 x 40-yard sprints with 30 sec rest"
+            ],
+            models.Sport.TENNIS: [
+                "Footwork: Ladder drills and cone sprints, 10 minutes",
+                "Groundstrokes: 50 forehand, 50 backhand from baseline",
+                "Serves: 30 first serves focusing on placement",
+                "Volleys: 10 minutes at net, quick reactions"
+            ],
+            models.Sport.FOOTBALL: [
+                "Throwing: 30 passes at various distances and angles",
+                "Route running: 20 reps of different routes (slant, post, corner)",
+                "Conditioning: 10 x 40-yard sprints with 45 sec rest",
+                "Agility: Cone drills and ladder work, 15 minutes"
+            ]
+        }
+        return workouts.get(sport, workouts[models.Sport.BASKETBALL])
+
+    def _get_sport_skills(self, sport: models.Sport) -> List[str]:
+        """Get main skills for a sport"""
+        skills = {
+            models.Sport.BASKETBALL: ["Shooting", "Ball handling", "Defense", "Passing"],
+            models.Sport.SOCCER: ["Dribbling", "Passing", "Shooting", "Defense"],
+            models.Sport.TENNIS: ["Serve", "Forehand", "Backhand", "Footwork"],
+            models.Sport.FOOTBALL: ["Throwing", "Catching", "Route running", "Blocking"]
+        }
+        return skills.get(sport, skills[models.Sport.BASKETBALL])
+
+    def _extract_skill(self, message: str, sport: models.Sport) -> Optional[str]:
+        """Extract mentioned skill from message"""
+        skills = self._get_sport_skills(sport)
+        for skill in skills:
+            if skill.lower() in message:
+                return skill.lower()
+        return None
+
+    def _get_skill_drills(self, sport: models.Sport, skill: str) -> List[str]:
+        """Get drills for specific skill"""
+        basketball_drills = {
+            "shooting": [
+                "Form shooting from 5 feet (50 reps)",
+                "Free throws (50 makes)",
+                "Catch-and-shoot from 5 spots (10 each)",
+                "Off-dribble pull-ups (20 reps)"
+            ],
+            "ball handling": [
+                "Stationary dribbling (2 balls, 5 mins)",
+                "Figure-8 dribbles through legs (3 mins)",
+                "Full court dribbling with moves (5 trips)",
+                "Change of pace/direction drills (10 mins)"
+            ],
+            "defense": [
+                "Defensive slides (6 sets across court)",
+                "Closeout drills (20 reps)",
+                "1-on-1 positioning (practice with partner)",
+                "Help and recover drills (10 mins)"
+            ]
+        }
+
+        soccer_drills = {
+            "dribbling": [
+                "Cone weaving (both feet, 10 reps)",
+                "Speed dribbling with cuts (5 lengths)",
+                "1v1 moves against cone (20 reps)",
+                "Tight space control (5x5 yard box, 5 mins)"
+            ],
+            "passing": [
+                "Wall passes for accuracy (100 reps)",
+                "Long passing (20 each foot)",
+                "Through balls to target (20 attempts)",
+                "One-touch passing triangles (10 mins)"
+            ]
+        }
+
+        if sport == models.Sport.BASKETBALL:
+            return basketball_drills.get(skill, basketball_drills["shooting"])
+        elif sport == models.Sport.SOCCER:
+            return soccer_drills.get(skill, soccer_drills["dribbling"])
+        else:
+            return ["Practice fundamentals with focus", "Watch technique videos", "Work with a coach if possible"]
+
+    def _generate_structured_workout(
+        self,
+        sport: models.Sport,
+        duration_minutes: int,
+        recovery_score: float,
+        skill_level: str
+    ) -> str:
+        """
+        Generate a structured, time-allocated workout plan.
+        This provides REAL value when live AI is unavailable.
+        """
+        # Adjust intensity based on recovery
+        if recovery_score < 50:
+            intensity = "light"
+            intensity_note = "📊 Your recovery is low - taking it easier today"
+        elif recovery_score < 70:
+            intensity = "moderate"
+            intensity_note = "📊 Moderate intensity based on your recovery"
+        else:
+            intensity = "full"
+            intensity_note = "📊 Full intensity - your recovery looks good!"
+
+        # Sport-specific structured workouts
+        if sport == models.Sport.BASKETBALL:
+            return self._basketball_structured_workout(duration_minutes, intensity, intensity_note, skill_level)
+        elif sport == models.Sport.SOCCER:
+            return self._soccer_structured_workout(duration_minutes, intensity, intensity_note, skill_level)
+        elif sport == models.Sport.TENNIS:
+            return self._tennis_structured_workout(duration_minutes, intensity, intensity_note, skill_level)
+        elif sport == models.Sport.FOOTBALL:
+            return self._football_structured_workout(duration_minutes, intensity, intensity_note, skill_level)
+        else:
+            return self._basketball_structured_workout(duration_minutes, intensity, intensity_note, skill_level)
+
+    def _basketball_structured_workout(self, duration: int, intensity: str, note: str, level: str) -> str:
+        """Structured basketball workout with time allocation"""
+        if duration <= 15:
+            return f"""{note}
+
+**Warm-up** (3 min)
+- Light jogging and dynamic stretches
+- Arm circles and leg swings
+
+**Ball Handling** (6 min)
+- Figure-8 dribbles: 2 min
+- Between-legs crossovers: 2 min
+- Behind-back dribbles: 2 min
+
+**Shooting** (5 min)
+- Form shooting close range: 3 min
+- Free throws: 2 min
+
+**Cool-down** (1 min)
+- Static stretching"""
+
+        elif duration <= 30:
+            warmup = int(duration * 0.15)
+            skill1 = int(duration * 0.30)
+            skill2 = int(duration * 0.30)
+            conditioning = int(duration * 0.15)
+            cooldown = duration - (warmup + skill1 + skill2 + conditioning)
+
+            if intensity == "light":
+                return f"""{note}
+
+**Warm-up** ({warmup} min)
+- Light movement and stretching
+
+**Ball Handling** ({skill1} min)
+- Stationary dribbling drills
+- Controlled figure-8s
+- Crossover practice
+
+**Shooting** ({skill2} min)
+- Form shooting from 5 feet
+- Mid-range spot shooting
+- Free throw practice
+
+**Light Conditioning** ({conditioning} min)
+- Half-court walk/jog
+- Easy defensive slides
+
+**Cool-down** ({cooldown} min)
+- Stretching and breathing"""
+            else:
+                return f"""{note}
+
+**Warm-up** ({warmup} min)
+- Dynamic stretching and light jogging
+
+**Ball Handling** ({skill1} min)
+- Full-court dribbling with moves
+- Speed dribbling
+- Combo moves (crossover → behind-back)
+
+**Shooting** ({skill2} min)
+- Catch-and-shoot from 5 spots
+- Off-dribble pull-ups
+- Game-speed shooting
+
+**Conditioning** ({conditioning} min)
+- Suicide runs (3-4 sets)
+- Defensive slide drills
+
+**Cool-down** ({cooldown} min)
+- Static stretching"""
+
+        else:  # 30+ minutes
+            warmup = 5
+            skill1 = int(duration * 0.25)
+            skill2 = int(duration * 0.25)
+            skill3 = int(duration * 0.20)
+            conditioning = int(duration * 0.15)
+            cooldown = duration - (warmup + skill1 + skill2 + skill3 + conditioning)
+
+            return f"""{note}
+
+**Warm-up** ({warmup} min)
+- Full dynamic warm-up routine
+
+**Ball Handling** ({skill1} min)
+- Two-ball dribbling drills
+- Full-court combo moves
+- Weak-hand focus
+
+**Shooting** ({skill2} min)
+- Form shooting progression
+- Game-situation shooting
+- Free throws under fatigue
+
+**Finishing** ({skill3} min)
+- Layup variations (reverse, euro-step)
+- Contact finishing drills
+- Weak-hand finishing
+
+**Conditioning** ({conditioning} min)
+- Full-court sprints
+- Defensive slides
+- Jump training
+
+**Cool-down** ({cooldown} min)
+- Complete stretching routine"""
+
+    def _soccer_structured_workout(self, duration: int, intensity: str, note: str, level: str) -> str:
+        """Structured soccer workout"""
+        if duration <= 20:
+            return f"""{note}
+
+**Warm-up** (3 min)
+- Light jogging and leg swings
+
+**Ball Control** (8 min)
+- Juggling practice: 3 min
+- Dribbling through cones: 5 min
+
+**Passing** (7 min)
+- Wall passes for accuracy: 5 min
+- Long passing: 2 min
+
+**Cool-down** (2 min)
+- Stretching"""
+        else:
+            warmup = int(duration * 0.15)
+            skill1 = int(duration * 0.30)
+            skill2 = int(duration * 0.25)
+            shooting = int(duration * 0.20)
+            cooldown = duration - (warmup + skill1 + skill2 + shooting)
+
+            return f"""{note}
+
+**Warm-up** ({warmup} min)
+- Dynamic stretching and light jogging
+
+**Dribbling & Control** ({skill1} min)
+- Cone weaving (both feet)
+- Speed dribbling with cuts
+- Close control in tight space
+
+**Passing** ({skill2} min)
+- Short passing accuracy
+- Through balls to targets
+- One-touch combinations
+
+**Shooting** ({shooting} min)
+- Shots from edge of box
+- Finishing practice
+- Placement over power
+
+**Cool-down** ({cooldown} min)
+- Static stretching"""
+
+    def _tennis_structured_workout(self, duration: int, intensity: str, note: str, level: str) -> str:
+        """Structured tennis workout"""
+        if duration <= 20:
+            return f"""{note}
+
+**Warm-up** (3 min)
+- Light movement and arm circles
+
+**Serve Practice** (8 min)
+- Toss consistency: 3 min
+- Target practice: 5 min
+
+**Groundstrokes** (7 min)
+- Forehand repetition: 4 min
+- Backhand consistency: 3 min
+
+**Cool-down** (2 min)
+- Arm and shoulder stretches"""
+        else:
+            warmup = int(duration * 0.15)
+            serve = int(duration * 0.25)
+            groundstrokes = int(duration * 0.35)
+            footwork = int(duration * 0.15)
+            cooldown = duration - (warmup + serve + groundstrokes + footwork)
+
+            return f"""{note}
+
+**Warm-up** ({warmup} min)
+- Dynamic stretching and shadow swings
+
+**Serve Practice** ({serve} min)
+- First serve placement
+- Second serve consistency
+- Power serve development
+
+**Groundstrokes** ({groundstrokes} min)
+- Forehand cross-court: {int(groundstrokes * 0.4)} min
+- Backhand consistency: {int(groundstrokes * 0.4)} min
+- Approach shots: {int(groundstrokes * 0.2)} min
+
+**Footwork** ({footwork} min)
+- Ladder drills
+- Split-step practice
+- Court movement patterns
+
+**Cool-down** ({cooldown} min)
+- Complete stretching routine"""
+
+    def _football_structured_workout(self, duration: int, intensity: str, note: str, level: str) -> str:
+        """Structured football workout"""
+        if duration <= 20:
+            return f"""{note}
+
+**Warm-up** (3 min)
+- Light jogging and arm swings
+
+**Route Running** (8 min)
+- Basic route practice
+- Sharp cuts and breaks
+
+**Catching** (7 min)
+- Hand-eye coordination drills
+- Catch-and-tuck practice
+
+**Cool-down** (2 min)
+- Stretching"""
+        else:
+            warmup = int(duration * 0.15)
+            routes = int(duration * 0.30)
+            catching = int(duration * 0.25)
+            agility = int(duration * 0.20)
+            cooldown = duration - (warmup + routes + catching + agility)
+
+            return f"""{note}
+
+**Warm-up** ({warmup} min)
+- Dynamic stretching and mobility
+
+**Route Running** ({routes} min)
+- Slant, post, corner routes
+- Precision cuts and breaks
+- Full-speed releases
+
+**Catching** ({catching} min)
+- Hands drills
+- Over-shoulder catches
+- Contested catches
+
+**Agility** ({agility} min)
+- Cone drills
+- Ladder work
+- Change of direction
+
+**Cool-down** ({cooldown} min)
+- Complete stretching"""
 
     def _fallback_challenge(self, sport: models.Sport, challenge_type: str) -> Dict:
         """Template-based challenge fallback"""

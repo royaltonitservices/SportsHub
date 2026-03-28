@@ -150,7 +150,7 @@ struct AuthenticationView: View {
             
             sessionManager.updateUserFromOAuth(from: userResponse, token: token)
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = "We couldn't sign you in with Apple right now. Please try again or use a different sign-in method."
             showError = true
         }
     }
@@ -165,7 +165,7 @@ struct AuthenticationView: View {
             
             sessionManager.updateUserFromOAuth(from: userResponse, token: token)
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = "We couldn't sign you in with Google right now. Please try again or use a different sign-in method."
             showError = true
         }
     }

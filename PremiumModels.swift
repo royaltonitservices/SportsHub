@@ -119,7 +119,43 @@ struct GoalsSurveyRequest: Codable {
     }
 }
 
-// MARK: - Smartwatch
+// MARK: - Wearable Sync
+
+enum WearableProvider: String, Codable, CaseIterable {
+    case appleWatch = "apple_watch"
+    case wearOS = "wear_os"
+    case fitbit = "fitbit"
+    case garmin = "garmin"
+    case whoop = "whoop"
+    case oura = "oura"
+    
+    var displayName: String {
+        switch self {
+        case .appleWatch: return "Apple Watch"
+        case .wearOS: return "Wear OS"
+        case .fitbit: return "Fitbit"
+        case .garmin: return "Garmin"
+        case .whoop: return "WHOOP"
+        case .oura: return "Oura Ring"
+        }
+    }
+    
+    var icon: String {
+        switch self {
+        case .appleWatch: return "applewatch"
+        case .wearOS: return "watchface.watch"
+        case .fitbit: return "figure.run.circle"
+        case .garmin: return "location.circle.fill"
+        case .whoop: return "waveform.path.ecg"
+        case .oura: return "circle.hexagongrid.circle.fill"
+        }
+    }
+    
+    var isCurrentlySupported: Bool {
+        // Only Apple Watch/HealthKit is implemented currently
+        return self == .appleWatch
+    }
+}
 
 struct SmartwatchConnection: Codable, Identifiable {
     let id: String
@@ -128,6 +164,10 @@ struct SmartwatchConnection: Codable, Identifiable {
     let isConnected: Bool
     let lastSync: String?
     let createdAt: String
+    
+    var provider: WearableProvider? {
+        WearableProvider(rawValue: deviceType)
+    }
     
     enum CodingKeys: String, CodingKey {
         case id
@@ -201,6 +241,44 @@ struct BiometricData: Codable, Identifiable {
         case fatigueLevel = "fatigue_level"
         case performancePrediction = "performance_prediction"
         case createdAt = "created_at"
+    }
+}
+
+struct BiometricDataRequest: Codable {
+    let date: String
+    let restingHeartRate: Int?
+    let avgHeartRate: Int?
+    let maxHeartRate: Int?
+    let heartRateVariability: Int?
+    let sleepDuration: Int?
+    let deepSleep: Int?
+    let remSleep: Int?
+    let lightSleep: Int?
+    let sleepQualityScore: Double?
+    let steps: Int?
+    let activeCalories: Int?
+    let totalCalories: Int?
+    let exerciseMinutes: Int?
+    let recoveryScore: Double?
+    let trainingStrain: Double?
+    
+    enum CodingKeys: String, CodingKey {
+        case date
+        case restingHeartRate = "resting_heart_rate"
+        case avgHeartRate = "avg_heart_rate"
+        case maxHeartRate = "max_heart_rate"
+        case heartRateVariability = "heart_rate_variability"
+        case sleepDuration = "sleep_duration"
+        case deepSleep = "deep_sleep"
+        case remSleep = "rem_sleep"
+        case lightSleep = "light_sleep"
+        case sleepQualityScore = "sleep_quality_score"
+        case steps
+        case activeCalories = "active_calories"
+        case totalCalories = "total_calories"
+        case exerciseMinutes = "exercise_minutes"
+        case recoveryScore = "recovery_score"
+        case trainingStrain = "training_strain"
     }
 }
 
@@ -515,5 +593,71 @@ struct Drill: Codable, Identifiable {
     enum CodingKeys: String, CodingKey {
         case name, intensity, description
         case durationMinutes = "duration_minutes"
+    }
+}
+
+// MARK: - Weekly Drills (Premium)
+
+struct WeeklyDrillsPlan: Codable, Identifiable {
+    let id: String
+    let userId: String
+    let sport: String
+    let weekStartDate: String
+    let weekEndDate: String
+    let drills: [PersonalizedDrill]
+    let weeklyFocus: String
+    let personalizationContext: PersonalizationContext
+    let generatedAt: String
+    let isActive: Bool
+    
+    enum CodingKeys: String, CodingKey {
+        case id
+        case userId = "user_id"
+        case sport
+        case weekStartDate = "week_start_date"
+        case weekEndDate = "week_end_date"
+        case drills
+        case weeklyFocus = "weekly_focus"
+        case personalizationContext = "personalization_context"
+        case generatedAt = "generated_at"
+        case isActive = "is_active"
+    }
+}
+
+struct PersonalizedDrill: Codable, Identifiable {
+    let id = UUID()
+    let name: String
+    let category: String
+    let difficulty: String
+    let description: String
+    let durationMinutes: Int
+    let equipment: [String]
+    let keyPoints: [String]
+    let progressionTips: [String]
+    let whyThisDrill: String
+    
+    enum CodingKeys: String, CodingKey {
+        case name, category, difficulty, description
+        case durationMinutes = "duration_minutes"
+        case equipment
+        case keyPoints = "key_points"
+        case progressionTips = "progression_tips"
+        case whyThisDrill = "why_this_drill"
+    }
+}
+
+struct PersonalizationContext: Codable {
+    let skillLevel: String
+    let weakPoints: [String]
+    let recentActivity: String?
+    let goals: [String]
+    let readinessScore: Double?
+    
+    enum CodingKeys: String, CodingKey {
+        case skillLevel = "skill_level"
+        case weakPoints = "weak_points"
+        case recentActivity = "recent_activity"
+        case goals
+        case readinessScore = "readiness_score"
     }
 }

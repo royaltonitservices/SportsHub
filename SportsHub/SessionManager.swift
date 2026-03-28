@@ -201,6 +201,32 @@ class SessionManager: ObservableObject {
         
         // TODO: Send to backend API
     }
+    
+    /// Update the current user's username
+    func updateUsername(_ newUsername: String) {
+        guard var user = currentUser else { return }
+        
+        user.username = newUsername
+        self.currentUser = user
+        
+        // Persist to UserDefaults
+        if let encoded = try? JSONEncoder().encode(user) {
+            UserDefaults.standard.set(encoded, forKey: cachedUserKey)
+        }
+    }
+    
+    /// Update the current user's display name
+    func updateDisplayName(_ newDisplayName: String) {
+        guard var user = currentUser else { return }
+        
+        user.displayName = newDisplayName
+        self.currentUser = user
+        
+        // Persist to UserDefaults
+        if let encoded = try? JSONEncoder().encode(user) {
+            UserDefaults.standard.set(encoded, forKey: cachedUserKey)
+        }
+    }
 
     // MARK: - State Management (Private)
 
@@ -226,6 +252,12 @@ class SessionManager: ObservableObject {
         // Persist user to UserDefaults
         if let encoded = try? JSONEncoder().encode(user) {
             UserDefaults.standard.set(encoded, forKey: cachedUserKey)
+        }
+        
+        // Sync Premium subscription status from backend
+        // This ensures backend-granted Premium (e.g., admin accounts) is recognized
+        Task {
+            await StoreManager.shared.syncBackendSubscription()
         }
     }
 
@@ -325,8 +357,8 @@ class SessionManager: ObservableObject {
 struct User: Identifiable, Codable, Equatable {
     let id: UUID
     let email: String
-    let username: String
-    let displayName: String
+    var username: String
+    var displayName: String
     let role: UserRole
     var bio: String?
 }

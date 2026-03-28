@@ -197,6 +197,27 @@ extension APIClient {
     func getRecommendedDrills(sport: String, limit: Int = 5) async throws -> [Drill] {
         return try await get("/ai-coach/drills?sport=\(sport)&limit=\(limit)")
     }
+    
+    // MARK: - Weekly Drills (Premium)
+    
+    func getWeeklyDrills(sport: String) async throws -> WeeklyDrillsPlan {
+        return try await get("/ai-coach/weekly-drills?sport=\(sport)")
+    }
+    
+    func generateWeeklyDrills(sport: String) async throws -> WeeklyDrillsPlan {
+        struct GenerateRequest: Codable {
+            let sport: String
+        }
+        return try await post("/ai-coach/weekly-drills/generate", body: GenerateRequest(sport: sport))
+    }
+    
+    func getDrillsHistory(sport: String? = nil, limit: Int = 4) async throws -> [WeeklyDrillsPlan] {
+        var query = "?limit=\(limit)"
+        if let sport = sport {
+            query += "&sport=\(sport)"
+        }
+        return try await get("/ai-coach/weekly-drills/history\(query)")
+    }
 }
 
 // Helper struct for empty POST/DELETE requests

@@ -555,7 +555,7 @@ struct EvidenceUploadView: View {
             await onUploadComplete()
             dismiss()
         } catch {
-            errorMessage = "Failed to upload evidence: \(error.localizedDescription)"
+            errorMessage = "We couldn't upload your evidence. Check your connection and try again."
         }
 
         isUploading = false

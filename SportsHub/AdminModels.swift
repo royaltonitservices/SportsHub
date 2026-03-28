@@ -149,6 +149,54 @@ struct Suspension: Identifiable {
     let isPermanent: Bool
 }
 
+// MARK: - Admin API Response Models
+
+struct AdminStatsResponse: Codable {
+    let users: UserStats
+    let content: ContentStats
+    let moderation: ModerationStats
+    
+    struct UserStats: Codable {
+        let total: Int
+        let active: Int
+        let suspended: Int
+        let banned: Int
+    }
+    
+    struct ContentStats: Codable {
+        let posts: Int
+        let clips: Int
+        let messages: Int
+        let challenges: Int
+    }
+    
+    struct ModerationStats: Codable {
+        let pendingFlags: Int
+        
+        enum CodingKeys: String, CodingKey {
+            case pendingFlags = "pending_flags"
+        }
+    }
+}
+
+struct AdminActionResponse: Codable, Identifiable {
+    let id: String
+    let adminUsername: String
+    let targetUserId: String?
+    let actionType: String
+    let reason: String?
+    let timestamp: String
+    
+    enum CodingKeys: String, CodingKey {
+        case id
+        case adminUsername = "admin_username"
+        case targetUserId = "target_user_id"
+        case actionType = "action_type"
+        case reason
+        case timestamp
+    }
+}
+
 // MARK: - Mock Admin Data (for development)
 
 struct MockAdminData {

@@ -100,7 +100,11 @@ class AICoachManager: ObservableObject {
 
 struct AICoachFloatingView: View {
     @StateObject private var coachManager = AICoachManager.shared
+    @StateObject private var storeManager = StoreManager.shared
     @State private var panelPosition: CGPoint?
+    @State private var showingCoachChat = false
+    @State private var showPremiumUpgrade = false
+    @State private var initialPrompt: String?
     
     var body: some View {
         if coachManager.isVisible {
@@ -132,12 +136,27 @@ struct AICoachFloatingView: View {
                     // Reset panel position when view appears
                     panelPosition = nil
                 }
-                .onChange(of: coachManager.isExpanded) { expanded in
+                .onChange(of: coachManager.isExpanded) { _, expanded in
                     // Reset panel position when expanding
                     if expanded {
                         panelPosition = fixedButtonPosition
                     }
                 }
+            }
+            .sheet(isPresented: $showingCoachChat) {
+                NavigationStack {
+                    AICoachChatView(
+                        sport: Sport(rawValue: coachManager.currentSport) ?? .basketball,
+                        initialPrompt: initialPrompt
+                    )
+                }
+                .onDisappear {
+                    // Clear initial prompt when sheet dismisses
+                    initialPrompt = nil
+                }
+            }
+            .sheet(isPresented: $showPremiumUpgrade) {
+                PremiumSubscriptionView()
             }
         }
     }
@@ -422,41 +441,94 @@ struct AICoachFloatingView: View {
         .shadow(color: .black.opacity(0.05), radius: 5)
     }
     
-    // MARK: - Empty State
+    // MARK: - Empty State (Interactive Coaching)
     
     private var emptyState: some View {
         VStack(spacing: Spacing.lg) {
-            Image(systemName: "checkmark.circle.fill")
+            Image(systemName: "figure.run.circle.fill")
                 .font(.system(size: 50))
-                .foregroundStyle(.green)
+                .foregroundStyle(
+                    LinearGradient(
+                        colors: [.blue, .purple],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
             
-            Text("All Caught Up!")
-                .font(.headline)
+            VStack(spacing: Spacing.sm) {
+                Text("Ready to Train?")
+                    .font(.headline)
+                
+                Text("Ask me anything or let's explore what you should work on today.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
             
-            Text("No new insights at the moment. Check back later for personalized recommendations.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-            
-            Button(action: {
-                Task {
-                    await coachManager.refreshInsights()
-                }
-            }) {
-                HStack {
-                    Image(systemName: "arrow.clockwise")
-                    Text("Refresh")
-                }
-                .font(.subheadline)
-                .fontWeight(.semibold)
-                .foregroundStyle(.white)
-                .padding(.horizontal, Spacing.md)
-                .padding(.vertical, Spacing.sm)
-                .background(Color.blue)
-                .cornerRadius(8)
+            // Suggested Prompts
+            VStack(spacing: Spacing.sm) {
+                CoachPromptButton(
+                    icon: "target",
+                    text: "What should I work on today?",
+                    action: { openCoachChat(with: "What should I work on today?") }
+                )
+                
+                CoachPromptButton(
+                    icon: "questionmark.circle",
+                    text: "What are my weak points?",
+                    action: { openCoachChat(with: "What do you think are my weak points?") }
+                )
+                
+                CoachPromptButton(
+                    icon: "figure.strengthtraining.traditional",
+                    text: "Give me a quick workout",
+                    action: { openCoachChat(with: "Give me a 20-minute workout for \(coachManager.currentSport)") }
+                )
+                
+                CoachPromptButton(
+                    icon: "bubble.left.and.bubble.right",
+                    text: "Ask me anything...",
+                    action: { openFullCoach() }
+                )
             }
         }
-        .padding(Spacing.xl)
+        .padding(Spacing.lg)
+    }
+    
+    private func openCoachChat(with prompt: String) {
+        if storeManager.isPremium {
+            initialPrompt = prompt
+            withAnimation {
+                coachManager.isExpanded = false
+            }
+            // Small delay to let collapse animation finish
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                showingCoachChat = true
+            }
+        } else {
+            withAnimation {
+                coachManager.isExpanded = false
+            }
+            showPremiumUpgrade = true
+        }
+    }
+    
+    private func openFullCoach() {
+        if storeManager.isPremium {
+            initialPrompt = nil
+            withAnimation {
+                coachManager.isExpanded = false
+            }
+            // Small delay to let collapse animation finish
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                showingCoachChat = true
+            }
+        } else {
+            withAnimation {
+                coachManager.isExpanded = false
+            }
+            showPremiumUpgrade = true
+        }
     }
     
     // MARK: - Helper Functions
@@ -500,6 +572,42 @@ struct AICoachFloatingView: View {
             return [.orange, .yellow]
         } else {
             return [.red, .pink]
+        }
+    }
+}
+
+// MARK: - Coach Prompt Button
+
+struct CoachPromptButton: View {
+    let icon: String
+    let text: String
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: Spacing.sm) {
+                Image(systemName: icon)
+                    .font(.system(size: 16))
+                    .foregroundStyle(.blue)
+                    .frame(width: 24)
+                
+                Text(text)
+                    .font(.subheadline)
+                    .foregroundStyle(.primary)
+                
+                Spacer()
+                
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(Spacing.md)
+            .background(Color(.systemBackground))
+            .cornerRadius(10)
+            .overlay(
+                RoundedRectangle(cornerRadius: 10)
+                    .stroke(Color(.systemGray5), lineWidth: 1)
+            )
         }
     }
 }

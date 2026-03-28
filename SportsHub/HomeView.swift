@@ -158,12 +158,12 @@ struct HomeView: View {
     private var greetingSection: some View {
         HStack {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Hello, \(athleteName)")
+                Text(timeBasedGreeting + ", \(athleteName)")
                     .font(.title)
                     .fontWeight(.bold)
                     .foregroundStyle(Color.appTextPrimary)
 
-                Text("Ready to compete?")
+                Text(personalizedSubtitle)
                     .font(.subheadline)
                     .foregroundStyle(Color.appTextSecondary)
             }
@@ -172,6 +172,31 @@ struct HomeView: View {
         }
         .padding(.horizontal, Spacing.md)
         .padding(.vertical, Spacing.sm)
+    }
+    
+    private var timeBasedGreeting: String {
+        let hour = Calendar.current.component(.hour, from: Date())
+        switch hour {
+        case 5..<12: return "Good morning"
+        case 12..<17: return "Good afternoon"
+        case 17..<22: return "Good evening"
+        default: return "Welcome back"
+        }
+    }
+    
+    private var personalizedSubtitle: String {
+        let hour = Calendar.current.component(.hour, from: Date())
+        if hour >= 5 && hour < 11 {
+            return "Ready to train?"
+        } else if hour >= 11 && hour < 14 {
+            return "Time to compete?"
+        } else if hour >= 14 && hour < 18 {
+            return "Find a match?"
+        } else if hour >= 18 && hour < 22 {
+            return "How was your day?"
+        } else {
+            return "Ready for tomorrow?"
+        }
     }
 
     private var athleteName: String {
@@ -205,37 +230,77 @@ struct HomeView: View {
 
     private var feedSection: some View {
         VStack(spacing: Spacing.md) {
-            // Sport-specific content header
-            HStack {
-                Image(systemName: selectedSport.icon)
-                    .font(.title2)
-                    .foregroundStyle(Color.appPrimary)
-
-                Text("\(selectedSport.rawValue) Feed")
-                    .font(.title2)
-                    .fontWeight(.bold)
-                    .foregroundStyle(Color.appTextPrimary)
-
-                Spacer()
+            // Recommended Actions
+            VStack(alignment: .leading, spacing: Spacing.md) {
+                HStack {
+                    Image(systemName: "sparkles")
+                        .font(.title3)
+                        .foregroundStyle(Color.appPrimary)
+                    Text("Recommended for You")
+                        .font(.headline)
+                        .foregroundStyle(Color.appTextPrimary)
+                    Spacer()
+                }
+                
+                // Quick action cards
+                VStack(spacing: Spacing.sm) {
+                    RecommendedActionCard(
+                        icon: "figure.run",
+                        title: "Quick \(selectedSport.rawValue) Session",
+                        subtitle: "15 min skill drill",
+                        color: .blue,
+                        action: { /* Navigate to train */ }
+                    )
+                    
+                    RecommendedActionCard(
+                        icon: "person.2.fill",
+                        title: "Find Opponents",
+                        subtitle: "Play ranked match",
+                        color: .green,
+                        action: { /* Navigate to play */ }
+                    )
+                    
+                    RecommendedActionCard(
+                        icon: "brain.head.profile",
+                        title: "Ask AI Coach",
+                        subtitle: "Get personalized tips",
+                        color: .purple,
+                        action: { /* Open AI coach */ }
+                    )
+                }
             }
+            .cardBackground()
+            
+            // Activity placeholder with better prompt
+            VStack(alignment: .leading, spacing: Spacing.md) {
+                HStack {
+                    Image(systemName: selectedSport.icon)
+                        .font(.title3)
+                        .foregroundStyle(Color.appPrimary)
+                    Text("\(selectedSport.rawValue) Activity")
+                        .font(.headline)
+                        .foregroundStyle(Color.appTextPrimary)
+                    Spacer()
+                }
 
-            // Empty state for now
-            VStack(spacing: Spacing.md) {
-                Image(systemName: selectedSport.icon)
-                    .font(.system(size: 64))
-                    .foregroundStyle(Color.appTextSecondary.opacity(0.3))
+                VStack(spacing: Spacing.sm) {
+                    Image(systemName: "chart.line.uptrend.xyaxis")
+                        .font(.system(size: 48))
+                        .foregroundStyle(Color.appTextSecondary.opacity(0.4))
 
-                Text("No \(selectedSport.rawValue.lowercased()) activity yet")
-                    .font(.headline)
-                    .foregroundStyle(Color.appTextSecondary)
+                    Text("Start your journey")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .foregroundStyle(Color.appTextPrimary)
 
-                Text("Start competing, training, or connect with other athletes")
-                    .font(.subheadline)
-                    .foregroundStyle(Color.appTextSecondary.opacity(0.8))
-                    .multilineTextAlignment(.center)
+                    Text("Complete your first match to see your progress here")
+                        .font(.caption)
+                        .foregroundStyle(Color.appTextSecondary)
+                        .multilineTextAlignment(.center)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, Spacing.lg)
             }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, Spacing.xl)
             .cardBackground()
         }
     }
@@ -246,6 +311,50 @@ struct HomeView: View {
         guard !searchText.isEmpty else { return }
         // TODO: Navigate to search results or filter feed
         print("Searching for: \(searchText)")
+    }
+}
+
+// MARK: - Recommended Action Card Component
+
+struct RecommendedActionCard: View {
+    let icon: String
+    let title: String
+    let subtitle: String
+    let color: Color
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: Spacing.md) {
+                Image(systemName: icon)
+                    .font(.title2)
+                    .foregroundStyle(color)
+                    .frame(width: 44, height: 44)
+                    .background(color.opacity(0.15))
+                    .cornerRadius(CornerRadius.md)
+                
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(Color.appTextPrimary)
+                    
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(Color.appTextSecondary)
+                }
+                
+                Spacer()
+                
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundStyle(Color.appTextSecondary)
+            }
+            .padding(Spacing.md)
+            .background(Color.appSurface)
+            .cornerRadius(CornerRadius.md)
+        }
+        .buttonStyle(.plain)
     }
 }
 

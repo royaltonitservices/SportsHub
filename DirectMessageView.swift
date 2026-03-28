@@ -63,7 +63,7 @@ struct DirectMessageView: View {
                 }
                 .padding()
             }
-            .onChange(of: messages.count) { _ in
+            .onChange(of: messages.count) { _, _ in
                 // Auto-scroll to bottom when new message arrives
                 if let lastMessage = messages.last {
                     withAnimation {
@@ -144,7 +144,7 @@ struct DirectMessageView: View {
         do {
             messages = try await APIClient.shared.getConversation(withUserId: friendId)
         } catch {
-            errorMessage = "Failed to load messages: \(error.localizedDescription)"
+            errorMessage = "We couldn't load your messages. Check your connection and try again."
         }
 
         isLoading = false
@@ -165,7 +165,7 @@ struct DirectMessageView: View {
             } catch {
                 // Restore message text on error
                 messageText = tempMessage
-                errorMessage = "Failed to send message: \(error.localizedDescription)"
+                errorMessage = "We couldn't send your message. Check your connection and try again."
             }
             isSending = false
         }

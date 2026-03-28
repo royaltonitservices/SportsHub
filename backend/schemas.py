@@ -6,6 +6,7 @@ from typing import Optional, List
 from datetime import datetime
 from uuid import UUID
 import models
+import models_premium
 
 
 # Auth Schemas
@@ -75,6 +76,14 @@ class UserProfile(UserResponse):
     bio: Optional[str] = None
     avatar_seed: Optional[str] = None
     pronouns: Optional[str] = None
+
+
+class UpdateUsername(BaseModel):
+    new_username: str = Field(..., min_length=3, max_length=20)
+
+
+class UpdateDisplayName(BaseModel):
+    new_display_name: str = Field(..., min_length=1, max_length=100)
 
 
 # Sport Profile Schemas
@@ -201,14 +210,37 @@ class PostCreate(BaseModel):
 class PostResponse(BaseModel):
     id: UUID
     author_id: UUID
+    user_id: UUID  # Alias for iOS compatibility
+    username: str
     content: str
     sport: Optional[models.Sport]
     likes_count: int
     comments_count: int
     created_at: datetime
+    is_liked: bool = False  # Will be computed per request
 
     class Config:
         from_attributes = True
+
+    @model_validator(mode='before')
+    @classmethod
+    def compute_fields(cls, data):
+        if hasattr(data, '__dict__'):
+            # Converting from ORM object (Post with joined author)
+            obj = data
+            return {
+                'id': obj.id,
+                'author_id': obj.author_id,
+                'user_id': obj.author_id,
+                'username': obj.author.username if hasattr(obj, 'author') and obj.author else 'unknown',
+                'content': obj.content,
+                'sport': obj.sport,
+                'likes_count': obj.likes_count,
+                'comments_count': obj.comments_count,
+                'created_at': obj.created_at,
+                'is_liked': False  # TODO: Check if current user liked this post
+            }
+        return data
 
 
 # Clip Schemas
@@ -222,15 +254,45 @@ class ClipCreate(BaseModel):
 class ClipResponse(BaseModel):
     id: UUID
     author_id: UUID
+    user_id: UUID  # Alias for iOS compatibility
+    username: str
     sport: models.Sport
     title: str
+    description: Optional[str] = None
+    video_url: Optional[str] = None
+    thumbnail_url: Optional[str] = None
     duration: int
     views_count: int
     likes_count: int
     created_at: datetime
+    is_liked: bool = False  # Will be computed per request
 
     class Config:
         from_attributes = True
+
+    @model_validator(mode='before')
+    @classmethod
+    def compute_fields(cls, data):
+        if hasattr(data, '__dict__'):
+            # Converting from ORM object (Clip with joined author)
+            obj = data
+            return {
+                'id': obj.id,
+                'author_id': obj.author_id,
+                'user_id': obj.author_id,
+                'username': obj.author.username if hasattr(obj, 'author') and obj.author else 'unknown',
+                'sport': obj.sport,
+                'title': obj.title,
+                'description': getattr(obj, 'description', None),
+                'video_url': obj.video_url,
+                'thumbnail_url': getattr(obj, 'thumbnail_url', None),
+                'duration': obj.duration,
+                'views_count': obj.views_count,
+                'likes_count': obj.likes_count,
+                'created_at': obj.created_at,
+                'is_liked': False  # TODO: Check if current user liked this clip
+            }
+        return data
 
 
 # Admin Schemas
@@ -487,3 +549,125 @@ class TennisCourtResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+
+# Tournament Schemas
+class TournamentCreate(BaseModel):
+    name: str = Field(..., max_length=200)
+    sport: models.Sport
+    description: Optional[str] = None
+    format: models_premium.TournamentFormat = models_premium.TournamentFormat.SINGLE_ELIMINATION
+    max_participants: Optional[int] = None
+    is_premium_only: bool = False
+    start_date: datetime
+    registration_closes: Optional[datetime] = None
+    location: Optional[str] = None
+    is_online: bool = False
+    entry_fee: int = 0
+    prize_description: Optional[str] = None
+
+
+class TournamentResponse(BaseModel):
+    id: UUID
+    creator_id: UUID
+    creator_username: str
+    name: str
+    sport: models.Sport
+    description: Optional[str]
+    format: models_premium.TournamentFormat
+    status: models_premium.TournamentStatus
+    max_participants: Optional[int]
+    current_participants: int
+    is_premium_only: bool
+    registration_opens: Optional[datetime]
+    registration_closes: Optional[datetime]
+    start_date: datetime
+    end_date: Optional[datetime]
+    location: Optional[str]
+    is_online: bool
+    entry_fee: int
+    prize_description: Optional[str]
+    created_at: datetime
+    is_registered: bool = False  # Computed per user
+
+    class Config:
+        from_attributes = True
+
+    @model_validator(mode="before")
+    @classmethod
+    def compute_fields(cls, data):
+        if hasattr(data, "__dict__"):
+            obj = data
+            return {
+                "id": obj.id,
+                "creator_id": obj.creator_id,
+                "creator_username": obj.creator.username if hasattr(obj, "creator") and obj.creator else "unknown",
+                "name": obj.name,
+                "sport": obj.sport,
+                "description": obj.description,
+                "format": obj.format,
+                "status": obj.status,
+                "max_participants": obj.max_participants,
+                "current_participants": obj.current_participants,
+                "is_premium_only": obj.is_premium_only,
+                "registration_opens": obj.registration_opens,
+                "registration_closes": obj.registration_closes,
+                "start_date": obj.start_date,
+                "end_date": obj.end_date,
+                "location": obj.location,
+                "is_online": obj.is_online,
+                "entry_fee": obj.entry_fee,
+                "prize_description": obj.prize_description,
+                "created_at": obj.created_at,
+                "is_registered": False  # TODO: Check if current user is registered
+            }
+        return data
+
+
+class TournamentParticipantResponse(BaseModel):
+    id: UUID
+    user_id: UUID
+    username: str
+    registered_at: datetime
+    status: str
+    placement: Optional[int]
+    wins: int
+    losses: int
+    seed: Optional[int]
+
+    class Config:
+        from_attributes = True
+
+    @model_validator(mode="before")
+    @classmethod
+    def compute_fields(cls, data):
+        if hasattr(data, "__dict__"):
+            obj = data
+            return {
+                "id": obj.id,
+                "user_id": obj.user_id,
+                "username": obj.user.username if hasattr(obj, "user") and obj.user else "unknown",
+                "registered_at": obj.registered_at,
+                "status": obj.status,
+                "placement": obj.placement,
+                "wins": obj.wins,
+                "losses": obj.losses,
+                "seed": obj.seed
+            }
+        return data
+
+
+# MARK: - Premium Subscription Schemas
+
+class SubscriptionStatusResponse(BaseModel):
+    """User's subscription status"""
+    has_premium: bool
+    tier: str  # "free" or "premium"
+    status: Optional[str] = None  # "active", "cancelled", "expired", "trial"
+    expires_at: Optional[datetime] = None
+    features: dict = {}
+
+    class Config:
+        from_attributes = True
+

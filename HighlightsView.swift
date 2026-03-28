@@ -203,13 +203,14 @@ struct HighlightDetailView: View {
     @Environment(\.dismiss) private var dismiss
     
     var body: some View {
-        ZStack {
-            Color.black.ignoresSafeArea()
-            
-            if highlights.isEmpty {
-                ProgressView()
-                    .tint(.white)
-            } else {
+        GeometryReader { geometry in
+            ZStack {
+                Color.black.ignoresSafeArea()
+                
+                if highlights.isEmpty {
+                    ProgressView()
+                        .tint(.white)
+                } else {
                 // Current highlight
                 TabView(selection: $currentIndex) {
                     ForEach(Array(highlights.enumerated()), id: \.element.id) { index, highlight in
@@ -260,22 +261,23 @@ struct HighlightDetailView: View {
                     }
                     Spacer()
                 }
+                }
             }
-        }
-        .navigationBarHidden(true)
-        .task {
-            await loadHighlights()
-            startTimer()
-        }
-        .onDisappear {
-            timer?.invalidate()
-        }
-        .onTapGesture { location in
-            // Tap left side to go back, right side to go forward
-            if location.x < UIScreen.main.bounds.width / 2 {
-                previousHighlight()
-            } else {
-                nextHighlight()
+            .onTapGesture { location in
+                // Tap left side to go back, right side to go forward
+                if location.x < geometry.size.width / 2 {
+                    previousHighlight()
+                } else {
+                    nextHighlight()
+                }
+            }
+            .navigationBarHidden(true)
+            .task {
+                await loadHighlights()
+                startTimer()
+            }
+            .onDisappear {
+                timer?.invalidate()
             }
         }
     }

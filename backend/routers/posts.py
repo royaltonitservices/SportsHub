@@ -33,6 +33,9 @@ async def create_post(
     db.commit()
     db.refresh(post)
 
+    # Load author relationship for response
+    post.author = current_user
+
     return post
 
 
@@ -46,7 +49,9 @@ async def get_feed(
 ):
     """Get posts feed with optional sport filter"""
 
-    query = db.query(models.Post).filter(
+    query = db.query(models.Post).join(
+        models.User, models.Post.author_id == models.User.id
+    ).filter(
         models.Post.moderation_status != "removed"
     )
 
@@ -66,7 +71,9 @@ async def get_post(
 ):
     """Get a specific post"""
 
-    post = db.query(models.Post).filter(models.Post.id == post_id).first()
+    post = db.query(models.Post).join(
+        models.User, models.Post.author_id == models.User.id
+    ).filter(models.Post.id == post_id).first()
 
     if not post:
         raise HTTPException(
@@ -87,7 +94,9 @@ async def get_user_posts(
 ):
     """Get posts by a specific user"""
 
-    posts = db.query(models.Post).filter(
+    posts = db.query(models.Post).join(
+        models.User, models.Post.author_id == models.User.id
+    ).filter(
         models.Post.author_id == user_id,
         models.Post.moderation_status != "removed"
     ).order_by(models.Post.created_at.desc()).offset(skip).limit(limit).all()

@@ -9,12 +9,14 @@ import SwiftUI
 
 struct ProfileView: View {
     @EnvironmentObject var sessionManager: SessionManager
+    @StateObject private var storeManager = StoreManager.shared
     @State private var selectedSport: Sport = .basketball
     @State private var showImagePicker = false
     @State private var selectedImage: UIImage?
     @State private var customProfilePicture: Image?
     @State private var showEditBio = false
     @State private var bioText = ""
+    @State private var showPremiumSheet = false
     
     private var bioButtonText: String {
         if let bio = sessionManager.currentUser?.bio, !bio.isEmpty {
@@ -98,6 +100,9 @@ struct ProfileView: View {
                     }
                     .padding(.vertical, Spacing.md)
 
+                    // Premium Section
+                    premiumSection
+                    
                     // Sport Selector
                     sportSelector
 
@@ -119,6 +124,18 @@ struct ProfileView: View {
                                 StatCard(title: "Wins", value: "0")
                                 StatCard(title: "Rating", value: "1500")
                             }
+                            
+                            // Helpful tip for new users
+                            HStack(spacing: Spacing.sm) {
+                                Image(systemName: "info.circle.fill")
+                                    .font(.caption)
+                                    .foregroundStyle(Color.appPrimary)
+                                Text("Play your first match to establish your rating")
+                                    .font(.caption)
+                                    .foregroundStyle(Color.appTextSecondary)
+                                Spacer()
+                            }
+                            .padding(.horizontal, Spacing.sm)
                         }
                         .cardBackground()
                     }
@@ -184,7 +201,7 @@ struct ProfileView: View {
                     showEditBio = false
                 })
             }
-            .onChange(of: selectedImage) { newImage in
+            .onChange(of: selectedImage) { oldValue, newImage in
                 if let newImage = newImage {
                     customProfilePicture = Image(uiImage: newImage)
                     // TODO: Upload to backend
@@ -208,6 +225,316 @@ struct ProfileView: View {
                     )
                 }
             }
+        }
+    }
+    
+    // MARK: - Premium Section
+    
+    private var premiumSection: some View {
+        VStack(spacing: 0) {
+            if storeManager.isPremium {
+                // Premium Active State
+                premiumActiveCard
+            } else {
+                // Premium Upgrade CTA
+                premiumUpgradeCard
+            }
+        }
+        .sheet(isPresented: $showPremiumSheet) {
+            PremiumSubscriptionView()
+        }
+    }
+    
+    private var premiumActiveCard: some View {
+        Button(action: {
+            showPremiumSheet = true
+        }) {
+            VStack(alignment: .leading, spacing: Spacing.md) {
+                HStack(spacing: Spacing.sm) {
+                    Image(systemName: "star.circle.fill")
+                        .font(.title2)
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [.purple, .blue],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                    
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Your Premium Plan")
+                            .font(.headline)
+                            .fontWeight(.bold)
+                            .foregroundStyle(Color.appTextPrimary)
+                        
+                        Text("Active • All features unlocked")
+                            .font(.caption)
+                            .foregroundStyle(Color.appTextSecondary)
+                    }
+                    
+                    Spacer()
+                    
+                    Image(systemName: "checkmark.seal.fill")
+                        .font(.title3)
+                        .foregroundStyle(Color.green)
+                }
+                
+                Divider()
+                    .padding(.vertical, Spacing.xs)
+                
+                // Top Premium Benefits
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Top Benefits")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(Color.appTextSecondary)
+                        .padding(.bottom, 4)
+                    
+                    VStack(alignment: .leading, spacing: Spacing.sm) {
+                        premiumFeatureBadge(icon: "calendar.badge.clock", text: "AI Weekly Drills", color: .cyan)
+                        premiumFeatureBadge(icon: "brain.head.profile", text: "AI Coach", color: .purple)
+                        premiumFeatureBadge(icon: "chart.line.uptrend.xyaxis", text: "Advanced Analytics", color: .green)
+                    }
+                }
+                
+                // More included indicator
+                HStack {
+                    Image(systemName: "sparkles")
+                        .font(.caption)
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [.purple, .blue],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                    
+                    Text("Plus wearable sync, tournaments, and more")
+                        .font(.caption)
+                        .foregroundStyle(Color.appTextSecondary)
+                    
+                    Spacer()
+                    
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .foregroundStyle(Color.appTextSecondary)
+                }
+                .padding(.top, Spacing.xs)
+                .padding(.horizontal, Spacing.xs)
+                .padding(.vertical, Spacing.xs)
+                .background(Color.purple.opacity(0.08))
+                .cornerRadius(8)
+            }
+            .padding(Spacing.md)
+            .background(
+                LinearGradient(
+                    colors: [
+                        Color.purple.opacity(0.05),
+                        Color.blue.opacity(0.05)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+            .cornerRadius(CornerRadius.large)
+            .overlay(
+                RoundedRectangle(cornerRadius: CornerRadius.large)
+                    .stroke(
+                        LinearGradient(
+                            colors: [.purple.opacity(0.3), .blue.opacity(0.3)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1.5
+                    )
+            )
+        }
+        .buttonStyle(.plain)
+    }
+    
+    private var premiumUpgradeCard: some View {
+        Button(action: {
+            showPremiumSheet = true
+        }) {
+            VStack(alignment: .leading, spacing: Spacing.md) {
+                HStack(spacing: Spacing.sm) {
+                    ZStack {
+                        Circle()
+                            .fill(
+                                LinearGradient(
+                                    colors: [.purple.opacity(0.2), .blue.opacity(0.2)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .frame(width: 44, height: 44)
+                        
+                        Image(systemName: "star.fill")
+                            .font(.title3)
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [.purple, .blue],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Unlock Premium")
+                            .font(.headline)
+                            .fontWeight(.bold)
+                            .foregroundStyle(Color.appTextPrimary)
+                        
+                        Text("Train smarter with AI-powered drills")
+                            .font(.caption)
+                            .foregroundStyle(Color.appTextSecondary)
+                    }
+                    
+                    Spacer()
+                    
+                    Image(systemName: "arrow.right.circle.fill")
+                        .font(.title2)
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [.purple, .blue],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                }
+                
+                Divider()
+                    .padding(.vertical, Spacing.xs)
+                
+                // Top Premium Benefits
+                VStack(alignment: .leading, spacing: Spacing.sm) {
+                    Text("Includes")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(Color.appTextSecondary)
+                    
+                    HStack(spacing: Spacing.sm) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.caption)
+                            .foregroundStyle(Color.green)
+                        Text("New AI-generated drills every week")
+                            .font(.caption)
+                            .foregroundStyle(Color.appTextPrimary)
+                        Spacer()
+                    }
+                    
+                    HStack(spacing: Spacing.sm) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.caption)
+                            .foregroundStyle(Color.green)
+                        Text("Drills tailored to your weak points")
+                            .font(.caption)
+                            .foregroundStyle(Color.appTextPrimary)
+                        Spacer()
+                    }
+                    
+                    HStack(spacing: Spacing.sm) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.caption)
+                            .foregroundStyle(Color.green)
+                        Text("Smarter AI coach & recovery insights")
+                            .font(.caption)
+                            .foregroundStyle(Color.appTextPrimary)
+                        Spacer()
+                    }
+                    
+                    // More included indicator
+                    HStack {
+                        Image(systemName: "plus.circle.fill")
+                            .font(.caption2)
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [.purple, .blue],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
+                        
+                        Text("Advanced analytics, wearable sync, tournaments & more")
+                            .font(.caption2)
+                            .foregroundStyle(Color.appTextSecondary)
+                        
+                        Spacer()
+                    }
+                    .padding(.top, 2)
+                }
+                
+                // Pricing
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Starting at")
+                            .font(.caption2)
+                            .foregroundStyle(Color.appTextSecondary)
+                        
+                        HStack(alignment: .firstTextBaseline, spacing: 2) {
+                            Text("$8.99")
+                                .font(.title3)
+                                .fontWeight(.bold)
+                                .foregroundStyle(
+                                    LinearGradient(
+                                        colors: [.purple, .blue],
+                                        startPoint: .leading,
+                                        endPoint: .trailing
+                                    )
+                                )
+                            Text("/month")
+                                .font(.caption)
+                                .foregroundStyle(Color.appTextSecondary)
+                        }
+                    }
+                    
+                    Spacer()
+                    
+                    Text("or $100/year")
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .foregroundStyle(Color.green)
+                        .padding(.horizontal, Spacing.sm)
+                        .padding(.vertical, 4)
+                        .background(Color.green.opacity(0.1))
+                        .cornerRadius(6)
+                }
+            }
+            .padding(Spacing.md)
+            .background(Color.appSurface)
+            .cornerRadius(CornerRadius.large)
+            .overlay(
+                RoundedRectangle(cornerRadius: CornerRadius.large)
+                    .stroke(
+                        LinearGradient(
+                            colors: [.purple.opacity(0.3), .blue.opacity(0.3)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1.5
+                    )
+            )
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+    
+    private func premiumFeatureBadge(icon: String, text: String, color: Color) -> some View {
+        HStack(spacing: Spacing.xs) {
+            Image(systemName: icon)
+                .font(.caption)
+                .foregroundStyle(color)
+                .frame(width: 16)
+            
+            Text(text)
+                .font(.caption)
+                .foregroundStyle(Color.appTextPrimary)
+            
+            Spacer()
+            
+            Image(systemName: "checkmark.circle.fill")
+                .font(.caption2)
+                .foregroundStyle(Color.green)
         }
     }
 }
@@ -342,7 +669,7 @@ struct EditBioSheet: View {
             .onAppear {
                 isFocused = true
             }
-            .onChange(of: bioText) { newValue in
+            .onChange(of: bioText) { oldValue, newValue in
                 // Prevent typing beyond max characters
                 if newValue.count > maxCharacters {
                     bioText = String(newValue.prefix(maxCharacters))

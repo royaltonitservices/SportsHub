@@ -16,6 +16,8 @@ struct TrainView: View {
     @State private var showCreateChallenge = false
     @State private var showReadiness = false
     @State private var showAICoach = false
+    @State private var showPremiumUpgrade = false
+    @State private var showFindPartner = false
     @State private var recentSessions: [TrainingSessionPreview] = []
 
     var body: some View {
@@ -25,18 +27,24 @@ struct TrainView: View {
                     // Sport Selector
                     sportSelector
                     
+                    // Weekly AI Drills (Premium)
+                    if storeManager.isPremium {
+                        weeklyDrillsCard
+                    }
+                    
                     // Daily Readiness Card (Premium)
                     if storeManager.isPremium {
                         dailyReadinessCard
                     }
                     
-                    // AI Coach Chat (Premium)
-                    if storeManager.isPremium {
-                        aiCoachChatCard
-                    }
+                    // AI Coach Chat (Visible to all, Premium-gated on tap)
+                    aiCoachChatCard
                     
                     // Quick Actions
                     quickActions
+                    
+                    // Recommended Drills (new)
+                    recommendedDrillsSection
 
                     // Recent Sessions
                     if !recentSessions.isEmpty {
@@ -153,7 +161,117 @@ struct TrainView: View {
                     AICoachChatView(sport: selectedSport)
                 }
             }
+            .sheet(isPresented: $showFindPartner) {
+                MatchmakingView(sport: selectedSport)
+            }
+            .sheet(isPresented: $showPremiumUpgrade) {
+                PremiumSubscriptionView()
+            }
         }
+    }
+    
+    // MARK: - Weekly Drills Card
+    
+    private var weeklyDrillsCard: some View {
+        NavigationLink {
+            WeeklyDrillsView(sport: selectedSport)
+        } label: {
+            VStack(alignment: .leading, spacing: Spacing.md) {
+                HStack {
+                    ZStack {
+                        Circle()
+                            .fill(
+                                LinearGradient(
+                                    colors: [.cyan.opacity(0.2), .purple.opacity(0.2)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .frame(width: 44, height: 44)
+                        
+                        Image(systemName: "calendar.badge.clock")
+                            .font(.title3)
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [.cyan, .purple],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text("AI Weekly Drills")
+                                .font(.headline)
+                                .foregroundStyle(Color.appTextPrimary)
+                            
+                            Image(systemName: "sparkles")
+                                .font(.caption)
+                                .foregroundStyle(.cyan)
+                        }
+                        
+                        Text("Fresh, personalized drills every week")
+                            .font(.caption)
+                            .foregroundStyle(Color.appSecondary)
+                    }
+                    
+                    Spacer()
+                    
+                    Image(systemName: "chevron.right")
+                        .foregroundStyle(Color.appSecondary)
+                }
+                
+                Divider()
+                
+                HStack(spacing: Spacing.md) {
+                    HStack(spacing: Spacing.xs) {
+                        Image(systemName: "target")
+                            .font(.caption)
+                            .foregroundStyle(Color.orange)
+                        Text("Tailored to weak points")
+                            .font(.caption)
+                            .foregroundStyle(Color.appTextSecondary)
+                    }
+                    
+                    Text("•")
+                        .foregroundStyle(Color.appTextSecondary.opacity(0.5))
+                    
+                    HStack(spacing: Spacing.xs) {
+                        Image(systemName: "arrow.up.right")
+                            .font(.caption)
+                            .foregroundStyle(Color.green)
+                        Text("Skill progression")
+                            .font(.caption)
+                            .foregroundStyle(Color.appTextSecondary)
+                    }
+                }
+            }
+            .padding(Spacing.md)
+            .background(
+                LinearGradient(
+                    colors: [
+                        Color.cyan.opacity(0.05),
+                        Color.purple.opacity(0.05)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+            .cornerRadius(CornerRadius.large)
+            .overlay(
+                RoundedRectangle(cornerRadius: CornerRadius.large)
+                    .stroke(
+                        LinearGradient(
+                            colors: [.cyan.opacity(0.3), .purple.opacity(0.3)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1
+                    )
+            )
+        }
+        .buttonStyle(.plain)
     }
     
     // MARK: - Daily Readiness Card
@@ -273,7 +391,7 @@ struct TrainView: View {
                 }
                 
                 Button(action: {
-                    // TODO: Find training partner
+                    showFindPartner = true
                 }) {
                     VStack(spacing: Spacing.sm) {
                         Image(systemName: "person.2.fill")
@@ -381,7 +499,11 @@ struct TrainView: View {
 
     private var aiCoachChatCard: some View {
         Button(action: {
-            showAICoach = true
+            if storeManager.isPremium {
+                showAICoach = true
+            } else {
+                showPremiumUpgrade = true
+            }
         }) {
             VStack(alignment: .leading, spacing: Spacing.md) {
                 HStack {
@@ -402,6 +524,24 @@ struct TrainView: View {
                         Image(systemName: "star.fill")
                             .font(.caption)
                             .foregroundStyle(.yellow)
+                        
+                        // Premium badge for free users
+                        if !storeManager.isPremium {
+                            Text("PREMIUM")
+                                .font(.caption2)
+                                .fontWeight(.bold)
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 3)
+                                .background(
+                                    LinearGradient(
+                                        colors: [Color.purple, Color.blue],
+                                        startPoint: .leading,
+                                        endPoint: .trailing
+                                    )
+                                )
+                                .clipShape(Capsule())
+                        }
                     }
 
                     Spacer()
@@ -514,6 +654,116 @@ struct TrainingSessionCard: View {
         }
         .padding(Spacing.md)
         .cardBackground()
+    }
+}
+
+// MARK: - Recommended Drills Extension
+
+extension TrainView {
+    // MARK: - Recommended Drills Section
+    
+    var recommendedDrillsSection: some View {
+        VStack(spacing: Spacing.md) {
+            HStack {
+                Image(systemName: "lightbulb.fill")
+                    .foregroundStyle(Color.appPrimary)
+                Text("Quick Start Drills")
+                    .font(.title3)
+                    .fontWeight(.bold)
+                    .foregroundStyle(Color.appTextPrimary)
+                Spacer()
+            }
+            
+            VStack(spacing: Spacing.sm) {
+                ForEach(recommendedDrills, id: \.title) { drill in
+                    QuickDrillCard(drill: drill, sport: selectedSport)
+                }
+            }
+        }
+    }
+    
+    private var recommendedDrills: [QuickDrill] {
+        switch selectedSport {
+        case .basketball:
+            return [
+                QuickDrill(title: "Form Shooting", duration: "10 min", icon: "figure.basketball", description: "Perfect your shot mechanics"),
+                QuickDrill(title: "Ball Handling", duration: "15 min", icon: "hands.sparkles", description: "Dribbling fundamentals"),
+                QuickDrill(title: "Free Throws", duration: "10 min", icon: "target", description: "Build consistency")
+            ]
+        case .tennis:
+            return [
+                QuickDrill(title: "Serve Practice", duration: "15 min", icon: "figure.tennis", description: "Build power and accuracy"),
+                QuickDrill(title: "Groundstrokes", duration: "20 min", icon: "arrow.left.and.right", description: "Forehand and backhand"),
+                QuickDrill(title: "Footwork", duration: "10 min", icon: "figure.run", description: "Court movement drills")
+            ]
+        case .soccer:
+            return [
+                QuickDrill(title: "Dribbling", duration: "15 min", icon: "figure.soccer", description: "Touch and control"),
+                QuickDrill(title: "Passing", duration: "15 min", icon: "arrow.triangle.swap", description: "Accuracy drills"),
+                QuickDrill(title: "Shooting", duration: "20 min", icon: "target", description: "Finishing practice")
+            ]
+        case .football:
+            return [
+                QuickDrill(title: "Route Running", duration: "15 min", icon: "figure.american.football", description: "Precision cuts"),
+                QuickDrill(title: "Catching", duration: "15 min", icon: "hands.clap", description: "Hand-eye coordination"),
+                QuickDrill(title: "Agility", duration: "10 min", icon: "arrow.up.left.and.down.right.and.arrow.up.right.and.down.left", description: "Quick feet drills")
+            ]
+        }
+    }
+}
+
+struct QuickDrill {
+    let title: String
+    let duration: String
+    let icon: String
+    let description: String
+}
+
+struct QuickDrillCard: View {
+    let drill: QuickDrill
+    let sport: Sport
+    
+    var body: some View {
+        Button(action: {
+            // Navigate to drill detail or start session
+        }) {
+            HStack(spacing: Spacing.md) {
+                Image(systemName: drill.icon)
+                    .font(.title2)
+                    .foregroundStyle(Color.appPrimary)
+                    .frame(width: 44, height: 44)
+                    .background(Color.appPrimary.opacity(0.15))
+                    .cornerRadius(CornerRadius.sm)
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(drill.title)
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(Color.appTextPrimary)
+                    
+                    Text(drill.description)
+                        .font(.caption)
+                        .foregroundStyle(Color.appTextSecondary)
+                }
+                
+                Spacer()
+                
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text(drill.duration)
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .foregroundStyle(Color.appPrimary)
+                    
+                    Image(systemName: "play.circle.fill")
+                        .font(.title3)
+                        .foregroundStyle(Color.appPrimary)
+                }
+            }
+            .padding(Spacing.md)
+            .background(Color.appSurface)
+            .cornerRadius(CornerRadius.md)
+        }
+        .buttonStyle(.plain)
     }
 }
 

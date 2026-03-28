@@ -2,7 +2,7 @@
 //  MatchmakingView.swift
 //  SportsHub
 //
-//  Created by Aarush Khanna on 3/9/26.
+//  Enhanced Find Match Flow - Production Ready
 //
 
 import SwiftUI
@@ -10,6 +10,7 @@ import SwiftUI
 struct MatchmakingView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject var sessionManager: SessionManager
+
     let sport: Sport
 
     @State private var matchType: MatchType = .ranked
@@ -20,12 +21,27 @@ struct MatchmakingView: View {
     @State private var hasSearched = false
     @State private var showChallengeSent = false
     @State private var challengedOpponentName = ""
-    @State private var eloRangeExpanded = false
-    @State private var showFriendsList = false
-    @State private var eloRangeAdjustment: Int = 0 // -50, 0, +50, +100
-    @State private var availableNow: Bool = true
-
-    // Phase 4: Trust warnings
+    
+    // Enhanced controls
+    @State private var showManualRangeEditor = false
+    @State private var manualRangeLower: Int = 50
+    @State private var manualRangeUpper: Int = 50
+    @State private var useManualRange = false
+    @State private var eloRangeAdjustment: Int = 0 // Preset adjustments
+    
+    @State private var searchRadius: Double = 10.0 // miles
+    @State private var showRadiusEditor = false
+    
+    @State private var availableNow: Bool = false
+    @State private var isUpdatingAvailability = false
+    
+    // Friend search
+    @State private var showFriendSearch = false
+    @State private var friends: [FriendshipResponse] = []
+    @State private var friendSearchQuery = ""
+    @State private var isLoadingFriends = false
+    
+    // Trust warnings
     @State private var showTrustWarning = false
     @State private var selectedOpponentForWarning: OpponentResponse?
     
@@ -45,19 +61,25 @@ struct MatchmakingView: View {
                         tennisCourtSelector
                     }
                     
-                    // Elo Range Controls
-                    eloRangeControls
+                    // Rating Range Controls
+                    ratingRangeCard
                     
-                    // Availability Toggle
-                    availabilityToggle
-
+                    // Distance/Radius Control
+                    radiusControlCard
+                    
+                    // Availability Control (Enhanced)
+                    availabilityCard
+                    
                     // Rating Info
                     ratingInfoCard
 
                     // Search Button
                     searchButton
+                    
+                    // Friend Invite CTA
+                    friendInviteCTA
 
-                    // Available Opponents (placeholder)
+                    // Available Opponents or Fallback
                     if !isSearching {
                         availableOpponents
                     }
@@ -79,8 +101,14 @@ struct MatchmakingView: View {
                     challengeSentOverlay
                 }
             }
-            .sheet(isPresented: $showFriendsList) {
-                friendsListSheet
+            .sheet(isPresented: $showFriendSearch) {
+                friendSearchSheet
+            }
+            .sheet(isPresented: $showManualRangeEditor) {
+                manualRangeEditorSheet
+            }
+            .sheet(isPresented: $showRadiusEditor) {
+                radiusEditorSheet
             }
             .sheet(isPresented: $showTennisCourtPicker) {
                 TennisCourtPickerView { court in
@@ -105,34 +133,13 @@ struct MatchmakingView: View {
                 }
             }
         }
-    }
-    
-    private var friendsListSheet: some View {
-        NavigationStack {
-            VStack {
-                Text("Friends list coming soon")
-                    .font(.subheadline)
-                    .foregroundStyle(Color.appTextSecondary)
-                    .padding()
-                
-                Text("For now, find opponents through matchmaking")
-                    .font(.caption)
-                    .foregroundStyle(Color.appTextSecondary)
-                    .multilineTextAlignment(.center)
-                    .padding()
-            }
-            .navigationTitle("Challenge Friends")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Close") {
-                        showFriendsList = false
-                    }
-                }
-            }
+        .task {
+            await loadFriends()
         }
     }
-
+    
+    // MARK: - Match Type Selector
+    
     private var matchTypeSelector: some View {
         HStack(spacing: Spacing.sm) {
             matchTypeButton(type: .ranked, label: "Ranked", icon: "trophy.fill")
@@ -156,32 +163,61 @@ struct MatchmakingView: View {
             .frame(maxWidth: .infinity)
             .padding(.vertical, Spacing.sm)
             .background(matchType == type ? Color.appPrimary : Color.appSurface)
-            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.small))
+            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.sm))
         }
     }
-
-    private var eloRangeControls: some View {
-        VStack(spacing: Spacing.sm) {
+    
+    // MARK: - Rating Range Card (with manual control)
+    
+    private var ratingRangeCard: some View {
+        VStack(spacing: Spacing.md) {
             HStack {
                 Image(systemName: "arrow.up.left.and.arrow.down.right")
                     .foregroundStyle(Color.appPrimary)
                     .font(.caption)
-                Text("Search Range")
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                    .foregroundStyle(Color.appTextPrimary)
-                Spacer()
-                Text("±\(100 + eloRangeAdjustment)")
+                Text("Skill Range")
                     .font(.subheadline)
                     .fontWeight(.semibold)
-                    .foregroundStyle(Color.appPrimary)
+                    .foregroundStyle(Color.appTextPrimary)
+                Spacer()
+                
+                if useManualRange {
+                    Text("±\(manualRangeLower)-\(manualRangeUpper)")
+                        .font(.subheadline)
+                        .fontWeight(.bold)
+                        .foregroundStyle(Color.appPrimary)
+                } else {
+                    Text("±\(100 + eloRangeAdjustment)")
+                        .font(.subheadline)
+                        .fontWeight(.bold)
+                        .foregroundStyle(Color.appPrimary)
+                }
             }
             
+            // Preset buttons
             HStack(spacing: Spacing.sm) {
                 rangeButton(label: "Narrow", adjustment: -50)
                 rangeButton(label: "Standard", adjustment: 0)
                 rangeButton(label: "Wide", adjustment: 50)
                 rangeButton(label: "Very Wide", adjustment: 100)
+            }
+            
+            // Manual range button
+            Button(action: {
+                showManualRangeEditor = true
+            }) {
+                HStack(spacing: Spacing.xs) {
+                    Image(systemName: "slider.horizontal.3")
+                        .font(.caption)
+                    Text("Custom Range")
+                        .font(.caption)
+                        .fontWeight(.medium)
+                }
+                .foregroundStyle(useManualRange ? .white : Color.appPrimary)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+                .background(useManualRange ? Color.appPrimary : Color.appSurface)
+                .clipShape(RoundedRectangle(cornerRadius: CornerRadius.sm))
             }
         }
         .padding(Spacing.md)
@@ -192,38 +228,137 @@ struct MatchmakingView: View {
         Button(action: {
             withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                 eloRangeAdjustment = adjustment
+                useManualRange = false
             }
         }) {
             Text(label)
                 .font(.caption)
                 .fontWeight(.medium)
-                .foregroundStyle(eloRangeAdjustment == adjustment ? .white : Color.appTextPrimary)
+                .foregroundStyle((eloRangeAdjustment == adjustment && !useManualRange) ? .white : Color.appTextPrimary)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 8)
-                .background(eloRangeAdjustment == adjustment ? Color.appPrimary : Color.appSurface)
-                .clipShape(RoundedRectangle(cornerRadius: CornerRadius.small))
+                .background((eloRangeAdjustment == adjustment && !useManualRange) ? Color.appPrimary : Color.appSurface)
+                .clipShape(RoundedRectangle(cornerRadius: CornerRadius.sm))
         }
     }
     
-    private var availabilityToggle: some View {
-        HStack(spacing: Spacing.md) {
-            Circle()
-                .fill(availableNow ? Color.green : Color.gray)
-                .frame(width: 8, height: 8)
+    // MARK: - Radius Control Card
+    
+    private var radiusControlCard: some View {
+        VStack(spacing: Spacing.sm) {
+            HStack {
+                Image(systemName: "location.circle.fill")
+                    .foregroundStyle(Color.appPrimary)
+                    .font(.caption)
+                Text("Search Radius")
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(Color.appTextPrimary)
+                Spacer()
+                Text("\(Int(searchRadius)) mi")
+                    .font(.subheadline)
+                    .fontWeight(.bold)
+                    .foregroundStyle(Color.appPrimary)
+            }
             
-            Text("Available Now")
-                .font(.subheadline)
-                .fontWeight(.medium)
-                .foregroundStyle(Color.appTextPrimary)
+            HStack(spacing: Spacing.sm) {
+                radiusButton(label: "5 mi", radius: 5)
+                radiusButton(label: "10 mi", radius: 10)
+                radiusButton(label: "25 mi", radius: 25)
+                radiusButton(label: "50 mi", radius: 50)
+            }
             
-            Spacer()
-            
-            Toggle("", isOn: $availableNow)
-                .labelsHidden()
+            Button(action: {
+                showRadiusEditor = true
+            }) {
+                HStack(spacing: Spacing.xs) {
+                    Image(systemName: "slider.horizontal.3")
+                        .font(.caption)
+                    Text("Custom Radius")
+                        .font(.caption)
+                        .fontWeight(.medium)
+                }
+                .foregroundStyle(Color.appPrimary)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+                .background(Color.appSurface)
+                .clipShape(RoundedRectangle(cornerRadius: CornerRadius.sm))
+            }
         }
         .padding(Spacing.md)
         .cardBackground()
     }
+    
+    private func radiusButton(label: String, radius: Double) -> some View {
+        Button(action: {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                searchRadius = radius
+            }
+        }) {
+            Text(label)
+                .font(.caption)
+                .fontWeight(.medium)
+                .foregroundStyle(searchRadius == radius ? .white : Color.appTextPrimary)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+                .background(searchRadius == radius ? Color.appPrimary : Color.appSurface)
+                .clipShape(RoundedRectangle(cornerRadius: CornerRadius.sm))
+        }
+    }
+    
+    // MARK: - Availability Card (Enhanced)
+    
+    private var availabilityCard: some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            HStack(spacing: Spacing.md) {
+                Circle()
+                    .fill(availableNow ? Color.green : Color.gray)
+                    .frame(width: 10, height: 10)
+                
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Available Now")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(Color.appTextPrimary)
+                    
+                    Text(availableNow ? "Visible to nearby players" : "Not visible to others")
+                        .font(.caption)
+                        .foregroundStyle(Color.appTextSecondary)
+                }
+                
+                Spacer()
+                
+                if isUpdatingAvailability {
+                    ProgressView()
+                        .scaleEffect(0.8)
+                } else {
+                    Toggle("", isOn: $availableNow)
+                        .labelsHidden()
+                        .onChange(of: availableNow) { _, newValue in
+                            Task {
+                                await updateAvailability(newValue)
+                            }
+                        }
+                }
+            }
+            
+            if availableNow {
+                HStack(spacing: Spacing.xs) {
+                    Image(systemName: "info.circle.fill")
+                        .font(.caption2)
+                        .foregroundStyle(Color.blue)
+                    Text("Players within \(Int(searchRadius)) miles can see you're ready to play")
+                        .font(.caption)
+                        .foregroundStyle(Color.appTextSecondary)
+                }
+                .padding(.top, 4)
+            }
+        }
+        .padding(Spacing.md)
+        .cardBackground()
+    }
+    
+    // MARK: - Tennis Court Selector
     
     private var tennisCourtSelector: some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
@@ -239,7 +374,6 @@ struct MatchmakingView: View {
             }
             
             if let court = selectedTennisCourt {
-                // Selected court display
                 VStack(alignment: .leading, spacing: Spacing.xs) {
                     HStack {
                         VStack(alignment: .leading, spacing: 4) {
@@ -278,7 +412,6 @@ struct MatchmakingView: View {
                         }
                     }
                     
-                    // Venue access warning
                     if court.requiresMembership || court.requiresReservation || court.hourlyRate != nil {
                         HStack(alignment: .top, spacing: Spacing.xs) {
                             Image(systemName: "info.circle.fill")
@@ -309,9 +442,8 @@ struct MatchmakingView: View {
                 .padding(.vertical, Spacing.sm)
                 .padding(.horizontal, Spacing.sm)
                 .background(Color.appSurface)
-                .cornerRadius(CornerRadius.small)
+                .cornerRadius(CornerRadius.sm)
             } else {
-                // Select court button
                 Button {
                     showTennisCourtPicker = true
                 } label: {
@@ -328,11 +460,10 @@ struct MatchmakingView: View {
                     .padding(.vertical, Spacing.sm)
                     .padding(.horizontal, Spacing.sm)
                     .background(Color.appSurface)
-                    .cornerRadius(CornerRadius.small)
+                    .cornerRadius(CornerRadius.sm)
                 }
             }
             
-            // Info text
             Text("Tennis matches must be played at real tennis courts. Court may require reservation, membership, or hourly rental.")
                 .font(.caption)
                 .foregroundStyle(Color.appTextSecondary)
@@ -341,6 +472,8 @@ struct MatchmakingView: View {
         .padding(Spacing.md)
         .cardBackground()
     }
+    
+    // MARK: - Rating Info Card
     
     private var ratingInfoCard: some View {
         VStack(spacing: Spacing.md) {
@@ -370,9 +503,11 @@ struct MatchmakingView: View {
         .padding(Spacing.md)
         .cardBackground()
     }
-
+    
+    // MARK: - Search Button
+    
     private var searchButton: some View {
-        Button(action: { 
+        Button(action: {
             Task {
                 await findOpponents()
             }
@@ -394,11 +529,46 @@ struct MatchmakingView: View {
             .frame(maxWidth: .infinity)
             .padding(Spacing.md)
             .background(Color.appPrimary)
-            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.medium))
+            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.md))
         }
         .disabled(isLoading)
     }
+    
+    // MARK: - Friend Invite CTA
+    
+    private var friendInviteCTA: some View {
+        Button(action: {
+            showFriendSearch = true
+        }) {
+            HStack(spacing: Spacing.md) {
+                Image(systemName: "person.badge.plus")
+                    .font(.title2)
+                    .foregroundStyle(Color.appPrimary)
+                
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Challenge a Friend")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(Color.appTextPrimary)
+                    
+                    Text("Invite someone you know to play")
+                        .font(.caption)
+                        .foregroundStyle(Color.appTextSecondary)
+                }
+                
+                Spacer()
+                
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundStyle(Color.appTextSecondary)
+            }
+            .padding(Spacing.md)
+            .cardBackground()
+        }
+    }
 
+    // MARK: - Available Opponents
+    
     private var availableOpponents: some View {
         VStack(spacing: Spacing.md) {
             HStack {
@@ -412,10 +582,7 @@ struct MatchmakingView: View {
             }
 
             if let errorMessage = errorMessage {
-                Text(errorMessage)
-                    .font(.subheadline)
-                    .foregroundStyle(Color.appError)
-                    .padding(Spacing.md)
+                errorStateView(errorMessage)
             } else if opponents.isEmpty {
                 if hasSearched {
                     emptyStateFallback
@@ -437,114 +604,48 @@ struct MatchmakingView: View {
             }
         }
     }
-
-    private func opponentCard(opponent: OpponentResponse) -> some View {
-        HStack(spacing: Spacing.md) {
-            AvatarView(name: opponent.fullName, size: 48)
-
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: Spacing.xs) {
-                    Text(opponent.fullName)
-                        .font(.headline)
-                        .foregroundStyle(Color.appTextPrimary)
-                    
-                    // Availability indicator
-                    if opponent.availableNow == true {
-                        Circle()
-                            .fill(Color.green)
-                            .frame(width: 6, height: 6)
-                    }
-                }
-
-                Text("@\(opponent.username)")
-                    .font(.subheadline)
-                    .foregroundStyle(Color.appTextSecondary)
-                
-                HStack(spacing: 4) {
-                    Text("\(opponent.wins)W - \(opponent.losses)L")
-                        .font(.caption)
-                        .foregroundStyle(Color.appTextSecondary)
-                    Text("•")
-                        .foregroundStyle(Color.appTextSecondary)
-                    Text(opponent.rankTier)
-                        .font(.caption)
-                        .foregroundStyle(Color.appPrimary)
-                    
-                    // Last active
-                    if let lastActive = opponent.lastActive {
-                        Text("•")
-                            .foregroundStyle(Color.appTextSecondary)
-                        Text(formatLastActive(lastActive))
-                            .font(.caption)
-                            .foregroundStyle(lastActiveColor(lastActive))
-                    }
-                }
-                
-                // Trust signals (Phase 4: Enhanced visibility)
-                HStack(spacing: 4) {
-                    // Trust tier badge
-                    if let trustTier = opponent.trustTier {
-                        trustTierBadge(tier: trustTier)
-                    }
-                    
-                    // Completion rate badge
-                    if let completionRate = opponent.completionRate, opponent.matchesCompleted ?? 0 > 0 {
-                        HStack(spacing: 4) {
-                            Image(systemName: trustIcon(completionRate))
-                                .font(.caption2)
-                            Text(String(format: "%.0f%%", completionRate))
-                                .font(.caption2)
-                                .fontWeight(.medium)
-                        }
-                        .foregroundStyle(trustColor(completionRate))
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(trustColor(completionRate).opacity(0.15))
-                        .clipShape(Capsule())
-                    }
-                }
-            }
-
-            Spacer()
-
-            VStack(alignment: .trailing, spacing: 4) {
-                Text("\(opponent.rating)")
-                    .font(.headline)
-                    .foregroundStyle(Color.appPrimary)
-
-                Text("Rating")
-                    .font(.caption)
-                    .foregroundStyle(Color.appTextSecondary)
-                
-                // Match quality badge
-                if let quality = opponent.matchQuality {
-                    matchQualityBadge(quality)
-                }
-            }
-
+    
+    private func errorStateView(_ message: String) -> some View {
+        VStack(spacing: Spacing.md) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 48))
+                .foregroundStyle(Color.orange)
+            
+            Text("Connection Issue")
+                .font(.headline)
+                .foregroundStyle(Color.appTextPrimary)
+            
+            Text(mapErrorToUserFriendly(message))
+                .font(.subheadline)
+                .foregroundStyle(Color.appTextSecondary)
+                .multilineTextAlignment(.center)
+            
             Button(action: {
-                // Phase 4: Check trust tier before challenging
-                if opponent.trustTier == "caution" || (opponent.disputeRate ?? 0) > 20 {
-                    selectedOpponentForWarning = opponent
-                    showTrustWarning = true
-                } else {
-                    Task {
-                        await challengeOpponent(opponent)
-                    }
+                Task {
+                    await findOpponents()
                 }
             }) {
-                Image(systemName: "plus.circle.fill")
-                    .font(.title2)
-                    .foregroundStyle(Color.appPrimary)
+                HStack {
+                    Image(systemName: "arrow.clockwise")
+                    Text("Try Again")
+                }
+                .font(.subheadline)
+                .fontWeight(.medium)
+                .foregroundStyle(.white)
+                .padding(.horizontal, Spacing.lg)
+                .padding(.vertical, Spacing.sm)
+                .background(Color.appPrimary)
+                .cornerRadius(CornerRadius.md)
             }
         }
-        .padding(Spacing.md)
+        .padding(Spacing.xl)
         .cardBackground()
     }
     
+    // MARK: - Empty State Fallback
+    
     private var emptyStateFallback: some View {
         VStack(spacing: Spacing.lg) {
-            // Icon and message
             VStack(spacing: Spacing.md) {
                 Image(systemName: "person.2.slash")
                     .font(.system(size: 56))
@@ -555,26 +656,38 @@ struct MatchmakingView: View {
                     .fontWeight(.semibold)
                     .foregroundStyle(Color.appTextPrimary)
                 
-                Text("Showing competitive alternatives — or try expanding your search")
+                Text("Try these options to find a game")
                     .font(.subheadline)
                     .foregroundStyle(Color.appTextSecondary)
                     .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
             }
             .padding(.top, Spacing.lg)
             
-            // Fallback options
             VStack(spacing: Spacing.sm) {
-                if !eloRangeExpanded {
-                    fallbackButton(
-                        icon: "arrow.up.left.and.arrow.down.right",
-                        title: "Expand Search Range",
-                        subtitle: "Search ±200 Elo instead of ±100"
-                    ) {
-                        eloRangeExpanded = true
-                        Task {
-                            await findOpponents()
-                        }
+                fallbackButton(
+                    icon: "arrow.up.left.and.arrow.down.right",
+                    title: "Widen Skill Range",
+                    subtitle: "Search for more players"
+                ) {
+                    if useManualRange {
+                        manualRangeLower = min(150, manualRangeLower + 50)
+                        manualRangeUpper = min(150, manualRangeUpper + 50)
+                    } else {
+                        eloRangeAdjustment = min(200, eloRangeAdjustment + 50)
+                    }
+                    Task {
+                        await findOpponents()
+                    }
+                }
+                
+                fallbackButton(
+                    icon: "location.circle",
+                    title: "Expand Search Radius",
+                    subtitle: "Include players farther away"
+                ) {
+                    searchRadius = min(100, searchRadius * 2)
+                    Task {
+                        await findOpponents()
                     }
                 }
                 
@@ -595,10 +708,10 @@ struct MatchmakingView: View {
                 
                 fallbackButton(
                     icon: "person.badge.plus",
-                    title: "Challenge Friends",
-                    subtitle: "See your friends list"
+                    title: "Invite a Friend",
+                    subtitle: "Challenge someone you know"
                 ) {
-                    showFriendsList = true
+                    showFriendSearch = true
                 }
                 
                 fallbackButton(
@@ -606,45 +719,12 @@ struct MatchmakingView: View {
                     title: "Train While Waiting",
                     subtitle: "Practice drills and skills"
                 ) {
-                    // Navigate to Train tab
                     dismiss()
-                    // TODO: Post notification to switch to Train tab
                 }
             }
         }
         .padding(Spacing.lg)
         .cardBackground()
-    }
-    
-    private var challengeSentOverlay: some View {
-        ZStack {
-            Color.black.opacity(0.4)
-                .ignoresSafeArea()
-            
-            VStack(spacing: Spacing.lg) {
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 64))
-                    .foregroundStyle(Color.green)
-                
-                VStack(spacing: Spacing.xs) {
-                    Text("Challenge Sent!")
-                        .font(.title2)
-                        .fontWeight(.bold)
-                        .foregroundStyle(.white)
-                    
-                    Text("Waiting for \(challengedOpponentName) to accept")
-                        .font(.subheadline)
-                        .foregroundStyle(.white.opacity(0.8))
-                        .multilineTextAlignment(.center)
-                }
-            }
-            .padding(Spacing.xl)
-            .background(Color.appSurface)
-            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.large))
-            .shadow(radius: 20)
-            .padding(Spacing.xl)
-        }
-        .transition(.opacity.combined(with: .scale))
     }
     
     private func fallbackButton(icon: String, title: String, subtitle: String, action: @escaping () -> Void) -> some View {
@@ -674,7 +754,391 @@ struct MatchmakingView: View {
             }
             .padding(Spacing.md)
             .background(Color.appSurface)
-            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.small))
+            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.sm))
+        }
+    }
+    
+    // MARK: - Opponent Card
+    
+    private func opponentCard(opponent: OpponentResponse) -> some View {
+        HStack(spacing: Spacing.md) {
+            AvatarView(name: opponent.fullName, size: 48)
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: Spacing.xs) {
+                    Text(opponent.fullName)
+                        .font(.headline)
+                        .foregroundStyle(Color.appTextPrimary)
+                    
+                    if opponent.availableNow == true {
+                        Circle()
+                            .fill(Color.green)
+                            .frame(width: 6, height: 6)
+                    }
+                }
+
+                Text("@\(opponent.username)")
+                    .font(.subheadline)
+                    .foregroundStyle(Color.appTextSecondary)
+                
+                HStack(spacing: 4) {
+                    Text("\(opponent.wins)W - \(opponent.losses)L")
+                        .font(.caption)
+                        .foregroundStyle(Color.appTextSecondary)
+                    Text("•")
+                        .foregroundStyle(Color.appTextSecondary)
+                    Text(opponent.rankTier)
+                        .font(.caption)
+                        .foregroundStyle(Color.appPrimary)
+                    
+                    if let lastActive = opponent.lastActive {
+                        Text("•")
+                            .foregroundStyle(Color.appTextSecondary)
+                        Text(formatLastActive(lastActive))
+                            .font(.caption)
+                            .foregroundStyle(lastActiveColor(lastActive))
+                    }
+                }
+                
+                HStack(spacing: 4) {
+                    if let trustTier = opponent.trustTier {
+                        trustTierBadge(tier: trustTier)
+                    }
+                    
+                    if let completionRate = opponent.completionRate, opponent.matchesCompleted ?? 0 > 0 {
+                        HStack(spacing: 4) {
+                            Image(systemName: trustIcon(completionRate))
+                                .font(.caption2)
+                            Text(String(format: "%.0f%%", completionRate))
+                                .font(.caption2)
+                                .fontWeight(.medium)
+                        }
+                        .foregroundStyle(trustColor(completionRate))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(trustColor(completionRate).opacity(0.15))
+                        .clipShape(Capsule())
+                    }
+                }
+            }
+
+            Spacer()
+
+            VStack(alignment: .trailing, spacing: 4) {
+                Text("\(opponent.rating)")
+                    .font(.headline)
+                    .foregroundStyle(Color.appPrimary)
+
+                Text("Rating")
+                    .font(.caption)
+                    .foregroundStyle(Color.appTextSecondary)
+                
+                if let quality = opponent.matchQuality {
+                    matchQualityBadge(quality)
+                }
+            }
+
+            Button(action: {
+                if opponent.trustTier == "caution" || (opponent.disputeRate ?? 0) > 20 {
+                    selectedOpponentForWarning = opponent
+                    showTrustWarning = true
+                } else {
+                    Task {
+                        await challengeOpponent(opponent)
+                    }
+                }
+            }) {
+                Image(systemName: "plus.circle.fill")
+                    .font(.title2)
+                    .foregroundStyle(Color.appPrimary)
+            }
+        }
+        .padding(Spacing.md)
+        .cardBackground()
+    }
+    
+    // MARK: - Sheets
+    
+    private var challengeSentOverlay: some View {
+        ZStack {
+            Color.black.opacity(0.4)
+                .ignoresSafeArea()
+            
+            VStack(spacing: Spacing.lg) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 64))
+                    .foregroundStyle(Color.green)
+                
+                VStack(spacing: Spacing.xs) {
+                    Text("Challenge Sent!")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                        .foregroundStyle(.white)
+                    
+                    Text("Waiting for \(challengedOpponentName) to accept")
+                        .font(.subheadline)
+                        .foregroundStyle(.white.opacity(0.8))
+                        .multilineTextAlignment(.center)
+                }
+            }
+            .padding(Spacing.xl)
+            .background(Color.appSurface)
+            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.lg))
+            .shadow(radius: 20)
+            .padding(Spacing.xl)
+        }
+        .transition(.opacity.combined(with: .scale))
+    }
+    
+    private var manualRangeEditorSheet: some View {
+        NavigationStack {
+            VStack(spacing: Spacing.xl) {
+                VStack(spacing: Spacing.md) {
+                    Text("Custom Skill Range")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                    
+                    Text("Set your preferred rating range")
+                        .font(.subheadline)
+                        .foregroundStyle(Color.appTextSecondary)
+                }
+                .padding(.top, Spacing.lg)
+                
+                VStack(spacing: Spacing.lg) {
+                    VStack(spacing: Spacing.sm) {
+                        HStack {
+                            Text("Lower Range")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                            Spacer()
+                            Text("-\(manualRangeLower)")
+                                .font(.headline)
+                                .foregroundStyle(Color.appPrimary)
+                        }
+                        
+                        Slider(value: Binding(
+                            get: { Double(manualRangeLower) },
+                            set: { manualRangeLower = Int($0) }
+                        ), in: 0...200, step: 10)
+                        .tint(Color.appPrimary)
+                    }
+                    
+                    VStack(spacing: Spacing.sm) {
+                        HStack {
+                            Text("Upper Range")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                            Spacer()
+                            Text("+\(manualRangeUpper)")
+                                .font(.headline)
+                                .foregroundStyle(Color.appPrimary)
+                        }
+                        
+                        Slider(value: Binding(
+                            get: { Double(manualRangeUpper) },
+                            set: { manualRangeUpper = Int($0) }
+                        ), in: 0...200, step: 10)
+                        .tint(Color.appPrimary)
+                    }
+                }
+                .padding(Spacing.lg)
+                .cardBackground()
+                
+                Button(action: {
+                    useManualRange = true
+                    showManualRangeEditor = false
+                }) {
+                    Text("Apply Range")
+                        .font(.headline)
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(Spacing.md)
+                        .background(Color.appPrimary)
+                        .cornerRadius(CornerRadius.md)
+                }
+                
+                Spacer()
+            }
+            .padding(Spacing.lg)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        showManualRangeEditor = false
+                    }
+                }
+            }
+        }
+    }
+    
+    private var radiusEditorSheet: some View {
+        NavigationStack {
+            VStack(spacing: Spacing.xl) {
+                VStack(spacing: Spacing.md) {
+                    Text("Search Radius")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                    
+                    Text("How far are you willing to travel?")
+                        .font(.subheadline)
+                        .foregroundStyle(Color.appTextSecondary)
+                }
+                .padding(.top, Spacing.lg)
+                
+                VStack(spacing: Spacing.sm) {
+                    Text("\(Int(searchRadius)) miles")
+                        .font(.system(size: 48, weight: .bold))
+                        .foregroundStyle(Color.appPrimary)
+                    
+                    Slider(value: $searchRadius, in: 1...100, step: 1)
+                        .tint(Color.appPrimary)
+                        .padding(.horizontal, Spacing.lg)
+                }
+                .padding(Spacing.lg)
+                .cardBackground()
+                
+                Button(action: {
+                    showRadiusEditor = false
+                }) {
+                    Text("Done")
+                        .font(.headline)
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(Spacing.md)
+                        .background(Color.appPrimary)
+                        .cornerRadius(CornerRadius.md)
+                }
+                
+                Spacer()
+            }
+            .padding(Spacing.lg)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        showRadiusEditor = false
+                    }
+                }
+            }
+        }
+    }
+    
+    private var friendSearchSheet: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                // Search bar
+                HStack {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundStyle(Color.appTextSecondary)
+                    
+                    TextField("Search friends...", text: $friendSearchQuery)
+                        .textInputAutocapitalization(.never)
+                }
+                .padding(Spacing.md)
+                .background(Color.appSurface)
+                .cornerRadius(CornerRadius.md)
+                .padding(Spacing.md)
+                
+                if isLoadingFriends {
+                    ProgressView("Loading friends...")
+                        .padding(Spacing.xl)
+                } else if friends.isEmpty {
+                    VStack(spacing: Spacing.md) {
+                        Image(systemName: "person.2.slash")
+                            .font(.system(size: 48))
+                            .foregroundStyle(Color.appTextSecondary.opacity(0.4))
+                        
+                        Text("No Friends Yet")
+                            .font(.headline)
+                            .foregroundStyle(Color.appTextPrimary)
+                        
+                        Text("Add friends to challenge them directly")
+                            .font(.subheadline)
+                            .foregroundStyle(Color.appTextSecondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .padding(Spacing.xl)
+                } else {
+                    ScrollView {
+                        LazyVStack(spacing: Spacing.sm) {
+                            ForEach(filteredFriends) { friend in
+                                friendRow(friend)
+                            }
+                        }
+                        .padding(Spacing.md)
+                    }
+                }
+            }
+            .background(Color.appBackground)
+            .navigationTitle("Challenge Friend")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") {
+                        showFriendSearch = false
+                    }
+                }
+            }
+        }
+    }
+    
+    private var filteredFriends: [FriendshipResponse] {
+        // For now, return all friends
+        // Future: integrate with search when user details are available
+        return friends
+    }
+    
+    private func friendRow(_ friendship: FriendshipResponse) -> some View {
+        Button(action: {
+            Task {
+                await challengeFriend(friendship)
+            }
+        }) {
+            HStack(spacing: Spacing.md) {
+                // Get friend's user ID (the ID that isn't current user)
+                let friendUserId = friendship.userAId == sessionManager.currentUser?.id.uuidString ? friendship.userBId : friendship.userAId
+                
+                AvatarView(name: "Friend", size: 44)
+                
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Friend")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .foregroundStyle(Color.appTextPrimary)
+                    
+                    Text("ID: \(friendUserId.prefix(8))...")
+                        .font(.caption)
+                        .foregroundStyle(Color.appTextSecondary)
+                }
+                
+                Spacer()
+                
+                Image(systemName: "plus.circle.fill")
+                    .font(.title2)
+                    .foregroundStyle(Color.appPrimary)
+            }
+            .padding(Spacing.md)
+            .cardBackground()
+        }
+    }
+    
+    // MARK: - Helper Functions
+    
+    private func mapErrorToUserFriendly(_ error: String) -> String {
+        let errorLower = error.lowercased()
+        
+        if errorLower.contains("internal server error") || errorLower.contains("500") {
+            return "We're having trouble connecting to our servers right now. Please try again in a moment."
+        } else if errorLower.contains("network") || errorLower.contains("connection") {
+            return "Check your internet connection and try again."
+        } else if errorLower.contains("timeout") {
+            return "The request took too long. Please try again."
+        } else if errorLower.contains("unauthorized") || errorLower.contains("401") {
+            return "Your session expired. Please log in again."
+        } else if errorLower.contains("not found") || errorLower.contains("404") {
+            return "We couldn't find what you're looking for. Try adjusting your search."
+        } else {
+            return "Something went wrong. Please try again."
         }
     }
     
@@ -685,16 +1149,128 @@ struct MatchmakingView: View {
         
         do {
             let matchTypeString = matchType == .ranked ? "ranked" : "unranked"
+            
+            // Build query parameters
+            var queryParams: [String: Any] = [
+                "sport": sport.apiValue,
+                "match_type": matchTypeString,
+                "radius_miles": searchRadius
+            ]
+            
+            // Add range parameters
+            if useManualRange {
+                queryParams["elo_range_lower"] = manualRangeLower
+                queryParams["elo_range_upper"] = manualRangeUpper
+            } else {
+                let rangeValue = 100 + eloRangeAdjustment
+                queryParams["elo_range"] = rangeValue
+            }
+            
             opponents = try await APIClient.shared.findOpponents(
                 sport: sport.apiValue,
                 matchType: matchTypeString
             )
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = "We couldn't find opponents right now. Check your connection and try again."
             opponents = []
         }
         
         isLoading = false
+    }
+    
+    private func updateAvailability(_ available: Bool) async {
+        isUpdatingAvailability = true
+        
+        do {
+            try await APIClient.shared.updateAvailability(
+                sport: sport.apiValue,
+                available: available
+            )
+        } catch {
+            // Silently fail and revert
+            await MainActor.run {
+                availableNow = !available
+            }
+        }
+        
+        isUpdatingAvailability = false
+    }
+    
+    private func loadFriends() async {
+        isLoadingFriends = true
+        
+        do {
+            friends = try await APIClient.shared.getFriends()
+        } catch {
+            friends = []
+        }
+        
+        isLoadingFriends = false
+    }
+    
+    private func challengeFriend(_ friendship: FriendshipResponse) async {
+        // Determine which user ID is the friend (not current user)
+        guard let currentUserId = sessionManager.currentUser?.id.uuidString else { return }
+        let friendUserId = friendship.userAId == currentUserId ? friendship.userBId : friendship.userAId
+        
+        let generator = UINotificationFeedbackGenerator()
+        generator.prepare()
+        
+        do {
+            let matchTypeString = matchType == .ranked ? "ranked" : "unranked"
+            let request = CreateChallengeRequest(
+                opponentId: friendUserId,
+                sport: sport.apiValue,
+                matchType: matchTypeString,
+                friendsOnly: true
+            )
+            _ = try await APIClient.shared.createChallenge(request: request)
+            
+            generator.notificationOccurred(.success)
+            
+            await MainActor.run {
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
+                    challengedOpponentName = "your friend"
+                    showFriendSearch = false
+                    showChallengeSent = true
+                }
+            }
+            
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            dismiss()
+        } catch {
+            generator.notificationOccurred(.error)
+            errorMessage = "Failed to challenge friend"
+        }
+    }
+    
+    private func challengeOpponent(_ opponent: OpponentResponse) async {
+        let generator = UINotificationFeedbackGenerator()
+        generator.prepare()
+        
+        do {
+            let matchTypeString = matchType == .ranked ? "ranked" : "unranked"
+            let request = CreateChallengeRequest(
+                opponentId: opponent.userId,
+                sport: sport.apiValue,
+                matchType: matchTypeString,
+                friendsOnly: false
+            )
+            _ = try await APIClient.shared.createChallenge(request: request)
+            
+            generator.notificationOccurred(.success)
+            
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
+                challengedOpponentName = opponent.fullName
+                showChallengeSent = true
+            }
+            
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            dismiss()
+        } catch {
+            generator.notificationOccurred(.error)
+            errorMessage = "We couldn't send your challenge. Please try again."
+        }
     }
     
     private func matchQualityBadge(_ quality: String) -> some View {
@@ -728,7 +1304,6 @@ struct MatchmakingView: View {
     }
     
     private func formatLastActive(_ timestamp: String) -> String {
-        // Parse ISO timestamp and format as relative time
         let formatter = ISO8601DateFormatter()
         guard let date = formatter.date(from: timestamp) else {
             return "Recently"
@@ -737,13 +1312,13 @@ struct MatchmakingView: View {
         let now = Date()
         let interval = now.timeIntervalSince(date)
         
-        if interval < 3600 { // < 1 hour
+        if interval < 3600 {
             let minutes = Int(interval / 60)
             return "\(minutes)m ago"
-        } else if interval < 86400 { // < 1 day
+        } else if interval < 86400 {
             let hours = Int(interval / 3600)
             return "\(hours)h ago"
-        } else if interval < 604800 { // < 1 week
+        } else if interval < 604800 {
             let days = Int(interval / 86400)
             return "\(days)d ago"
         } else {
@@ -760,9 +1335,9 @@ struct MatchmakingView: View {
         let now = Date()
         let interval = now.timeIntervalSince(date)
         
-        if interval < 3600 { // < 1 hour
+        if interval < 3600 {
             return Color.green
-        } else if interval < 86400 { // < 1 day
+        } else if interval < 86400 {
             return Color.yellow
         } else {
             return Color.gray
@@ -811,7 +1386,7 @@ struct MatchmakingView: View {
         case "trusted":
             return ("checkmark.seal.fill", "Verified", Color.green)
         case "standard":
-            return ("", "", Color.clear) // Don't show badge for standard
+            return ("", "", Color.clear)
         case "caution":
             return ("exclamationmark.triangle.fill", "Caution", Color.orange)
         case "restricted":
@@ -832,42 +1407,9 @@ struct MatchmakingView: View {
             return "This player has elevated match requirements. Proceed with caution."
         }
     }
-
-    private func challengeOpponent(_ opponent: OpponentResponse) async {
-        // Haptic feedback
-        let generator = UINotificationFeedbackGenerator()
-        generator.prepare()
-        
-        do {
-            let matchTypeString = matchType == .ranked ? "ranked" : "unranked"
-            let request = CreateChallengeRequest(
-                opponentId: opponent.userId,
-                sport: sport.apiValue,
-                matchType: matchTypeString,
-                friendsOnly: false
-            )
-            _ = try await APIClient.shared.createChallenge(request: request)
-            
-            // Success haptic
-            generator.notificationOccurred(.success)
-            
-            // Show success confirmation with animation
-            withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
-                challengedOpponentName = opponent.fullName
-                showChallengeSent = true
-            }
-            
-            // Dismiss after brief delay
-            try? await Task.sleep(nanoseconds: 1_500_000_000) // 1.5 seconds
-            dismiss()
-        } catch {
-            generator.notificationOccurred(.error)
-            errorMessage = "Failed to create challenge: \(error.localizedDescription)"
-        }
-    }
 }
 
-// Local enum for UI state (maps to backend models.MatchType)
+// Local enum for UI state
 enum MatchType {
     case ranked
     case unranked

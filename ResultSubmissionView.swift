@@ -331,7 +331,7 @@ struct ResultSubmissionView: View {
                 ? "\(myScore)-\(opponentScore)"
                 : nil
             
-            try await APIClient.shared.submitMatchResult(
+            _ = try await APIClient.shared.submitMatchResult(
                 challengeId: challenge.id,
                 winnerId: selectedWinner,
                 scoreData: scoreData
@@ -340,7 +340,7 @@ struct ResultSubmissionView: View {
             await onSubmit()
             dismiss()
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = "We couldn't submit your result. Please try again."
             isSubmitting = false
         }
     }

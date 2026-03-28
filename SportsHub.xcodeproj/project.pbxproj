@@ -10,6 +10,9 @@
 		4E1969552F6C65AD000277D0 /* ResultSubmissionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E1969542F6C65AD000277D0 /* ResultSubmissionView.swift */; };
 		4E1969572F6C9309000277D0 /* DisputeDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E1969562F6C9309000277D0 /* DisputeDetailView.swift */; };
 		4E288EA92F6E335200387E29 /* TennisCourtPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E288EA82F6E335200387E29 /* TennisCourtPickerView.swift */; };
+		4E288EAB2F6F942B00387E29 /* VoiceInputManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E288EAA2F6F942B00387E29 /* VoiceInputManager.swift */; };
+		4E288EAD2F6F987600387E29 /* WeeklyDrillsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E288EAC2F6F987600387E29 /* WeeklyDrillsView.swift */; };
+		4E288EAF2F709A0B00387E29 /* PostDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E288EAE2F709A0B00387E29 /* PostDetailView.swift */; };
 		4EC0B81F2F5FBB0C001DC532 /* PremiumModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EC0B81E2F5FBB0C001DC532 /* PremiumModels.swift */; };
 		4EC0B8212F5FBB28001DC532 /* PremiumAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EC0B8202F5FBB28001DC532 /* PremiumAPIClient.swift */; };
 		4EC0B8232F5FBB85001DC532 /* AICoachFloatingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EC0B8222F5FBB85001DC532 /* AICoachFloatingView.swift */; };
@@ -63,6 +66,9 @@
 		4E1969542F6C65AD000277D0 /* ResultSubmissionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResultSubmissionView.swift; sourceTree = "<group>"; };
 		4E1969562F6C9309000277D0 /* DisputeDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DisputeDetailView.swift; sourceTree = "<group>"; };
 		4E288EA82F6E335200387E29 /* TennisCourtPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TennisCourtPickerView.swift; sourceTree = "<group>"; };
+		4E288EAA2F6F942B00387E29 /* VoiceInputManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceInputManager.swift; sourceTree = "<group>"; };
+		4E288EAC2F6F987600387E29 /* WeeklyDrillsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeeklyDrillsView.swift; sourceTree = "<group>"; };
+		4E288EAE2F709A0B00387E29 /* PostDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PostDetailView.swift; sourceTree = "<group>"; };
 		4E86B1A12F5AB3730027B3C2 /* SportsHub.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SportsHub.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		4E86B1B22F5AB3740027B3C2 /* SportsHubTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SportsHubTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		4E86B1BC2F5AB3740027B3C2 /* SportsHubUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SportsHubUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -194,6 +200,9 @@
 				4EC694392F6DB41C00518941 /* DisputeHistoryView.swift */,
 				4EC6943B2F6DB85300518941 /* FriendsListView.swift */,
 				4E288EA82F6E335200387E29 /* TennisCourtPickerView.swift */,
+				4E288EAA2F6F942B00387E29 /* VoiceInputManager.swift */,
+				4E288EAC2F6F987600387E29 /* WeeklyDrillsView.swift */,
+				4E288EAE2F709A0B00387E29 /* PostDetailView.swift */,
 			);
 			sourceTree = "<group>";
 		};
@@ -363,6 +372,7 @@
 				4EC0B8552F650BC5001DC532 /* NotificationsView.swift in Sources */,
 				4EC0B8372F6279AA001DC532 /* PerformanceGraphsView.swift in Sources */,
 				4E288EA92F6E335200387E29 /* TennisCourtPickerView.swift in Sources */,
+				4E288EAF2F709A0B00387E29 /* PostDetailView.swift in Sources */,
 				4E1969572F6C9309000277D0 /* DisputeDetailView.swift in Sources */,
 				4EC0B82B2F5FC1E5001DC532 /* PremiumSubscriptionView.swift in Sources */,
 				4EC0B8292F5FC12E001DC532 /* TournamentView.swift in Sources */,
@@ -370,6 +380,7 @@
 				4EC0B84D2F64AE89001DC532 /* SkillProgressionModels.swift in Sources */,
 				4E1969552F6C65AD000277D0 /* ResultSubmissionView.swift in Sources */,
 				4EC0B8532F64C7F4001DC532 /* AICoachChatView.swift in Sources */,
+				4E288EAD2F6F987600387E29 /* WeeklyDrillsView.swift in Sources */,
 				4EC6943C2F6DB85300518941 /* FriendsListView.swift in Sources */,
 				4EC0B84F2F64AEBF001DC532 /* SkillProgressionEngine.swift in Sources */,
 				4EC0B8512F64AEF2001DC532 /* SkillProgressionView.swift in Sources */,
@@ -384,6 +395,7 @@
 				4EC0B83F2F6474F6001DC532 /* ChallengeCreationView.swift in Sources */,
 				4EC0B8492F647D11001DC532 /* BadgeSystemView.swift in Sources */,
 				4EC0B8272F5FBF7C001DC532 /* SmartwatchSyncView.swift in Sources */,
+				4E288EAB2F6F942B00387E29 /* VoiceInputManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

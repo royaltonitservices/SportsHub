@@ -1,5 +1,7 @@
-// Smartwatch Sync View
-// Premium Feature - HealthKit integration for Apple Watch
+// Wearable Sync View
+// Premium Feature - Connect fitness trackers and wearables for recovery insights
+// Currently supported: Apple Watch / Apple Health
+// Future support: Fitbit, Garmin, WHOOP, Oura, and other wearables
 
 import SwiftUI
 import HealthKit
@@ -13,6 +15,7 @@ struct SmartwatchSyncView: View {
     @State private var isLoading = false
     @State private var showError = false
     @State private var errorMessage = ""
+    @State private var showPremiumUpgrade = false
     
     var body: some View {
         ScrollView {
@@ -42,11 +45,14 @@ struct SmartwatchSyncView: View {
             }
             .padding()
         }
-        .navigationTitle("Smartwatch Sync")
+        .navigationTitle("Wearable Sync")
         .task {
             await loadConnection()
             await loadRecoveryStatus()
             await loadRecentData()
+        }
+        .sheet(isPresented: $showPremiumUpgrade) {
+            PremiumSubscriptionView()
         }
         .alert("Error", isPresented: $showError) {
             Button("OK") { }
@@ -68,7 +74,7 @@ struct SmartwatchSyncView: View {
                     .font(.subheadline)
                     .fontWeight(.semibold)
                 
-                Text(healthManager.isAuthorized ? "App can read your health data" : "Tap 'Connect Apple Watch' to authorize")
+                Text(healthManager.isAuthorized ? "App can read your health data" : "Tap 'Connect Wearable' to authorize")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -86,7 +92,7 @@ struct SmartwatchSyncView: View {
     
     private var headerSection: some View {
         VStack(spacing: Spacing.md) {
-            Image(systemName: "applewatch.watchface")
+            Image(systemName: "figure.run.circle.fill")
                 .font(.system(size: 60))
                 .foregroundStyle(
                     LinearGradient(
@@ -96,11 +102,11 @@ struct SmartwatchSyncView: View {
                     )
                 )
             
-            Text("Connect Your Smartwatch")
+            Text("Connect Your Fitness Tracker")
                 .font(.title2)
                 .fontWeight(.bold)
             
-            Text("Sync health data for AI-powered recovery insights and performance predictions")
+            Text("Sync health and activity data for AI-powered recovery insights and performance predictions")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -118,12 +124,16 @@ struct SmartwatchSyncView: View {
                     .foregroundStyle(.green)
                 
                 VStack(alignment: .leading) {
-                    Text("Connected")
+                    Text(conn.provider?.displayName ?? "Connected Device")
                         .font(.headline)
                         .foregroundStyle(.green)
                     
                     if let name = conn.deviceName {
                         Text(name)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text("Connected")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
@@ -196,34 +206,43 @@ struct SmartwatchSyncView: View {
     // MARK: - Connect Button
     
     private var connectButton: some View {
-        Button(action: {
-            Task {
-                await connectAppleWatch()
-            }
-        }) {
-            HStack {
-                if isLoading {
-                    ProgressView()
-                        .tint(.white)
-                } else {
-                    Image(systemName: "applewatch")
-                    Text("Connect Apple Watch")
+        VStack(spacing: Spacing.md) {
+            // Current provider: Apple Watch/HealthKit
+            Button(action: {
+                Task {
+                    await connectAppleWatch()
                 }
-            }
-            .font(.headline)
-            .foregroundStyle(.white)
-            .frame(maxWidth: .infinity)
-            .padding()
-            .background(
-                LinearGradient(
-                    colors: [.blue, .cyan],
-                    startPoint: .leading,
-                    endPoint: .trailing
+            }) {
+                HStack {
+                    if isLoading {
+                        ProgressView()
+                            .tint(.white)
+                    } else {
+                        Image(systemName: "applewatch")
+                        Text("Connect Apple Watch")
+                    }
+                }
+                .font(.headline)
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .padding()
+                .background(
+                    LinearGradient(
+                        colors: [.blue, .cyan],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
                 )
-            )
-            .cornerRadius(12)
+                .cornerRadius(12)
+            }
+            .disabled(isLoading)
+            
+            // Future providers indicator
+            Text("Additional trackers coming soon: Fitbit, Garmin, WHOOP, Oura")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
         }
-        .disabled(isLoading)
     }
     
     // MARK: - Recovery Card
@@ -412,11 +431,23 @@ struct SmartwatchSyncView: View {
         isLoading = true
         defer { isLoading = false }
         
+        // Check if HealthKit is available
+        guard HKHealthStore.isHealthDataAvailable() else {
+            let error = SmartwatchError.healthKitUnavailable
+            errorMessage = error.userFriendlyMessage
+            showError = true
+            return
+        }
+        
         // Request HealthKit authorization
         let authorized = await healthManager.requestAuthorization()
         
         guard authorized else {
-            errorMessage = "HealthKit authorization denied. Please enable in Settings."
+            let error = SmartwatchError.permissionDenied
+            errorMessage = error.userFriendlyMessage
+            if let nextStep = error.actionableNextStep {
+                errorMessage += "\n\n\(nextStep)"
+            }
             showError = true
             return
         }
@@ -436,8 +467,19 @@ struct SmartwatchSyncView: View {
             // Sync initial data
             await syncNow()
         } catch {
-            errorMessage = "Failed to connect: \(error.localizedDescription)"
-            showError = true
+            let smartwatchError = SmartwatchError.from(error)
+            
+            // Check if error is about premium requirement
+            if case .unknown(let detail) = smartwatchError, detail.lowercased().contains("premium") {
+                // Show premium upgrade instead of error
+                showPremiumUpgrade = true
+            } else {
+                errorMessage = smartwatchError.userFriendlyMessage
+                if let nextStep = smartwatchError.actionableNextStep {
+                    errorMessage += "\n\n\(nextStep)"
+                }
+                showError = true
+            }
         }
     }
     
@@ -448,7 +490,11 @@ struct SmartwatchSyncView: View {
             recentData = []
             recoveryStatus = nil
         } catch {
-            errorMessage = "Failed to disconnect: \(error.localizedDescription)"
+            let smartwatchError = SmartwatchError.from(error)
+            errorMessage = smartwatchError.userFriendlyMessage
+            if let nextStep = smartwatchError.actionableNextStep {
+                errorMessage += "\n\n\(nextStep)"
+            }
             showError = true
         }
     }
@@ -457,15 +503,47 @@ struct SmartwatchSyncView: View {
         isLoading = true
         defer { isLoading = false }
         
-        // Fetch today's health data
-        guard await healthManager.fetchTodayData() != nil else {
-            errorMessage = "No health data available"
-            showError = true
-            return
+        // Fetch today's health data (but don't fail sync if none - may have older data)
+        let todayData = await healthManager.fetchTodayData()
+        
+        // If we have today's data, try to send it to backend
+        if let data = todayData {
+            // Construct BiometricData to send
+            let syncData = BiometricData(
+                id: UUID().uuidString,
+                date: ISO8601DateFormatter().string(from: Date()),
+                restingHeartRate: data["resting_heart_rate"] as? Int,
+                avgHeartRate: data["heart_rate"] as? Int,
+                maxHeartRate: data["heart_rate"] as? Int,
+                heartRateVariability: data["hrv"] as? Int,
+                sleepDuration: data["sleep_duration"] as? Int,
+                deepSleep: nil,
+                remSleep: nil,
+                lightSleep: nil,
+                sleepQualityScore: nil,
+                steps: data["steps"] as? Int,
+                activeCalories: data["active_calories"] as? Int,
+                totalCalories: nil,
+                exerciseMinutes: data["exercise_minutes"] as? Int,
+                recoveryScore: nil,
+                trainingStrain: nil,
+                dayStrain: nil,
+                readinessScore: nil,
+                fatigueLevel: nil,
+                performancePrediction: nil,
+                createdAt: ISO8601DateFormatter().string(from: Date())
+            )
+            
+            do {
+                _ = try await APIClient.shared.syncBiometricData(data: syncData)
+            } catch {
+                print("[Smartwatch] Backend sync failed: \(error)")
+                // Don't show error - just log it and continue to load data
+            }
         }
         
-        // Sync to backend (would need proper BiometricData encoding)
-        // For now, just reload
+        // Always try to reload recovery status and recent data from backend
+        // This will work even if we didn't just sync new data
         await loadRecoveryStatus()
         await loadRecentData()
     }
@@ -473,12 +551,10 @@ struct SmartwatchSyncView: View {
     // MARK: - Helpers
     
     private func deviceIcon(_ type: String) -> String {
-        switch type {
-        case "apple_watch": return "applewatch"
-        case "fitbit": return "watch"
-        case "garmin": return "watch"
-        default: return "watch"
+        if let provider = WearableProvider(rawValue: type) {
+            return provider.icon
         }
+        return "figure.run.circle"
     }
     
     private func readinessColor(_ status: String) -> Color {
@@ -501,6 +577,93 @@ struct SmartwatchSyncView: View {
         displayFormatter.dateStyle = .medium
         displayFormatter.timeStyle = .none
         return displayFormatter.string(from: date)
+    }
+}
+
+// MARK: - Smartwatch Error Handling
+
+enum SmartwatchError {
+    case permissionDenied
+    case healthKitUnavailable
+    case notConnected
+    case syncTimeout
+    case backendUnavailable
+    case unsupportedDevice
+    case noDataAvailable
+    case unknown(String)
+    
+    static func from(_ error: Error) -> SmartwatchError {
+        // Map API errors to smartwatch-specific errors
+        if let apiError = error as? APIError {
+            switch apiError {
+            case .unauthorized:
+                return .permissionDenied
+            case .forbidden:
+                // 403 could be either HealthKit permission OR premium requirement
+                // Check error message to distinguish
+                let errorDesc = apiError.localizedDescription.lowercased()
+                if errorDesc.contains("premium") {
+                    return .unknown("Premium subscription required for smartwatch sync")
+                }
+                return .permissionDenied
+            case .timeout:
+                return .syncTimeout
+            case .noConnection, .cannotConnectToHost, .dnsLookupFailed:
+                return .backendUnavailable
+            case .notFound:
+                return .notConnected
+            default:
+                return .unknown(apiError.localizedDescription)
+            }
+        }
+        
+        // Check for HealthKit-specific errors
+        let nsError = error as NSError
+        if nsError.domain == "com.apple.healthkit" {
+            return .healthKitUnavailable
+        }
+        
+        return .unknown(error.localizedDescription)
+    }
+    
+    var userFriendlyMessage: String {
+        switch self {
+        case .permissionDenied:
+            return "We need your permission to access health data. Please grant access in your iPhone Settings under Privacy → Health."
+        case .healthKitUnavailable:
+            return "HealthKit isn't available on this device. An Apple Watch or iPhone with Health app is required."
+        case .notConnected:
+            return "Your smartwatch isn't connected yet. Tap 'Connect Apple Watch' below to get started."
+        case .syncTimeout:
+            return "Syncing is taking longer than usual. Make sure your watch is nearby and try again in a moment."
+        case .backendUnavailable:
+            return "Can't reach the backend server. Make sure the development server is running on localhost:8000, then try again."
+        case .unsupportedDevice:
+            return "This device isn't supported. SportsHub works with Apple Watch and compatible fitness trackers."
+        case .noDataAvailable:
+            return "No health data found. Make sure your watch is recording workouts and try syncing again."
+        case .unknown:
+            return "We're having trouble syncing your watch right now. Try again in a moment, or contact support if this keeps happening."
+        }
+    }
+    
+    var actionableNextStep: String? {
+        switch self {
+        case .permissionDenied:
+            return "Open Settings → Privacy → Health to grant access"
+        case .healthKitUnavailable:
+            return "Use an iPhone or Apple Watch with HealthKit"
+        case .notConnected:
+            return "Tap 'Connect Apple Watch' to link your device"
+        case .syncTimeout:
+            return "Make sure your watch is nearby and unlocked"
+        case .backendUnavailable:
+            return "Check your internet connection"
+        case .noDataAvailable:
+            return "Record a workout on your watch first"
+        default:
+            return nil
+        }
     }
 }
 
@@ -613,3 +776,4 @@ class HealthKitManager: ObservableObject {
         }
     }
 }
+

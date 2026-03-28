@@ -184,7 +184,7 @@ struct FriendsListView: View {
             pendingRequests = try await pending.filter { $0.userAId == sessionManager.currentUser?.id.uuidString }
             blockedUsers = try await blocked
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = "We couldn't load your friends list. Check your connection and try again."
         }
 
         isLoading = false
@@ -197,7 +197,7 @@ struct FriendsListView: View {
                 _ = try await APIClient.shared.removeFriend(friendshipId: friendship.id)
                 await loadData()
             } catch {
-                errorMessage = "Failed to remove friend: \(error.localizedDescription)"
+                errorMessage = "We couldn't remove this friend. Please try again."
             }
         }
     }
@@ -207,7 +207,7 @@ struct FriendsListView: View {
             _ = try await APIClient.shared.acceptFriendRequest(friendshipId: request.id)
             await loadData()
         } catch {
-            errorMessage = "Failed to accept request: \(error.localizedDescription)"
+            errorMessage = "We couldn't accept this friend request. Please try again."
         }
     }
 
@@ -216,7 +216,7 @@ struct FriendsListView: View {
             _ = try await APIClient.shared.declineFriendRequest(friendshipId: request.id)
             await loadData()
         } catch {
-            errorMessage = "Failed to decline request: \(error.localizedDescription)"
+            errorMessage = "We couldn't decline this friend request. Please try again."
         }
     }
 
@@ -227,7 +227,7 @@ struct FriendsListView: View {
             _ = try await APIClient.shared.unblockUser(userId: userId)
             await loadData()
         } catch {
-            errorMessage = "Failed to unblock user: \(error.localizedDescription)"
+            errorMessage = "We couldn't unblock this user. Please try again."
         }
     }
 }
@@ -529,7 +529,7 @@ struct AddFriendView: View {
             // Using the search endpoint
             searchResults = try await APIClient.shared.get("/users/search?query=\(searchText)")
         } catch {
-            errorMessage = "Search failed: \(error.localizedDescription)"
+            errorMessage = "We couldn't search right now. Check your connection and try again."
         }
 
         isSearching = false
@@ -541,7 +541,7 @@ struct AddFriendView: View {
             onRequestSent()
             dismiss()
         } catch {
-            errorMessage = "Failed to send request: \(error.localizedDescription)"
+            errorMessage = "We couldn't send your friend request. Please try again."
         }
     }
 }

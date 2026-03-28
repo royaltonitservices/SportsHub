@@ -441,6 +441,25 @@ extension APIClient {
     func getCurrentUser() async throws -> UserResponse {
         try await get("/users/me")
     }
+    
+    func checkUsernameAvailability(username: String) async throws -> Bool {
+        let response: UsernameAvailabilityResponse = try await get("/users/check-username/\(username)")
+        return response.available
+    }
+    
+    func updateUsername(newUsername: String) async throws {
+        let _: EmptyResponse = try await put("/users/me/username", body: ["new_username": newUsername])
+    }
+    
+    func updateDisplayName(newDisplayName: String) async throws {
+        let _: EmptyResponse = try await put("/users/me/display-name", body: ["new_display_name": newDisplayName])
+    }
+    
+    /// Get current user's subscription status from backend
+    /// This is critical for syncing Premium state between backend and iOS
+    func getSubscriptionStatus() async throws -> SubscriptionStatusResponse {
+        try await get("/users/me/subscription")
+    }
 }
 
 // MARK: - Sports API
@@ -555,6 +574,10 @@ extension APIClient {
     func getFriendsList() async throws -> [FriendshipResponse] {
         try await get("/friends/list")
     }
+    
+    func getFriends() async throws -> [FriendshipResponse] {
+        try await get("/friends/list")
+    }
 
     func getPendingRequests() async throws -> [FriendshipResponse] {
         try await get("/friends/requests/pending")
@@ -611,15 +634,42 @@ extension APIClient {
 // MARK: - Posts API
 extension APIClient {
     func getPosts(limit: Int = 50, offset: Int = 0) async throws -> [PostResponse] {
-        try await get("/posts/?limit=\(limit)&offset=\(offset)")
+        try await get("/posts/feed?limit=\(limit)&skip=\(offset)")
     }
     
     func createPost(request: CreatePostRequest) async throws -> PostResponse {
-        try await post("/posts/", body: request)
+        try await post("/posts/create", body: request)
     }
     
     func likePost(postId: String) async throws -> MessageResponse {
         try await post("/posts/\(postId)/like", body: nil as String?)
+    }
+    
+    func unlikePost(postId: String) async throws -> MessageResponse {
+        try await delete("/posts/\(postId)/like")
+    }
+    
+    func deletePost(postId: String) async throws -> MessageResponse {
+        try await delete("/posts/\(postId)")
+    }
+}
+
+// MARK: - Comments API
+extension APIClient {
+    func getPostComments(postId: String) async throws -> [CommentResponse] {
+        try await get("/comments/post/\(postId)")
+    }
+    
+    func createComment(request: CreateCommentRequest) async throws -> CommentResponse {
+        try await post("/comments/create", body: request)
+    }
+    
+    func deleteComment(commentId: String) async throws -> MessageResponse {
+        try await delete("/comments/\(commentId)")
+    }
+    
+    func likeComment(commentId: String) async throws -> MessageResponse {
+        try await post("/comments/like/\(commentId)", body: nil as String?)
     }
 }
 
@@ -634,7 +684,65 @@ extension APIClient {
     }
     
     func createClip(request: CreateClipRequest) async throws -> ClipResponse {
-        try await post("/clips/", body: request)
+        try await post("/clips/create", body: request)
+    }
+    
+    func uploadClipVideo(videoURL: URL, title: String, sport: String, description: String?) async throws -> ClipResponse {
+        // Read video data
+        let videoData = try Data(contentsOf: videoURL)
+        
+        // Create multipart form data
+        let boundary = "Boundary-\(UUID().uuidString)"
+        var body = Data()
+        
+        // Add title field
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"title\"\r\n\r\n".data(using: .utf8)!)
+        body.append("\(title)\r\n".data(using: .utf8)!)
+        
+        // Add sport field
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"sport\"\r\n\r\n".data(using: .utf8)!)
+        body.append("\(sport)\r\n".data(using: .utf8)!)
+        
+        // Add description if present
+        if let description = description, !description.isEmpty {
+            body.append("--\(boundary)\r\n".data(using: .utf8)!)
+            body.append("Content-Disposition: form-data; name=\"description\"\r\n\r\n".data(using: .utf8)!)
+            body.append("\(description)\r\n".data(using: .utf8)!)
+        }
+        
+        // Add video file
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        let filename = videoURL.lastPathComponent
+        body.append("Content-Disposition: form-data; name=\"video\"; filename=\"\(filename)\"\r\n".data(using: .utf8)!)
+        body.append("Content-Type: video/mp4\r\n\r\n".data(using: .utf8)!)
+        body.append(videoData)
+        body.append("\r\n".data(using: .utf8)!)
+        body.append("--\(boundary)--\r\n".data(using: .utf8)!)
+        
+        // Create request
+        var request = URLRequest(url: URL(string: "\(APIConfig.baseURL)/clips/upload")!)
+        request.httpMethod = "POST"
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(authToken ?? "")", forHTTPHeaderField: "Authorization")
+        request.httpBody = body
+        request.timeoutInterval = 120  // 2 minutes for video upload
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw APIError.invalidResponse
+        }
+        
+        guard (200...299).contains(httpResponse.statusCode) else {
+            if let errorResponse = try? JSONDecoder().decode(ErrorResponse.self, from: data) {
+                throw APIError.serverError(errorResponse.detail)
+            }
+            throw APIError.serverError("Upload failed with status \(httpResponse.statusCode)")
+        }
+        
+        return try JSONDecoder().decode(ClipResponse.self, from: data)
     }
 }
 
@@ -839,5 +947,29 @@ struct TrainingAnalysisResponse: Codable {
         case insights
         case areasToImprove = "areas_to_improve"
         case nextSessionRecommendations = "next_session_recommendations"
+    }
+}
+
+// MARK: - Matchmaking Availability
+extension APIClient {
+    func updateAvailability(sport: String, available: Bool) async throws {
+        // Availability status update - if backend endpoint doesn't exist yet, this will gracefully fail
+        struct AvailabilityRequest: Codable {
+            let sport: String
+            let available: Bool
+        }
+        let request = AvailabilityRequest(sport: sport, available: available)
+        let _: EmptyResponse? = try? await put("/matchmaking/availability", body: request)
+    }
+}
+
+// MARK: - Admin API
+extension APIClient {
+    func getAdminStats() async throws -> AdminStatsResponse {
+        try await get("/admin/stats")
+    }
+    
+    func getAdminActions(limit: Int = 20) async throws -> [AdminActionResponse] {
+        try await get("/admin/actions?limit=\(limit)")
     }
 }

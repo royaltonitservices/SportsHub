@@ -333,7 +333,7 @@ struct GroupChatDetailView: View {
     }
     
     private func sendMessage() {
-        let text = messageText
+        let _ = messageText
         messageText = ""
         
         Task {

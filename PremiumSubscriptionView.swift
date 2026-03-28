@@ -20,14 +20,14 @@ struct PremiumSubscriptionView: View {
         var price: String {
             switch self {
             case .monthly: return "$8.99"
-            case .yearly: return "$79.99"
+            case .yearly: return "$100.00"
             }
         }
         
         var savings: String? {
             switch self {
             case .monthly: return nil
-            case .yearly: return "Save 26%"
+            case .yearly: return "Save 7%"
             }
         }
     }
@@ -122,9 +122,16 @@ struct PremiumSubscriptionView: View {
             )
             
             FeatureRow(
-                icon: "applewatch.watchface",
-                title: "Smartwatch Sync",
-                description: "Track recovery with biometric data",
+                icon: "calendar.badge.clock",
+                title: "AI Weekly Drills",
+                description: "Fresh, personalized drills every week",
+                color: .cyan
+            )
+            
+            FeatureRow(
+                icon: "figure.run.circle.fill",
+                title: "Wearable Sync",
+                description: "Connect fitness trackers for recovery insights",
                 color: .blue
             )
             
@@ -183,9 +190,9 @@ struct PremiumSubscriptionView: View {
             // Yearly Plan
             PlanCard(
                 title: "Yearly",
-                price: "$79.99",
+                price: "$100.00",
                 period: "/year",
-                savings: "Save 26%",
+                savings: "Save 7%",
                 isSelected: selectedPlan == .yearly
             ) {
                 selectedPlan = .yearly
@@ -366,6 +373,10 @@ class StoreManager: ObservableObject {
     @Published var products: [Product] = []
     @Published var purchasedProductIDs: Set<String> = []
     
+    // Backend subscription status (server-side Premium grants)
+    @Published var backendHasPremium: Bool = false
+    @Published var backendSubscriptionTier: String = "free"
+    
     private var updateListenerTask: Task<Void, Error>?
     
     init() {
@@ -449,8 +460,33 @@ class StoreManager: ObservableObject {
         }
     }
     
+    /// Sync Premium status from backend subscription system
+    /// Call this on login and app launch to ensure backend Premium grants are recognized
+    func syncBackendSubscription() async {
+        do {
+            let status = try await APIClient.shared.getSubscriptionStatus()
+            backendHasPremium = status.hasPremium
+            backendSubscriptionTier = status.tier
+            
+            if APIConfig.enableDebugLogging {
+                print("✓ Backend subscription synced: tier=\(status.tier), premium=\(status.hasPremium)")
+            }
+        } catch {
+            // Non-fatal error - just log it
+            // StoreKit purchases still work even if backend sync fails
+            if APIConfig.enableDebugLogging {
+                print("⚠️ Failed to sync backend subscription: \(error)")
+            }
+        }
+    }
+    
+    /// Check if user has Premium access from ANY source
+    /// This includes both StoreKit purchases AND backend-granted subscriptions
     var isPremium: Bool {
-        !purchasedProductIDs.isEmpty
+        // Premium if:
+        // 1. User purchased via StoreKit, OR
+        // 2. User has backend Premium subscription (e.g., admin grant, manual grant)
+        !purchasedProductIDs.isEmpty || backendHasPremium
     }
 }
 

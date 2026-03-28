@@ -34,6 +34,9 @@ async def create_clip(
     db.commit()
     db.refresh(clip)
 
+    # Load author relationship for response
+    clip.author = current_user
+
     return clip
 
 
@@ -47,7 +50,9 @@ async def get_clips_feed(
 ):
     """Get clips feed with optional sport filter"""
 
-    query = db.query(models.Clip)
+    query = db.query(models.Clip).join(
+        models.User, models.Clip.author_id == models.User.id
+    )
 
     if sport:
         query = query.filter(models.Clip.sport == sport)
@@ -65,7 +70,9 @@ async def get_clip(
 ):
     """Get a specific clip"""
 
-    clip = db.query(models.Clip).filter(models.Clip.id == clip_id).first()
+    clip = db.query(models.Clip).join(
+        models.User, models.Clip.author_id == models.User.id
+    ).filter(models.Clip.id == clip_id).first()
 
     if not clip:
         raise HTTPException(
@@ -90,7 +97,9 @@ async def get_user_clips(
 ):
     """Get clips by a specific user"""
 
-    clips = db.query(models.Clip).filter(
+    clips = db.query(models.Clip).join(
+        models.User, models.Clip.author_id == models.User.id
+    ).filter(
         models.Clip.author_id == user_id
     ).order_by(models.Clip.created_at.desc()).offset(skip).limit(limit).all()
 
@@ -106,7 +115,9 @@ async def get_trending_clips(
 ):
     """Get trending clips sorted by views and likes"""
 
-    query = db.query(models.Clip)
+    query = db.query(models.Clip).join(
+        models.User, models.Clip.author_id == models.User.id
+    )
 
     if sport:
         query = query.filter(models.Clip.sport == sport)
@@ -256,6 +267,9 @@ async def upload_clip(
         db.add(clip)
         db.commit()
         db.refresh(clip)
+
+        # Load author relationship for response
+        clip.author = current_user
 
         return clip
 

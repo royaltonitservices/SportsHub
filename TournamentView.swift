@@ -181,7 +181,7 @@ struct TournamentView: View {
                 status: status
             )
         } catch {
-            errorMessage = "Failed to load tournaments: \(error.localizedDescription)"
+            errorMessage = "We couldn't load tournaments right now. Check your connection and try again."
             showError = true
         }
     }
@@ -573,7 +573,7 @@ struct TournamentDetailView: View {
             isRegistered = true
             await loadStandings()
         } catch {
-            errorMessage = "Failed to register: \(error.localizedDescription)"
+            errorMessage = "We couldn't register you for this tournament. Please try again."
             showError = true
         }
     }
@@ -800,7 +800,7 @@ struct CreateTournamentView: View {
             _ = try await APIClient.shared.createTournament(request: request)
             dismiss()
         } catch {
-            errorMessage = "Failed to create tournament: \(error.localizedDescription)"
+            errorMessage = "We couldn't create your tournament. Please try again."
             showError = true
         }
     }

@@ -202,8 +202,11 @@ struct LoginView: View {
     }
     
     private func signIn() {
-        // Validate email format first
-        if !isValidEmail(email) {
+        // Trim email before validation (match SignUpView behavior)
+        let trimmedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        // Validate email format
+        if !isValidEmail(trimmedEmail) {
             withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                 emailError = "Please enter a valid email address"
             }

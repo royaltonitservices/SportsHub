@@ -344,29 +344,84 @@ struct DailyReadinessView: View {
     // MARK: - Error & No Data Views
     
     private func errorView(_ message: String) -> some View {
-        VStack(spacing: Spacing.md) {
-            Image(systemName: "exclamationmark.triangle.fill")
+        VStack(spacing: Spacing.lg) {
+            Image(systemName: errorIcon(for: message))
                 .font(.system(size: 60))
-                .foregroundColor(.orange)
+                .foregroundColor(errorColor(for: message))
             
-            Text("Unable to Load Data")
+            Text(errorTitle(for: message))
                 .font(.headline)
             
             Text(message)
                 .font(.body)
                 .foregroundColor(.appSecondary)
                 .multilineTextAlignment(.center)
+                .padding(.horizontal, Spacing.md)
             
-            Button(action: { Task { await loadReadinessData() } }) {
-                Text("Try Again")
-                    .font(.headline)
-                    .foregroundColor(.white)
-                    .padding(Spacing.md)
-                    .background(Color.appPrimary)
-                    .cornerRadius(CornerRadius.md)
+            VStack(spacing: Spacing.sm) {
+                Button(action: { Task { await loadReadinessData() } }) {
+                    Text("Try Again")
+                        .font(.headline)
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(Spacing.md)
+                        .background(Color.appPrimary)
+                        .cornerRadius(CornerRadius.md)
+                }
+                
+                // Show wearable setup button if no data found
+                if message.contains("wearable data") || message.contains("smartwatch") {
+                    Button(action: { showWearableSetup = true }) {
+                        HStack {
+                            Image(systemName: "applewatch")
+                            Text("Connect Smartwatch")
+                        }
+                        .font(.subheadline)
+                        .foregroundColor(.appPrimary)
+                        .frame(maxWidth: .infinity)
+                        .padding(Spacing.md)
+                        .background(Color.appPrimary.opacity(0.1))
+                        .cornerRadius(CornerRadius.md)
+                    }
+                }
             }
+            .padding(.horizontal, Spacing.md)
         }
         .padding(Spacing.xl)
+    }
+    
+    private func errorIcon(for message: String) -> String {
+        if message.contains("internet") || message.contains("connection") {
+            return "wifi.slash"
+        } else if message.contains("wearable") || message.contains("smartwatch") {
+            return "applewatch.slash"
+        } else if message.contains("session") || message.contains("log in") {
+            return "person.crop.circle.badge.exclamationmark"
+        } else {
+            return "exclamationmark.triangle.fill"
+        }
+    }
+    
+    private func errorColor(for message: String) -> Color {
+        if message.contains("internet") || message.contains("connection") {
+            return .blue
+        } else if message.contains("wearable") || message.contains("smartwatch") {
+            return .purple
+        } else {
+            return .orange
+        }
+    }
+    
+    private func errorTitle(for message: String) -> String {
+        if message.contains("internet") || message.contains("connection") {
+            return "Connection Issue"
+        } else if message.contains("wearable") || message.contains("smartwatch") {
+            return "No Wearable Data"
+        } else if message.contains("session") || message.contains("log in") {
+            return "Session Expired"
+        } else {
+            return "Unable to Load Data"
+        }
     }
     
     private var noDataView: some View {
@@ -483,9 +538,37 @@ struct DailyReadinessView: View {
             
             isLoading = false
         } catch {
-            errorMessage = error.localizedDescription
+            // Use smartwatch-specific error mapping
+            errorMessage = mapRecoveryError(error)
             isLoading = false
         }
+    }
+    
+    private func mapRecoveryError(_ error: Error) -> String {
+        // Check if it's an API error
+        if let apiError = error as? APIError {
+            switch apiError {
+            case .unauthorized, .forbidden:
+                return "Your session expired. Please log in again to continue."
+            case .notFound:
+                return "No wearable data found yet. Connect your smartwatch or record some activities to get personalized readiness insights."
+            case .timeout:
+                return "Loading is taking longer than usual. Make sure you have a stable internet connection and try again."
+            case .noConnection, .cannotConnectToHost, .dnsLookupFailed:
+                return "Can't reach our servers right now. Check your internet connection and try again in a moment."
+            case .serverError(let message):
+                // Don't show raw server errors to users
+                if message.lowercased().contains("internal server") {
+                    return "Our servers are having trouble right now. We're working on it — please try again in a few minutes."
+                }
+                return "Something went wrong on our end. Please try again in a moment."
+            default:
+                return "Unable to load your readiness data right now. Please try again."
+            }
+        }
+        
+        // Generic fallback
+        return "Unable to load readiness data. Make sure your smartwatch is synced and try again."
     }
     
     private func generateRecommendation(from recovery: RecoveryStatus) -> TrainingRecommendation {

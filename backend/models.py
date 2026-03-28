@@ -1,7 +1,7 @@
 """
 SQLAlchemy database models for SportsHub
 """
-from sqlalchemy import Boolean, Column, Integer, String, DateTime, Float, ForeignKey, Text, Enum as SQLEnum, JSON, TypeDecorator
+from sqlalchemy import Boolean, Column, Integer, String, DateTime, Float, ForeignKey, Text, Enum as SQLEnum, JSON, TypeDecorator, Index
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -145,7 +145,7 @@ class User(Base):
     sport_profiles = relationship("SportProfile", back_populates="user", cascade="all, delete-orphan")
     friendships_sent = relationship("Friendship", foreign_keys="Friendship.user_a_id", back_populates="user_a")
     friendships_received = relationship("Friendship", foreign_keys="Friendship.user_b_id", back_populates="user_b")
-    subscription = relationship("Subscription", back_populates="user", uselist=False, cascade="all, delete-orphan")
+    # subscription = relationship("Subscription", back_populates="user", uselist=False, cascade="all, delete-orphan")  # Defined in models_premium.py
 
 
 class SportProfile(Base):
@@ -351,7 +351,9 @@ class Clip(Base):
     author_id = Column(UUID(), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     sport = Column(SQLEnum(Sport), nullable=False)
     title = Column(String(200), nullable=False)
+    description = Column(Text)
     video_url = Column(String(500))
+    thumbnail_url = Column(String(500))
     thumbnail_gradient = Column(JSON)
     duration = Column(Integer)
     views_count = Column(Integer, default=0)
@@ -578,3 +580,46 @@ class TennisCourt(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     is_verified = Column(Boolean, default=False)  # Admin-verified court
     added_by = Column(UUID(), ForeignKey("users.id"))  # User who added (community-sourced)
+
+
+# AI Coach Context Storage - PRIORITY FIX 2: Persistent Memory
+class CoachContext(Base):
+    """
+    Stores persistent coaching context so AI Coach remembers the athlete.
+    This is the key to making coaching feel real, not stateless.
+    """
+    __tablename__ = "coach_context"
+
+    id = Column(UUID(), primary_key=True, default=uuid_pkg.uuid4)
+    user_id = Column(UUID(), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    sport = Column(SQLEnum(Sport), nullable=False)
+
+    # Weak points the athlete has mentioned
+    weak_points = Column(JSON, default=list)  # ["left hand", "shooting consistency", etc.]
+
+    # Goals the athlete is working toward
+    goals = Column(JSON, default=list)  # ["improve athleticism", "make varsity team", etc.]
+
+    # Training preferences
+    preferred_training_duration = Column(Integer)  # minutes
+    preferred_training_time = Column(String(50))  # "morning", "afternoon", "evening"
+    training_frequency = Column(String(50))  # "daily", "3x/week", etc.
+
+    # Recent coaching advice given (to avoid repetition)
+    recent_recommendations = Column(JSON, default=list)  # Last 5 workout/drill recommendations
+
+    # Context from conversations
+    mentioned_skills = Column(JSON, default=list)  # Skills user has discussed
+    training_focus = Column(String(200))  # Current focus area
+    notes = Column(Text)  # Free-form coach notes
+
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    last_interaction = Column(DateTime(timezone=True), server_default=func.now())
+
+    # Indexes for fast lookup
+    __table_args__ = (
+        Index('idx_coach_context_user_sport', 'user_id', 'sport'),
+    )
+

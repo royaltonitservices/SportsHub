@@ -287,7 +287,7 @@ struct GoalsSurveyView: View {
         do {
             skillOptions = try await APIClient.shared.getSkillOptions()
         } catch {
-            errorMessage = "Failed to load skill options: \(error.localizedDescription)"
+            errorMessage = "We couldn't load skill options. Please try again."
             showError = true
         }
     }
@@ -330,7 +330,7 @@ struct GoalsSurveyView: View {
                 dismiss()
             }
         } catch {
-            errorMessage = "Failed to save goals: \(error.localizedDescription)"
+            errorMessage = "We couldn't save your goals. Please try again."
             showError = true
         }
     }

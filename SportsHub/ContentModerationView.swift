@@ -189,7 +189,7 @@ struct ReportContentView: View {
 
                 showingSuccess = true
             } catch {
-                errorMessage = "Failed to submit report: \(error.localizedDescription)"
+                errorMessage = "We couldn't submit your report. Please try again."
             }
 
             isSubmitting = false
@@ -216,7 +216,7 @@ struct AdminModerationDashboardView: View {
                 }
                 .pickerStyle(.segmented)
                 .padding()
-                .onChange(of: filterStatus) { _ in
+                .onChange(of: filterStatus) { _, _ in
                     loadFlags()
                 }
 
@@ -275,7 +275,7 @@ struct AdminModerationDashboardView: View {
             do {
                 flags = try await APIClient.shared.get("/moderation/flags?status_filter=\(filterStatus)")
             } catch {
-                errorMessage = "Failed to load flags: \(error.localizedDescription)"
+                errorMessage = "We couldn't load moderation flags. Check your connection and try again."
             }
 
             isLoading = false

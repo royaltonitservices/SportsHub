@@ -94,7 +94,7 @@ struct LeaderboardView: View {
         do {
             leaderboardData = try await APIClient.shared.getLeaderboard(sport: sport.apiValue)
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = "We couldn't load the leaderboard. Check your connection and try again."
         }
         
         isLoading = false

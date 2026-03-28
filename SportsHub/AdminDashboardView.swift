@@ -44,79 +44,113 @@ struct AdminDashboardView: View {
 // MARK: - Admin Overview
 
 struct AdminOverviewView: View {
+    @State private var stats: AdminStatsResponse?
+    @State private var recentActions: [AdminActionResponse] = []
+    @State private var isLoading = true
+    @State private var errorMessage: String?
+    
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: Spacing.lg) {
-                    // Stats Overview
-                    VStack(alignment: .leading, spacing: Spacing.md) {
-                        Text("Platform Statistics")
-                            .font(.title3)
-                            .fontWeight(.semibold)
-                            .foregroundStyle(Color.appTextPrimary)
-                        
-                        LazyVGrid(columns: [
-                            GridItem(.flexible()),
-                            GridItem(.flexible())
-                        ], spacing: Spacing.md) {
-                            AdminStatCard(
-                                title: "Total Users",
-                                value: "1,247",
-                                icon: "person.3.fill",
-                                color: Color.appPrimary
-                            )
+                    if isLoading {
+                        ProgressView("Loading admin data...")
+                            .padding(Spacing.xl)
+                    } else if let error = errorMessage {
+                        VStack(spacing: Spacing.md) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.system(size: 48))
+                                .foregroundColor(.orange)
                             
-                            AdminStatCard(
-                                title: "Active Users (24h)",
-                                value: "342",
-                                icon: "chart.line.uptrend.xyaxis",
-                                color: Color.appSuccess
-                            )
+                            Text("Unable to load admin data")
+                                .font(.headline)
+                                .foregroundColor(.appTextPrimary)
                             
-                            AdminStatCard(
-                                title: "Pending Reports",
-                                value: "8",
-                                icon: "exclamationmark.triangle.fill",
-                                color: Color(hex: 0xFFC107)
-                            )
+                            Text(error)
+                                .font(.subheadline)
+                                .foregroundColor(.appTextSecondary)
+                                .multilineTextAlignment(.center)
                             
-                            AdminStatCard(
-                                title: "Suspended Accounts",
-                                value: "12",
-                                icon: "hand.raised.fill",
-                                color: Color.appError
-                            )
+                            Button(action: loadData) {
+                                Text("Retry")
+                                    .font(.headline)
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, Spacing.lg)
+                                    .padding(.vertical, Spacing.sm)
+                                    .background(Color.appPrimary)
+                                    .cornerRadius(CornerRadius.md)
+                            }
                         }
-                    }
-                    
-                    // Recent Actions
-                    VStack(alignment: .leading, spacing: Spacing.md) {
-                        Text("Recent Admin Actions")
-                            .font(.title3)
-                            .fontWeight(.semibold)
-                            .foregroundStyle(Color.appTextPrimary)
+                        .padding(Spacing.xl)
+                    } else if let stats = stats {
+                        // Stats Overview
+                        VStack(alignment: .leading, spacing: Spacing.md) {
+                            Text("Platform Statistics")
+                                .font(.title3)
+                                .fontWeight(.semibold)
+                                .foregroundStyle(Color.appTextPrimary)
+                            
+                            LazyVGrid(columns: [
+                                GridItem(.flexible()),
+                                GridItem(.flexible())
+                            ], spacing: Spacing.md) {
+                                AdminStatCard(
+                                    title: "Total Users",
+                                    value: "\(stats.users.total)",
+                                    icon: "person.3.fill",
+                                    color: Color.appPrimary
+                                )
+                                
+                                AdminStatCard(
+                                    title: "Active Users",
+                                    value: "\(stats.users.active)",
+                                    icon: "chart.line.uptrend.xyaxis",
+                                    color: Color.appSuccess
+                                )
+                                
+                                AdminStatCard(
+                                    title: "Pending Reports",
+                                    value: "\(stats.moderation.pendingFlags)",
+                                    icon: "exclamationmark.triangle.fill",
+                                    color: Color(hex: 0xFFC107)
+                                )
+                                
+                                AdminStatCard(
+                                    title: "Suspended Accounts",
+                                    value: "\(stats.users.suspended)",
+                                    icon: "hand.raised.fill",
+                                    color: Color.appError
+                                )
+                            }
+                        }
                         
-                        VStack(spacing: Spacing.sm) {
-                            AdminActionRow(
-                                action: "Suspended User",
-                                target: "@flaggeduser",
-                                admin: "Admin",
-                                time: "2h ago"
-                            )
+                        // Recent Actions
+                        VStack(alignment: .leading, spacing: Spacing.md) {
+                            Text("Recent Admin Actions")
+                                .font(.title3)
+                                .fontWeight(.semibold)
+                                .foregroundStyle(Color.appTextPrimary)
                             
-                            AdminActionRow(
-                                action: "Removed Post",
-                                target: "Inappropriate content",
-                                admin: "Admin",
-                                time: "4h ago"
-                            )
-                            
-                            AdminActionRow(
-                                action: "Verified Age",
-                                target: "@newuser123",
-                                admin: "Admin",
-                                time: "6h ago"
-                            )
+                            if recentActions.isEmpty {
+                                VStack(spacing: Spacing.sm) {
+                                    Image(systemName: "checkmark.circle")
+                                        .font(.system(size: 32))
+                                        .foregroundColor(.green)
+                                    
+                                    Text("No recent admin actions")
+                                        .font(.subheadline)
+                                        .foregroundColor(.appTextSecondary)
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding(Spacing.xl)
+                                .cardBackground()
+                            } else {
+                                VStack(spacing: Spacing.sm) {
+                                    ForEach(recentActions.prefix(10)) { action in
+                                        AdminActionRowLive(action: action)
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -124,6 +158,41 @@ struct AdminOverviewView: View {
             }
             .background(Color.appBackground)
             .navigationTitle("Admin Dashboard")
+            .refreshable {
+                await loadDataAsync()
+            }
+        }
+        .task {
+            await loadDataAsync()
+        }
+    }
+    
+    private func loadData() {
+        Task {
+            await loadDataAsync()
+        }
+    }
+    
+    private func loadDataAsync() async {
+        isLoading = true
+        errorMessage = nil
+        
+        do {
+            async let statsRequest = APIClient.shared.getAdminStats()
+            async let actionsRequest = APIClient.shared.getAdminActions(limit: 20)
+            
+            let (fetchedStats, fetchedActions) = try await (statsRequest, actionsRequest)
+            
+            await MainActor.run {
+                self.stats = fetchedStats
+                self.recentActions = fetchedActions
+                self.isLoading = false
+            }
+        } catch {
+            await MainActor.run {
+                self.isLoading = false
+                self.errorMessage = "Failed to load admin data. Please check your connection and try again."
+            }
         }
     }
 }
@@ -188,6 +257,87 @@ struct AdminActionRow: View {
         }
         .padding(Spacing.md)
         .cardBackground()
+    }
+}
+
+struct AdminActionRowLive: View {
+    let action: AdminActionResponse
+    
+    var body: some View {
+        HStack(spacing: Spacing.md) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(formatActionType(action.actionType))
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    .foregroundStyle(Color.appTextPrimary)
+                
+                if let reason = action.reason, !reason.isEmpty {
+                    Text(reason)
+                        .font(.caption)
+                        .foregroundStyle(Color.appTextSecondary)
+                        .lineLimit(2)
+                } else if let targetId = action.targetUserId {
+                    Text("User ID: \(targetId.prefix(8))...")
+                        .font(.caption)
+                        .foregroundStyle(Color.appTextSecondary)
+                }
+            }
+            
+            Spacer()
+            
+            VStack(alignment: .trailing, spacing: 4) {
+                Text("@\(action.adminUsername)")
+                    .font(.caption)
+                    .foregroundStyle(Color.appPrimary)
+                
+                Text(formatTimestamp(action.timestamp))
+                    .font(.caption)
+                    .foregroundStyle(Color.appTextSecondary)
+            }
+        }
+        .padding(Spacing.md)
+        .cardBackground()
+    }
+    
+    private func formatActionType(_ type: String) -> String {
+        // Convert snake_case to Title Case
+        return type.replacingOccurrences(of: "_", with: " ")
+            .capitalized
+    }
+    
+    private func formatTimestamp(_ timestamp: String) -> String {
+        // Parse ISO timestamp and convert to relative time
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        
+        guard let date = formatter.date(from: timestamp) else {
+            // Try without fractional seconds
+            formatter.formatOptions = [.withInternetDateTime]
+            guard let date = formatter.date(from: timestamp) else {
+                return "Recently"
+            }
+            return formatRelativeTime(from: date)
+        }
+        
+        return formatRelativeTime(from: date)
+    }
+    
+    private func formatRelativeTime(from date: Date) -> String {
+        let now = Date()
+        let interval = now.timeIntervalSince(date)
+        
+        if interval < 60 {
+            return "Just now"
+        } else if interval < 3600 {
+            let minutes = Int(interval / 60)
+            return "\(minutes)m ago"
+        } else if interval < 86400 {
+            let hours = Int(interval / 3600)
+            return "\(hours)h ago"
+        } else {
+            let days = Int(interval / 86400)
+            return "\(days)d ago"
+        }
     }
 }
 

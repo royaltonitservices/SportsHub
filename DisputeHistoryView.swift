@@ -299,7 +299,7 @@ struct DisputeHistoryView: View {
                 return date1 > date2
             }
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = "We couldn't load your disputes. Check your connection and try again."
         }
         
         isLoading = false

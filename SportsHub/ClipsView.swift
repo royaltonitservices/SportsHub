@@ -11,6 +11,9 @@ struct ClipsView: View {
     @EnvironmentObject var sessionManager: SessionManager
     @State private var selectedSport: Sport = .basketball
     @State private var showUploadClip = false
+    @State private var clips: [ClipResponse] = []
+    @State private var isLoadingClips = false
+    @State private var errorMessage: String?
 
     var body: some View {
         NavigationStack {
@@ -29,25 +32,34 @@ struct ClipsView: View {
                                 .fontWeight(.bold)
                                 .foregroundStyle(Color.appTextPrimary)
                             Spacer()
+                            
+                            // Refresh button
+                            Button(action: {
+                                Task {
+                                    await loadClips()
+                                }
+                            }) {
+                                Image(systemName: "arrow.clockwise")
+                                    .foregroundStyle(Color.appPrimary)
+                            }
+                            .disabled(isLoadingClips)
                         }
 
-                        VStack(spacing: Spacing.md) {
-                            Image(systemName: "video.fill")
-                                .font(.system(size: 64))
-                                .foregroundStyle(Color.appTextSecondary.opacity(0.3))
-
-                            Text("No clips available")
-                                .font(.headline)
-                                .foregroundStyle(Color.appTextSecondary)
-
-                            Text("Be the first to upload \(selectedSport.rawValue.lowercased()) highlights")
-                                .font(.subheadline)
-                                .foregroundStyle(Color.appTextSecondary.opacity(0.8))
-                                .multilineTextAlignment(.center)
+                        if isLoadingClips {
+                            ProgressView()
+                                .padding(Spacing.xl)
+                        } else if let error = errorMessage {
+                            errorView(error)
+                        } else if clips.isEmpty {
+                            emptyStateView
+                        } else {
+                            // Clips list
+                            LazyVStack(spacing: Spacing.md) {
+                                ForEach(clips) { clip in
+                                    ClipCard(clip: clip)
+                                }
+                            }
                         }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, Spacing.xl)
-                        .cardBackground()
                     }
                 }
                 .padding(Spacing.md)
@@ -67,7 +79,80 @@ struct ClipsView: View {
                 }
             }
             .sheet(isPresented: $showUploadClip) {
-                VideoUploadView()
+                VideoUploadView(onClipUploaded: {
+                    Task {
+                        await loadClips()
+                    }
+                })
+            }
+            .task {
+                await loadClips()
+            }
+            .onChange(of: selectedSport) { _, _ in
+                Task {
+                    await loadClips()
+                }
+            }
+        }
+    }
+    
+    private var emptyStateView: some View {
+        VStack(spacing: Spacing.md) {
+            Image(systemName: "video.fill")
+                .font(.system(size: 64))
+                .foregroundStyle(Color.appTextSecondary.opacity(0.3))
+
+            Text("No clips available")
+                .font(.headline)
+                .foregroundStyle(Color.appTextSecondary)
+
+            Text("Be the first to upload \(selectedSport.rawValue.lowercased()) highlights")
+                .font(.subheadline)
+                .foregroundStyle(Color.appTextSecondary.opacity(0.8))
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, Spacing.xl)
+        .cardBackground()
+    }
+    
+    private func errorView(_ message: String) -> some View {
+        VStack(spacing: Spacing.md) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.system(size: 48))
+                .foregroundStyle(Color.appError)
+            
+            Text(message)
+                .font(.subheadline)
+                .foregroundStyle(Color.appTextSecondary)
+                .multilineTextAlignment(.center)
+            
+            Button("Try Again") {
+                Task {
+                    await loadClips()
+                }
+            }
+            .font(.subheadline.weight(.medium))
+            .foregroundStyle(Color.appPrimary)
+        }
+        .padding(Spacing.xl)
+        .cardBackground()
+    }
+    
+    private func loadClips() async {
+        isLoadingClips = true
+        errorMessage = nil
+        
+        do {
+            let fetchedClips = try await APIClient.shared.getClips(sport: selectedSport.rawValue.lowercased(), limit: 50)
+            await MainActor.run {
+                clips = fetchedClips
+                isLoadingClips = false
+            }
+        } catch {
+            await MainActor.run {
+                errorMessage = "Failed to load clips. Please try again."
+                isLoadingClips = false
             }
         }
     }
@@ -88,6 +173,58 @@ struct ClipsView: View {
                 }
             }
         }
+    }
+}
+
+// MARK: - Clip Card
+
+struct ClipCard: View {
+    let clip: ClipResponse
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            // Thumbnail placeholder
+            ZStack {
+                Rectangle()
+                    .fill(Color.appSurface)
+                    .aspectRatio(16/9, contentMode: .fit)
+                
+                Image(systemName: "play.circle.fill")
+                    .font(.system(size: 48))
+                    .foregroundStyle(Color.appPrimary)
+            }
+            .cornerRadius(CornerRadius.md)
+            
+            // Clip info
+            HStack(spacing: Spacing.sm) {
+                AvatarView(name: clip.username, size: 32)
+                
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(clip.title)
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(Color.appTextPrimary)
+                        .lineLimit(2)
+                    
+                    HStack(spacing: Spacing.xs) {
+                        Text("@\(clip.username)")
+                            .font(.caption)
+                            .foregroundStyle(Color.appTextSecondary)
+                        
+                        Text("•")
+                            .foregroundStyle(Color.appTextSecondary)
+                        
+                        Text("\(clip.viewsCount) views")
+                            .font(.caption)
+                            .foregroundStyle(Color.appTextSecondary)
+                    }
+                }
+                
+                Spacer()
+            }
+        }
+        .padding(Spacing.sm)
+        .cardBackground()
     }
 }
 

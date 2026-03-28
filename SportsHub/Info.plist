@@ -10,6 +10,10 @@
 	<string>SportsHub needs access to your health data to provide AI-powered recovery insights, performance predictions, and personalized training recommendations based on your biometric data.</string>
 	<key>NSHealthUpdateUsageDescription</key>
 	<string>SportsHub may update your health data with workout information.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>SportsHub needs microphone access so you can talk to your AI Coach naturally, just like a real conversation.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>SportsHub uses speech recognition to transcribe your voice into text when talking to your AI Coach.</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsLocalNetworking</key>

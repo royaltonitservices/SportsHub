@@ -375,16 +375,16 @@ struct PlayView: View {
     private var noChallengesActionCard: some View {
         VStack(spacing: Spacing.lg) {
             VStack(spacing: Spacing.sm) {
-                Image(systemName: "trophy.fill")
+                Image(systemName: recommendedMatchIcon)
                     .font(.system(size: 48))
                     .foregroundStyle(Color.appPrimary.opacity(0.3))
                 
-                Text("Ready to compete?")
+                Text(recommendedMatchTitle)
                     .font(.title3)
                     .fontWeight(.bold)
                     .foregroundStyle(Color.appTextPrimary)
                 
-                Text("Start your first match or challenge a friend to begin tracking your progress")
+                Text(recommendedMatchSubtitle)
                     .font(.subheadline)
                     .foregroundStyle(Color.appTextSecondary)
                     .multilineTextAlignment(.center)
@@ -392,12 +392,20 @@ struct PlayView: View {
             }
             .padding(.top, Spacing.md)
             
-            // Action buttons
+            // Smart action recommendations
             VStack(spacing: Spacing.sm) {
+                // Primary recommendation
                 Button(action: { showMatchmaking = true }) {
                     HStack {
                         Image(systemName: "person.2.fill")
-                        Text("Find Match")
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(primaryActionTitle)
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                            Text(primaryActionSubtitle)
+                                .font(.caption)
+                                .opacity(0.8)
+                        }
                         Spacer()
                         Image(systemName: "chevron.right")
                     }
@@ -407,10 +415,11 @@ struct PlayView: View {
                     .clipShape(RoundedRectangle(cornerRadius: CornerRadius.medium))
                 }
                 
+                // Secondary recommendations
                 Button(action: { showLeaderboard = true }) {
                     HStack {
                         Image(systemName: "chart.bar.fill")
-                        Text("Browse Leaderboard")
+                        Text("See Top Players")
                         Spacer()
                         Image(systemName: "chevron.right")
                     }
@@ -418,15 +427,58 @@ struct PlayView: View {
                     .padding(Spacing.md)
                     .background(Color.appPrimary.opacity(0.1))
                     .clipShape(RoundedRectangle(cornerRadius: CornerRadius.medium))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: CornerRadius.medium)
-                            .strokeBorder(Color.appPrimary.opacity(0.3), lineWidth: 1.5)
-                    )
                 }
             }
         }
         .padding(Spacing.md)
         .cardBackground()
+    }
+    
+    // Smart recommendations based on user state
+    private var recommendedMatchIcon: String {
+        if let profile = sportProfile, profile.isProvisional {
+            return "flag.checkered"
+        }
+        return "trophy.fill"
+    }
+    
+    private var recommendedMatchTitle: String {
+        if let profile = sportProfile, profile.isProvisional {
+            let remaining = 5 - profile.provisionalGames
+            return remaining == 5 ? "Start Your Journey" : "\(remaining) placement \(remaining == 1 ? "match" : "matches") to go"
+        }
+        return "Ready to compete?"
+    }
+    
+    private var recommendedMatchSubtitle: String {
+        if let profile = sportProfile, profile.isProvisional {
+            return "Complete placement matches to get your official rating"
+        }
+        return "Find opponents near your skill level and start climbing the ranks"
+    }
+    
+    private var primaryActionTitle: String {
+        if let profile = sportProfile, profile.isProvisional {
+            return "Continue Placements"
+        }
+        return "Find Match"
+    }
+    
+    private var primaryActionSubtitle: String {
+        if let profile = sportProfile {
+            if profile.isProvisional {
+                return "Get matched with players"
+            }
+            let rating = profile.rating
+            if rating < 1400 {
+                return "Beginner-friendly matches"
+            } else if rating < 1600 {
+                return "Intermediate level"
+            } else {
+                return "Competitive matches"
+            }
+        }
+        return "1v1 Ranked"
     }
     
     private func challengeCard(challenge: ChallengeResponse) -> some View {
@@ -629,12 +681,8 @@ struct PlayView: View {
     }
     
     private func declineChallenge(_ challenge: ChallengeResponse) async {
-        do {
-            // TODO: Add decline endpoint to API
-            await loadActiveChallenges()
-        } catch {
-            print("Failed to decline challenge: \(error)")
-        }
+        // TODO: Add decline endpoint to API
+        await loadActiveChallenges()
     }
     
     private func acceptChallenge(_ challenge: ChallengeResponse) async {

@@ -55,7 +55,7 @@ class Subscription(Base):
     })
 
     # Relationships
-    user = relationship("User", back_populates="subscription")
+    user = relationship("User", foreign_keys=[user_id])
 
 
 # MARK: - Sport Goals Survey

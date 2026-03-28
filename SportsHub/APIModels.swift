@@ -48,6 +48,14 @@ struct UserResponse: Codable {
     }
 }
 
+struct UsernameAvailabilityResponse: Codable {
+    let available: Bool
+}
+
+struct EmptyResponse: Codable {
+    // Used for endpoints that return no data (just success/failure)
+}
+
 // MARK: - Sport Profile Models
 struct SportProfileResponse: Codable {
     let id: String
@@ -405,16 +413,16 @@ struct ConversationPreview: Codable, Identifiable {
 }
 
 // MARK: - Posts Models
-struct PostResponse: Codable {
+struct PostResponse: Codable, Identifiable {
     let id: String
     let userId: String
     let username: String
     let content: String
     let sport: String?
-    let likesCount: Int
-    let commentsCount: Int
+    var likesCount: Int
+    var commentsCount: Int
     let createdAt: String
-    let isLiked: Bool
+    var isLiked: Bool
     
     enum CodingKeys: String, CodingKey {
         case id
@@ -432,8 +440,45 @@ struct CreatePostRequest: Codable {
     let sport: String?
 }
 
+// MARK: - Comments Models
+struct CommentResponse: Codable, Identifiable {
+    let id: String
+    let postId: String
+    let authorId: String
+    let content: String
+    let parentCommentId: String?
+    let likesCount: Int
+    let createdAt: String
+    
+    // Populated by client
+    var authorUsername: String?
+    var replies: [CommentResponse]?
+    
+    enum CodingKeys: String, CodingKey {
+        case id
+        case postId = "post_id"
+        case authorId = "author_id"
+        case content
+        case parentCommentId = "parent_comment_id"
+        case likesCount = "likes_count"
+        case createdAt = "created_at"
+    }
+}
+
+struct CreateCommentRequest: Codable {
+    let postId: String
+    let content: String
+    let parentCommentId: String?
+    
+    enum CodingKeys: String, CodingKey {
+        case postId = "post_id"
+        case content
+        case parentCommentId = "parent_comment_id"
+    }
+}
+
 // MARK: - Clips Models
-struct ClipResponse: Codable {
+struct ClipResponse: Codable, Identifiable {
     let id: String
     let userId: String
     let username: String
@@ -570,6 +615,22 @@ struct MessageResponse: Codable {
     let message: String
 }
 
+// MARK: - Premium Subscription Models
+struct SubscriptionStatusResponse: Codable {
+    let hasPremium: Bool
+    let tier: String
+    let status: String?
+    let expiresAt: String?
+    let features: [String: Bool]
+    
+    enum CodingKeys: String, CodingKey {
+        case hasPremium = "has_premium"
+        case tier, status
+        case expiresAt = "expires_at"
+        case features
+    }
+}
+
 // MARK: - Tennis Court Models
 struct TennisCourt: Codable, Identifiable {
     let id: String
@@ -627,3 +688,5 @@ struct TennisCourt: Codable, Identifiable {
         case distanceMiles = "distance_miles"
     }
 }
+
+
