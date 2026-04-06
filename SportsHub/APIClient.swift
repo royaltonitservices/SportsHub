@@ -76,6 +76,40 @@ enum APIError: Error, LocalizedError, Equatable {
         }
     }
     
+    /// User-facing message that avoids leaking backend internals
+    var userFriendlyMessage: String {
+        switch self {
+        case .invalidURL, .invalidResponse, .malformedResponse, .decodingError:
+            return "Something unexpected happened. Please try again."
+        case .unauthorized:
+            return "Your session has expired. Please sign in again."
+        case .forbidden:
+            return "You don't have permission to do that."
+        case .notFound:
+            return "The requested resource was not found."
+        case .conflict:
+            return "This action conflicts with something that already exists."
+        case .unprocessableEntity:
+            return "Please check your input and try again."
+        case .serverError(let message):
+            // Only surface moderation/account messages; hide everything else
+            if message.contains("Account is") || message.contains("suspended") || message.contains("banned") {
+                return message
+            }
+            return "Something went wrong on our end. Please try again."
+        case .noConnection:
+            return "No internet connection. Please check your network and try again."
+        case .timeout:
+            return "The request timed out. Please try again."
+        case .cannotConnectToHost:
+            return "Unable to reach the server. Please try again later."
+        case .dnsLookupFailed:
+            return "Unable to reach the server. Please check your connection."
+        case .networkError:
+            return "A network error occurred. Please check your connection and try again."
+        }
+    }
+    
     // Equatable conformance
     static func == (lhs: APIError, rhs: APIError) -> Bool {
         switch (lhs, rhs) {

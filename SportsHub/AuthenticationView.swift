@@ -150,7 +150,18 @@ struct AuthenticationView: View {
             
             sessionManager.updateUserFromOAuth(from: userResponse, token: token)
         } catch {
-            errorMessage = "We couldn't sign you in with Apple right now. Please try again or use a different sign-in method."
+            if let apiError = error as? APIError {
+                errorMessage = apiError.userFriendlyMessage
+            } else {
+                let nsError = error as NSError
+                if nsError.code == NSURLErrorCannotConnectToHost || nsError.code == NSURLErrorCannotFindHost {
+                    errorMessage = "Unable to reach the server. Please try again later."
+                } else if nsError.code == NSURLErrorNotConnectedToInternet {
+                    errorMessage = "No internet connection. Please check your network and try again."
+                } else {
+                    errorMessage = "We couldn't sign you in with Apple right now. Please try again or use a different sign-in method."
+                }
+            }
             showError = true
         }
     }
@@ -165,7 +176,18 @@ struct AuthenticationView: View {
             
             sessionManager.updateUserFromOAuth(from: userResponse, token: token)
         } catch {
-            errorMessage = "We couldn't sign you in with Google right now. Please try again or use a different sign-in method."
+            if let apiError = error as? APIError {
+                errorMessage = apiError.userFriendlyMessage
+            } else {
+                let nsError = error as NSError
+                if nsError.code == NSURLErrorCannotConnectToHost || nsError.code == NSURLErrorCannotFindHost {
+                    errorMessage = "Unable to reach the server. Please try again later."
+                } else if nsError.code == NSURLErrorNotConnectedToInternet {
+                    errorMessage = "No internet connection. Please check your network and try again."
+                } else {
+                    errorMessage = "We couldn't sign you in with Google right now. Please try again or use a different sign-in method."
+                }
+            }
             showError = true
         }
     }

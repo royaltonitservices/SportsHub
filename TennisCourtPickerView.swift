@@ -170,7 +170,7 @@ struct TennisCourtPickerView: View {
                 }
             } catch {
                 await MainActor.run {
-                    errorMessage = "Failed to load tennis courts: \(error.localizedDescription)"
+                    errorMessage = (error as? APIError)?.userFriendlyMessage ?? "We couldn't find tennis courts near you. Please try again."
                     isLoading = false
                 }
             }

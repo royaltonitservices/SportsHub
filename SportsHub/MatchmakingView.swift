@@ -1137,8 +1137,10 @@ struct MatchmakingView: View {
             return "Your session expired. Please log in again."
         } else if errorLower.contains("not found") || errorLower.contains("404") {
             return "We couldn't find what you're looking for. Try adjusting your search."
+        } else if errorLower.contains("cannot connect") || errorLower.contains("host") {
+            return "Unable to reach the server. Please try again later."
         } else {
-            return "Something went wrong. Please try again."
+            return "We ran into an issue. Please try again."
         }
     }
     

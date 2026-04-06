@@ -65,12 +65,9 @@ class SessionManager: ObservableObject {
     // MARK: - Login
 
     func login(email: String, password: String) async throws {
-        // Prevent duplicate concurrent login requests
-        if let existingTask = authTask, !existingTask.isCancelled {
-            // Already logging in - wait for existing operation
-            try await existingTask.value
-            return
-        }
+        // Cancel any stale previous auth task before starting a new one
+        authTask?.cancel()
+        authTask = nil
 
         // Create new auth task
         authTask = Task {
@@ -112,11 +109,9 @@ class SessionManager: ObservableObject {
     // MARK: - Sign Up
 
     func signUp(email: String, username: String, password: String, dateOfBirth: Date) async throws {
-        // Prevent duplicate concurrent signup requests
-        if let existingTask = authTask, !existingTask.isCancelled {
-            try await existingTask.value
-            return
-        }
+        // Cancel any stale previous auth task before starting a new one
+        authTask?.cancel()
+        authTask = nil
 
         // Validate age client-side first
         let age = Calendar.current.dateComponents([.year], from: dateOfBirth, to: Date()).year ?? 0
@@ -286,42 +281,85 @@ class SessionManager: ObservableObject {
 
     private func mapAPIError(_ error: APIError, isSignup: Bool = false) -> AuthError {
         switch error {
+        // MARK: Auth-level errors
         case .unauthorized:
             return .invalidCredentials
 
+        case .forbidden:
+            return .serverError("Access denied. Please try logging in again.")
+
+        case .conflict:
+            if isSignup {
+                return .usernameTaken
+            }
+            return .serverError("A conflict occurred. Please try again.")
+
+        case .unprocessableEntity:
+            if isSignup {
+                return .serverError("Please check your information and try again.")
+            }
+            return .invalidCredentials
+
+        // MARK: Server message errors
         case .serverError(let message):
             // Parse specific server messages
-            if message.contains("Username already taken") || message.contains("username") && message.contains("exists") {
+            if message.contains("Username already taken") || (message.contains("username") && message.contains("exists")) {
                 return .usernameTaken
+            } else if message.contains("email") && (message.contains("exists") || message.contains("already registered")) {
+                return .serverError("An account with this email already exists.")
             } else if message.contains("Must be at least 13") || message.contains("age") {
                 return .underAge
             } else if message.contains("Account is") || message.contains("suspended") || message.contains("banned") {
                 return .serverError(message)
             } else if message.contains("temporarily unavailable") || message.contains("maintenance") {
                 return .serviceUnavailable
-            } else if message.contains("Invalid email or password") {
+            } else if message.contains("Invalid email or password") || message.contains("Incorrect") {
                 return .invalidCredentials
-            } else if message.contains("Server error") || message.contains("Database") {
+            } else if message.contains("Server error") || message.contains("Database") || message.contains("Internal") {
                 return .serviceUnavailable
             } else {
                 return .serverError(message)
             }
 
+        // MARK: Decoding / response errors
+        case .decodingError:
+            return .serviceUnavailable
+
+        case .invalidResponse, .malformedResponse:
+            return .serviceUnavailable
+
+        case .invalidURL:
+            return .serverError("App configuration error. Please update the app or try again later.")
+
+        case .notFound:
+            if isSignup {
+                return .serverError("Sign-up service is currently unavailable. Please try again later.")
+            }
+            return .invalidCredentials
+
+        // MARK: Network-level errors
+        case .noConnection:
+            return .noConnection
+
+        case .timeout:
+            return .timeout
+
+        case .cannotConnectToHost:
+            return .serverUnavailable
+
+        case .dnsLookupFailed:
+            return .serverUnavailable
+
         case .networkError(let errorMessage):
-            // APIError.networkError now contains a string description
-            // Parse it to determine the specific network error type
             if errorMessage.contains("No internet connection") || errorMessage.contains("network connection lost") {
                 return .noConnection
             } else if errorMessage.contains("timed out") {
                 return .timeout
-            } else if errorMessage.contains("Cannot connect to") || errorMessage.contains("connection failed") {
-                return .serverUnavailable
+            } else if errorMessage.contains("Cancel") || errorMessage.contains("cancel") {
+                return .networkError
             } else {
                 return .networkError
             }
-
-        default:
-            return .serverError("An unexpected error occurred")
         }
     }
 

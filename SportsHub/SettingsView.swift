@@ -374,7 +374,7 @@ struct EditDisplayNameSheet: View {
             } catch {
                 await MainActor.run {
                     isSaving = false
-                    errorMessage = "We couldn't update your display name. Please try again."
+                    errorMessage = (error as? APIError)?.userFriendlyMessage ?? "We couldn't update your display name. Please try again."
                 }
             }
         }
@@ -647,8 +647,9 @@ struct EditUsernameSheet: View {
             } catch {
                 await MainActor.run {
                     isChecking = false
+                    let message = (error as? APIError)?.userFriendlyMessage ?? "Unable to check availability. Please try again."
                     validationState = .invalid("Could not verify availability")
-                    validationMessage = "Network error - try again"
+                    validationMessage = message
                 }
             }
         }
@@ -670,8 +671,9 @@ struct EditUsernameSheet: View {
             } catch {
                 await MainActor.run {
                     isSaving = false
+                    let message = (error as? APIError)?.userFriendlyMessage ?? "We couldn't update your username. Please try again."
                     validationState = .invalid("Failed to update username")
-                    validationMessage = "Something went wrong. Please try again."
+                    validationMessage = message
                 }
             }
         }

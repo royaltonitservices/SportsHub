@@ -370,7 +370,7 @@ struct WeeklyDrillsView: View {
             }
         } catch {
             await MainActor.run {
-                errorMessage = "Failed to load weekly drills: \(error.localizedDescription)"
+                errorMessage = (error as? APIError)?.userFriendlyMessage ?? "We couldn't load your weekly drills. Please try again."
                 isLoading = false
             }
         }
@@ -389,7 +389,7 @@ struct WeeklyDrillsView: View {
                 }
             } catch {
                 await MainActor.run {
-                    errorMessage = "Failed to generate new drills: \(error.localizedDescription)"
+                    errorMessage = (error as? APIError)?.userFriendlyMessage ?? "We couldn't generate new drills. Please try again."
                     isLoading = false
                 }
             }

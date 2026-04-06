@@ -333,9 +333,25 @@ struct SignUpView: View {
                     isLoading = false
                 }
             } catch {
-                // Generic error fallback
+                // Map non-AuthError failures to a useful message
+                let message: String
+                if let apiError = error as? APIError {
+                    message = apiError.userFriendlyMessage
+                } else {
+                    let nsError = error as NSError
+                    switch nsError.code {
+                    case NSURLErrorNotConnectedToInternet, NSURLErrorNetworkConnectionLost:
+                        message = "No internet connection. Please check your network and try again."
+                    case NSURLErrorTimedOut:
+                        message = "The request timed out. Please try again."
+                    case NSURLErrorCannotConnectToHost, NSURLErrorCannotFindHost:
+                        message = "Unable to reach the server. Please try again later."
+                    default:
+                        message = "We couldn't create your account right now. Please try again."
+                    }
+                }
                 await MainActor.run {
-                    errorMessage = "We couldn't create your account right now. Please try again."
+                    errorMessage = message
                     isLoading = false
                 }
             }
