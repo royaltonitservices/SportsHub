@@ -1,17 +1,54 @@
 """
 API endpoints for Highlights (Stories feature)
 """
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_
 from datetime import datetime, timedelta
 from typing import List
 import models
 import schemas
+import os
+import uuid as uuid_pkg
 from database import get_db
 from dependencies import get_current_active_user
 
 router = APIRouter(prefix="/highlights", tags=["highlights"])
+
+
+@router.post("/upload")
+async def upload_highlight_media(
+    media: UploadFile = File(...),
+    current_user: models.User = Depends(get_current_active_user)
+):
+    """Upload media for a highlight (image up to 50MB, or short video)"""
+    MAX_SIZE = 50 * 1024 * 1024
+    content = await media.read()
+
+    if len(content) > MAX_SIZE:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="Media must be under 50MB"
+        )
+
+    allowed_types = {
+        "image/jpeg", "image/jpg", "image/png", "image/webp",
+        "video/mp4", "video/quicktime"
+    }
+    if media.content_type not in allowed_types:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only JPEG, PNG, WebP images and MP4/MOV videos are supported"
+        )
+
+    ext = media.filename.rsplit(".", 1)[-1].lower() if "." in (media.filename or "") else "jpg"
+    filename = f"{uuid_pkg.uuid4()}.{ext}"
+    save_path = os.path.join("./uploads/highlights", filename)
+
+    with open(save_path, "wb") as f:
+        f.write(content)
+
+    return {"media_url": f"/cdn/highlights/{filename}"}
 
 
 @router.post("/create", response_model=schemas.HighlightResponse)

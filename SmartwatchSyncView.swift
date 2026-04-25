@@ -4,18 +4,22 @@
 // Future support: Fitbit, Garmin, WHOOP, Oura, and other wearables
 
 import SwiftUI
-import HealthKit
 import Combine
+import HealthKit
 
 struct SmartwatchSyncView: View {
-    @StateObject private var healthManager = HealthKitManager.shared
-    @State private var connection: SmartwatchConnection?
-    @State private var recentData: [BiometricData] = []
-    @State private var recoveryStatus: RecoveryStatus?
-    @State private var isLoading = false
+    @StateObject private var wearableManager = WearableProviderManager()
     @State private var showError = false
     @State private var errorMessage = ""
     @State private var showPremiumUpgrade = false
+
+    // Read domain state from the manager
+    private var connection: SmartwatchConnection? { wearableManager.connection }
+    private var recentData: [BiometricData] { wearableManager.recentData }
+    private var recoveryStatus: RecoveryStatus? { wearableManager.recoveryStatus }
+    private var isLoading: Bool { wearableManager.isLoading }
+    private var localData: NormalizedWearableData? { wearableManager.currentNormalizedData }
+    private var lastSyncDate: Date? { wearableManager.lastSyncDate }
     
     var body: some View {
         ScrollView {
@@ -33,12 +37,25 @@ struct SmartwatchSyncView: View {
                     connectButton
                 }
                 
-                // Recovery Status
+                // Recovery Status (from backend)
                 if let recovery = recoveryStatus {
                     recoveryCard(recovery)
+                } else if let local = localData {
+                    // Show local HealthKit data whenever it exists — regardless of backend status.
+                    // This ensures data is NEVER hidden from the user after a successful sync.
+                    localDataCard(local)
+                } else if case .noDataAvailable = wearableManager.connectionState {
+                    // Connected + authorized, but HealthKit returned nothing that passed validation.
+                    // Distinct from syncFailed: no error occurred, just no data recorded yet.
+                    noDataAvailableCard
                 }
-                
-                // Recent Data
+
+                // Sync failure banner — shown when sync ran but hit an actual error
+                if case .syncFailed(let reason) = wearableManager.connectionState, localData == nil {
+                    syncFailedCard(reason: reason)
+                }
+
+                // Recent Data (from backend)
                 if !recentData.isEmpty {
                     recentDataSection
                 }
@@ -47,9 +64,20 @@ struct SmartwatchSyncView: View {
         }
         .navigationTitle("Wearable Sync")
         .task {
-            await loadConnection()
-            await loadRecoveryStatus()
-            await loadRecentData()
+            await wearableManager.load()
+        }
+        .onChange(of: wearableManager.errorMessage) { _, newValue in
+            if let msg = newValue {
+                errorMessage = msg
+                showError = true
+                wearableManager.dismissError()
+            }
+        }
+        .onChange(of: wearableManager.showPremiumUpgrade) { _, newValue in
+            if newValue {
+                showPremiumUpgrade = true
+                wearableManager.showPremiumUpgrade = false
+            }
         }
         .sheet(isPresented: $showPremiumUpgrade) {
             PremiumSubscriptionView()
@@ -65,16 +93,16 @@ struct SmartwatchSyncView: View {
     
     private var authorizationStatusCard: some View {
         HStack(spacing: Spacing.md) {
-            Image(systemName: healthManager.isAuthorized ? "checkmark.shield.fill" : "exclamationmark.shield.fill")
+            Image(systemName: wearableManager.isHealthKitAuthorized ? "checkmark.shield.fill" : "exclamationmark.shield.fill")
                 .font(.title2)
-                .foregroundStyle(healthManager.isAuthorized ? .green : .orange)
+                .foregroundStyle(wearableManager.isHealthKitAuthorized ? .green : .orange)
             
             VStack(alignment: .leading, spacing: 4) {
-                Text(healthManager.isAuthorized ? "HealthKit Authorized" : "HealthKit Not Authorized")
+                Text(wearableManager.isHealthKitAuthorized ? "HealthKit Authorized" : "HealthKit Not Authorized")
                     .font(.subheadline)
                     .fontWeight(.semibold)
                 
-                Text(healthManager.isAuthorized ? "App can read your health data" : "Tap 'Connect Wearable' to authorize")
+                Text(wearableManager.isHealthKitAuthorized ? "App can read your health data" : "Tap 'Connect Wearable' to authorize")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -84,7 +112,7 @@ struct SmartwatchSyncView: View {
         .padding()
         .background(
             RoundedRectangle(cornerRadius: 12)
-                .fill(healthManager.isAuthorized ? Color.green.opacity(0.1) : Color.orange.opacity(0.1))
+                .fill(wearableManager.isHealthKitAuthorized ? Color.green.opacity(0.1) : Color.orange.opacity(0.1))
         )
     }
     
@@ -143,7 +171,7 @@ struct SmartwatchSyncView: View {
                 
                 Button(action: {
                     Task {
-                        await disconnect()
+                        await wearableManager.disconnect()
                     }
                 }) {
                     Text("Disconnect")
@@ -174,7 +202,8 @@ struct SmartwatchSyncView: View {
                 
                 Button(action: {
                     Task {
-                        await syncNow()
+                        // force:true — user tap always bypasses the 30s throttle
+                        await wearableManager.sync(force: true)
                     }
                 }) {
                     HStack {
@@ -210,7 +239,7 @@ struct SmartwatchSyncView: View {
             // Current provider: Apple Watch/HealthKit
             Button(action: {
                 Task {
-                    await connectAppleWatch()
+                    await wearableManager.connect(.appleWatch)
                 }
             }) {
                 HStack {
@@ -297,6 +326,275 @@ struct SmartwatchSyncView: View {
         .shadow(color: .black.opacity(0.05), radius: 5)
     }
     
+    // MARK: - Local Data Card (shown when backend is unreachable but HealthKit data is available)
+
+    private func localDataCard(_ data: NormalizedWearableData) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.md) {
+            HStack {
+                Image(systemName: "applewatch")
+                    .font(.title2)
+                    .foregroundStyle(.blue)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Local Health Data")
+                        .font(.headline)
+                    Text("Synced from HealthKit · backend offline")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                // Fatigue badge reuses statusBadge color logic
+                Text(data.fatigueLevel.rawValue.replacingOccurrences(of: "_", with: " ").capitalized)
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .padding(.horizontal, Spacing.sm)
+                    .padding(.vertical, 4)
+                    .background(fatigueLevelColor(data.fatigueLevel).opacity(0.2))
+                    .foregroundStyle(fatigueLevelColor(data.fatigueLevel))
+                    .cornerRadius(8)
+            }
+
+            Divider()
+
+            // Biometric grid
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: Spacing.md) {
+                if let rhr = data.restingHeartRate {
+                    localMetricTile(icon: "heart.fill",
+                                    label: "Resting HR",
+                                    value: "\(rhr) bpm",
+                                    color: .red)
+                }
+                if let hrv = data.heartRateVariability {
+                    localMetricTile(icon: "waveform.path.ecg",
+                                    label: "HRV",
+                                    value: "\(hrv) ms",
+                                    color: .blue)
+                }
+                if let sleep = data.sleepDurationMinutes {
+                    let hours   = sleep / 60
+                    let minutes = sleep % 60
+                    let display = minutes > 0 ? "\(hours)h \(minutes)m" : "\(hours)h"
+                    localMetricTile(icon: "moon.fill",
+                                    label: "Sleep",
+                                    value: display,
+                                    color: .purple)
+                }
+                if let steps = data.steps {
+                    localMetricTile(icon: "figure.walk",
+                                    label: "Steps",
+                                    value: steps >= 1000 ? String(format: "%.1fk", Double(steps) / 1_000) : "\(steps)",
+                                    color: .green)
+                }
+                if let cal = data.activeCalories {
+                    localMetricTile(icon: "flame.fill",
+                                    label: "Active Cal",
+                                    value: "\(cal) kcal",
+                                    color: .orange)
+                }
+                if let readiness = data.readinessScore {
+                    localMetricTile(icon: "bolt.fill",
+                                    label: "Readiness",
+                                    value: "\(Int(readiness))/100",
+                                    color: .yellow)
+                }
+            }
+
+            // Last-sync footer with validation summary
+            VStack(alignment: .leading, spacing: 2) {
+                if let syncDate = lastSyncDate {
+                    let formatter: RelativeDateTimeFormatter = {
+                        let f = RelativeDateTimeFormatter()
+                        f.unitsStyle = .abbreviated
+                        return f
+                    }()
+                    HStack(spacing: 4) {
+                        Image(systemName: "clock")
+                            .font(.caption2)
+                        Text("Last synced \(formatter.localizedString(for: syncDate, relativeTo: Date()))")
+                            .font(.caption2)
+                    }
+                    .foregroundStyle(.secondary)
+                }
+                // Validation summary — shows exactly what metrics passed quality checks
+                if let validation = wearableManager.lastSyncValidation {
+                    HStack(spacing: 4) {
+                        Image(systemName: validation.hasRecoveryData ? "checkmark.circle.fill" : "info.circle.fill")
+                            .font(.caption2)
+                            .foregroundStyle(validation.hasRecoveryData ? .green : .blue)
+                        Text(validation.summaryText)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+        .padding()
+        .background(Color(.systemBackground))
+        .cornerRadius(12)
+        .shadow(color: .black.opacity(0.05), radius: 5)
+    }
+
+    /// Grid tile used inside localDataCard
+    private func localMetricTile(icon: String, label: String, value: String, color: Color) -> some View {
+        HStack(spacing: Spacing.sm) {
+            Image(systemName: icon)
+                .font(.subheadline)
+                .foregroundStyle(color)
+                .frame(width: 24)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(label)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text(value)
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+            }
+            Spacer()
+        }
+        .padding(Spacing.sm)
+        .background(Color(.systemGray6))
+        .cornerRadius(8)
+    }
+
+    // MARK: - No Data Available Card
+
+    /// Displayed when the watch is connected + authorized but HealthKit returned zero usable values.
+    /// Different from syncFailedCard (no error occurred) and connectButton (watch IS registered).
+    private var noDataAvailableCard: some View {
+        VStack(alignment: .leading, spacing: Spacing.md) {
+            HStack {
+                Image(systemName: "applewatch.radiowaves.left.and.right")
+                    .font(.title2)
+                    .foregroundStyle(.blue)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Connected — No Health Data Yet")
+                        .font(.headline)
+                    Text("Apple Watch is paired but no data was recorded")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+            }
+
+            Text("To get health data:")
+                .font(.caption)
+                .fontWeight(.semibold)
+                .foregroundStyle(.secondary)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Label("Wear your Apple Watch for at least 1 hour", systemImage: "applewatch")
+                Label("Check that Heart Rate is enabled in Health app", systemImage: "heart.fill")
+                Label("Open the Health app and verify data appears there first", systemImage: "checkmark.seal")
+                Label("Try syncing again after your next workout or sleep", systemImage: "arrow.clockwise")
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+
+            Button(action: {
+                Task { await wearableManager.sync(force: true) }
+            }) {
+                HStack {
+                    if isLoading { ProgressView().scaleEffect(0.8) }
+                    else { Image(systemName: "arrow.clockwise") }
+                    Text("Sync Again")
+                }
+                .font(.subheadline)
+                .fontWeight(.semibold)
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, Spacing.sm)
+                .background(Color.blue)
+                .cornerRadius(8)
+            }
+            .disabled(isLoading)
+        }
+        .padding()
+        .background(Color.blue.opacity(0.06))
+        .cornerRadius(12)
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Color.blue.opacity(0.25), lineWidth: 1)
+        )
+    }
+
+    // MARK: - Sync Failed Card
+
+    /// Displayed when sync ran but returned no data (e.g., watch not worn, user denied access).
+    /// Always surfaces the specific reason — never a silent or empty failure.
+    private func syncFailedCard(reason: String) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.md) {
+            HStack {
+                Image(systemName: "exclamationmark.circle.fill")
+                    .font(.title2)
+                    .foregroundStyle(.orange)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Sync Could Not Complete")
+                        .font(.headline)
+                    Text(reason)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+            }
+
+            Text("Possible reasons:")
+                .font(.caption)
+                .fontWeight(.semibold)
+                .foregroundStyle(.secondary)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Label("Apple Watch not worn today", systemImage: "applewatch.slash")
+                Label("HealthKit access was denied", systemImage: "lock.fill")
+                Label("No health data recorded yet today", systemImage: "clock")
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+
+            Button(action: {
+                Task {
+                    await wearableManager.sync(force: true)
+                }
+            }) {
+                HStack {
+                    Image(systemName: "arrow.clockwise")
+                    Text("Try Again")
+                }
+                .font(.subheadline)
+                .fontWeight(.semibold)
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, Spacing.sm)
+                .background(Color.orange)
+                .cornerRadius(8)
+            }
+            .disabled(isLoading)
+        }
+        .padding()
+        .background(Color.orange.opacity(0.08))
+        .cornerRadius(12)
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Color.orange.opacity(0.3), lineWidth: 1)
+        )
+    }
+
+    /// Maps FatigueLevel enum to a display color (mirrors readinessColor for String)
+    private func fatigueLevelColor(_ level: FatigueLevel) -> Color {
+        switch level {
+        case .low:      return .green
+        case .moderate: return .blue
+        case .high:     return .orange
+        case .extreme:  return .red
+        }
+    }
+
     // MARK: - Recent Data Section
     
     private var recentDataSection: some View {
@@ -399,153 +697,6 @@ struct SmartwatchSyncView: View {
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity)
-    }
-    
-    // MARK: - Data Functions
-    
-    private func loadConnection() async {
-        do {
-            connection = try await APIClient.shared.getSmartwatchConnection()
-        } catch {
-            // Not connected yet - that's okay
-        }
-    }
-    
-    private func loadRecoveryStatus() async {
-        do {
-            recoveryStatus = try await APIClient.shared.getRecoveryStatus()
-        } catch {
-            // No data yet
-        }
-    }
-    
-    private func loadRecentData() async {
-        do {
-            recentData = try await APIClient.shared.getRecentBiometricData(days: 7)
-        } catch {
-            // No data yet
-        }
-    }
-    
-    private func connectAppleWatch() async {
-        isLoading = true
-        defer { isLoading = false }
-        
-        // Check if HealthKit is available
-        guard HKHealthStore.isHealthDataAvailable() else {
-            let error = SmartwatchError.healthKitUnavailable
-            errorMessage = error.userFriendlyMessage
-            showError = true
-            return
-        }
-        
-        // Request HealthKit authorization
-        let authorized = await healthManager.requestAuthorization()
-        
-        guard authorized else {
-            let error = SmartwatchError.permissionDenied
-            errorMessage = error.userFriendlyMessage
-            if let nextStep = error.actionableNextStep {
-                errorMessage += "\n\n\(nextStep)"
-            }
-            showError = true
-            return
-        }
-        
-        // Connect to backend
-        let request = ConnectDeviceRequest(
-            deviceType: "apple_watch",
-            deviceName: "Apple Watch",
-            deviceId: nil,
-            accessToken: nil,
-            refreshToken: nil
-        )
-        
-        do {
-            connection = try await APIClient.shared.connectSmartwatch(request: request)
-            
-            // Sync initial data
-            await syncNow()
-        } catch {
-            let smartwatchError = SmartwatchError.from(error)
-            
-            // Check if error is about premium requirement
-            if case .unknown(let detail) = smartwatchError, detail.lowercased().contains("premium") {
-                // Show premium upgrade instead of error
-                showPremiumUpgrade = true
-            } else {
-                errorMessage = smartwatchError.userFriendlyMessage
-                if let nextStep = smartwatchError.actionableNextStep {
-                    errorMessage += "\n\n\(nextStep)"
-                }
-                showError = true
-            }
-        }
-    }
-    
-    private func disconnect() async {
-        do {
-            _ = try await APIClient.shared.disconnectSmartwatch()
-            connection = nil
-            recentData = []
-            recoveryStatus = nil
-        } catch {
-            let smartwatchError = SmartwatchError.from(error)
-            errorMessage = smartwatchError.userFriendlyMessage
-            if let nextStep = smartwatchError.actionableNextStep {
-                errorMessage += "\n\n\(nextStep)"
-            }
-            showError = true
-        }
-    }
-    
-    private func syncNow() async {
-        isLoading = true
-        defer { isLoading = false }
-        
-        // Fetch today's health data (but don't fail sync if none - may have older data)
-        let todayData = await healthManager.fetchTodayData()
-        
-        // If we have today's data, try to send it to backend
-        if let data = todayData {
-            // Construct BiometricData to send
-            let syncData = BiometricData(
-                id: UUID().uuidString,
-                date: ISO8601DateFormatter().string(from: Date()),
-                restingHeartRate: data["resting_heart_rate"] as? Int,
-                avgHeartRate: data["heart_rate"] as? Int,
-                maxHeartRate: data["heart_rate"] as? Int,
-                heartRateVariability: data["hrv"] as? Int,
-                sleepDuration: data["sleep_duration"] as? Int,
-                deepSleep: nil,
-                remSleep: nil,
-                lightSleep: nil,
-                sleepQualityScore: nil,
-                steps: data["steps"] as? Int,
-                activeCalories: data["active_calories"] as? Int,
-                totalCalories: nil,
-                exerciseMinutes: data["exercise_minutes"] as? Int,
-                recoveryScore: nil,
-                trainingStrain: nil,
-                dayStrain: nil,
-                readinessScore: nil,
-                fatigueLevel: nil,
-                performancePrediction: nil,
-                createdAt: ISO8601DateFormatter().string(from: Date())
-            )
-            
-            do {
-                _ = try await APIClient.shared.syncBiometricData(data: syncData)
-            } catch {
-                print("[Smartwatch] Backend sync failed: \(error)")
-                // Don't show error - just log it and continue to load data
-            }
-        }
-        
-        // Always try to reload recovery status and recent data from backend
-        // This will work even if we didn't just sync new data
-        await loadRecoveryStatus()
-        await loadRecentData()
     }
     
     // MARK: - Helpers
@@ -672,15 +823,52 @@ enum SmartwatchError {
 @MainActor
 class HealthKitManager: ObservableObject {
     static let shared = HealthKitManager()
-    
+
     private let healthStore = HKHealthStore()
     @Published var isAuthorized = false
+
+    private init() {
+        checkAuthorization()
+    }
+
+    /// Determine whether HealthKit permissions have previously been requested.
+    ///
+    /// IMPORTANT: Apple deliberately hides read-authorization status from apps for user privacy.
+    /// `authorizationStatus` returns:
+    ///   .notDetermined  — we have never called requestAuthorization() for this type
+    ///   .sharingDenied  — we requested access (the dialog was shown); user MAY have allowed reading
+    ///                     (Apple uses .sharingDenied even for read-allowed types to prevent
+    ///                      apps from inferring whether the user denied a health category)
+    ///   .sharingAuthorized — only for WRITE access; never returned for read-only types
+    ///
+    /// Therefore the only reliable signal is: if status != .notDetermined, we have asked before
+    /// and can proceed. Actual data availability is determined by the query results.
+    private func checkAuthorization() {
+        guard HKHealthStore.isHealthDataAvailable() else {
+            isAuthorized = false
+            return
+        }
+        if let heartRateType = HKObjectType.quantityType(forIdentifier: .heartRate) {
+            let status = healthStore.authorizationStatus(for: heartRateType)
+            // .notDetermined = never asked; anything else = dialog was shown at least once
+            isAuthorized = (status != .notDetermined)
+        }
+    }
     
     func requestAuthorization() async -> Bool {
+        print("🔐 [HealthKit] Requesting authorization...")
+
         guard HKHealthStore.isHealthDataAvailable() else {
+            print("❌ [HealthKit] HealthKit not available on this device")
             return false
         }
-        
+
+        // Check if already authorized — skip the dialog if already asked
+        if isAuthorized {
+            print("✅ [HealthKit] Authorization already granted — skipping dialog")
+            return true
+        }
+
         let typesToRead: Set<HKObjectType> = [
             HKObjectType.quantityType(forIdentifier: .heartRate)!,
             HKObjectType.quantityType(forIdentifier: .heartRateVariabilitySDNN)!,
@@ -688,57 +876,129 @@ class HealthKitManager: ObservableObject {
             HKObjectType.categoryType(forIdentifier: .sleepAnalysis)!,
             HKObjectType.quantityType(forIdentifier: .stepCount)!,
             HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)!,
-            HKObjectType.quantityType(forIdentifier: .appleExerciseTime)!
+            HKObjectType.quantityType(forIdentifier: .appleExerciseTime)!,
+            HKObjectType.quantityType(forIdentifier: .vo2Max)!
         ]
-        
+
         do {
             try await healthStore.requestAuthorization(toShare: [], read: typesToRead)
+            // Apple does not expose read authorization status for privacy — a successful
+            // request() call means the dialog was presented. Queries return empty data
+            // if the user denied access, not errors. We consider authorization "done"
+            // and let fetch results determine data availability.
             isAuthorized = true
+            print("✅ [HealthKit] Authorization request presented — proceeding with queries")
             return true
         } catch {
+            print("❌ [HealthKit] Authorization request failed: \(error)")
             return false
         }
     }
     
     func fetchTodayData() async -> [String: Any]? {
+        print("📊 [HealthKit] Starting full biometric fetch...")
+
+        guard HKHealthStore.isHealthDataAvailable() else {
+            print("❌ [HealthKit] HealthKit not available on this device")
+            return nil
+        }
+
         let calendar = Calendar.current
         let now = Date()
         let startOfDay = calendar.startOfDay(for: now)
-        
-        // Fetch heart rate
-        guard let heartRate = await fetchQuantity(
-            type: .heartRate,
-            start: startOfDay,
-            end: now
-        ) else {
+
+        // Apple Watch records resting HR and HRV during sleep (typically 2–6 AM).
+        // Querying only from midnight→now misses pre-midnight readings.
+        // Use a 24-hour lookback for cardiovascular recovery metrics.
+        let cardioStart = calendar.date(byAdding: .hour, value: -24, to: now)!
+
+        var data: [String: Any] = [:]
+        var hasAnyData = false
+
+        // ── Heart rate (average today) ────────────────────────────────────────────
+        if let heartRate = await fetchQuantity(
+            type: .heartRate, start: startOfDay, end: now, option: .discreteAverage
+        ) {
+            data["heart_rate"] = Int(heartRate)
+            hasAnyData = true
+            print("[Wearable] Heart rate: \(Int(heartRate)) bpm")
+        }
+
+        // ── Resting heart rate (last 24h — logged by watch in early morning) ─────
+        if let restingHR = await fetchQuantity(
+            type: .restingHeartRate, start: cardioStart, end: now, option: .discreteAverage
+        ) {
+            data["resting_heart_rate"] = Int(restingHR)
+            hasAnyData = true
+            print("[Wearable] Resting HR: \(Int(restingHR)) bpm")
+        }
+
+        // ── HRV SDNN (last 24h — recorded during sleep) ──────────────────────────
+        if let hrv = await fetchQuantity(
+            type: .heartRateVariabilitySDNN, start: cardioStart, end: now, option: .discreteAverage
+        ) {
+            data["hrv"] = Int(hrv)
+            hasAnyData = true
+            print("[Wearable] HRV: \(Int(hrv)) ms")
+        }
+
+        // ── Steps (today from midnight) ───────────────────────────────────────────
+        if let steps = await fetchQuantity(
+            type: .stepCount, start: startOfDay, end: now, option: .cumulativeSum
+        ) {
+            data["steps"] = Int(steps)
+            hasAnyData = true
+            print("[Wearable] Steps: \(Int(steps))")
+        }
+
+        // ── Active calories (today) ───────────────────────────────────────────────
+        if let calories = await fetchQuantity(
+            type: .activeEnergyBurned, start: startOfDay, end: now, option: .cumulativeSum
+        ) {
+            data["active_calories"] = Int(calories)
+            hasAnyData = true
+            print("[Wearable] Active calories: \(Int(calories)) kcal")
+        }
+
+        // ── Exercise time (today) ─────────────────────────────────────────────────
+        if let exerciseTime = await fetchQuantity(
+            type: .appleExerciseTime, start: startOfDay, end: now, option: .cumulativeSum
+        ) {
+            data["exercise_minutes"] = Int(exerciseTime)
+            hasAnyData = true
+            print("[Wearable] Exercise: \(Int(exerciseTime)) min")
+        }
+
+        // ── Sleep — look back 20 hours from now to capture full overnight session ─
+        // A person sleeping 10 PM → 7 AM straddles midnight. The old window
+        // (yesterday noon → midnight) would miss the 12 AM–7 AM portion.
+        // The 20-hour lookback always captures a full overnight session.
+        let sleepStart = calendar.date(byAdding: .hour, value: -20, to: now)!
+        if let sleepDuration = await fetchSleepDuration(start: sleepStart, end: now) {
+            data["sleep_duration"] = Int(sleepDuration * 60) // hours → minutes
+            hasAnyData = true
+            print("[Wearable] Sleep: \(String(format: "%.1f", sleepDuration)) hours")
+        }
+
+        if !hasAnyData {
+            print("[Wearable] No health data available from any source")
+            #if targetEnvironment(simulator)
+            print("[Wearable] Simulator has no real watch data — mock data will be injected")
+            #else
+            print("[Wearable] Tip: ensure Apple Watch is paired and has recorded data today")
+            #endif
             return nil
         }
-        
-        // Fetch HRV
-        let hrv = await fetchQuantity(
-            type: .heartRateVariabilitySDNN,
-            start: startOfDay,
-            end: now
-        )
-        
-        // Fetch steps
-        let steps = await fetchQuantity(
-            type: .stepCount,
-            start: startOfDay,
-            end: now
-        )
-        
-        return [
-            "heart_rate": heartRate,
-            "hrv": hrv as Any,
-            "steps": steps as Any
-        ]
+
+        print("[Wearable] Fetch complete — \(data.count) metric(s): \(data.keys.joined(separator: ", "))")
+        return data
     }
     
     private func fetchQuantity(
         type: HKQuantityTypeIdentifier,
         start: Date,
-        end: Date
+        end: Date,
+        option: HKStatisticsOptions
     ) async -> Double? {
         guard let quantityType = HKQuantityType.quantityType(forIdentifier: type) else {
             return nil
@@ -750,26 +1010,95 @@ class HealthKitManager: ObservableObject {
             let query = HKStatisticsQuery(
                 quantityType: quantityType,
                 quantitySamplePredicate: predicate,
-                options: .discreteAverage
-            ) { _, result, _ in
-                guard let result = result, let average = result.averageQuantity() else {
+                options: option
+            ) { _, result, error in
+                if let error = error {
+                    print("⚠️ [HealthKit] Query error for \(type.rawValue): \(error)")
                     continuation.resume(returning: nil)
                     return
                 }
                 
+                guard let result = result else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+                
+                let value: Double?
                 let unit: HKUnit
+                
+                // Determine unit based on type
                 switch type {
                 case .heartRate, .restingHeartRate:
                     unit = HKUnit.count().unitDivided(by: .minute())
+                    value = result.averageQuantity()?.doubleValue(for: unit)
+                    
                 case .heartRateVariabilitySDNN:
                     unit = .secondUnit(with: .milli)
+                    value = result.averageQuantity()?.doubleValue(for: unit)
+                    
                 case .stepCount:
                     unit = .count()
-                default:
+                    value = result.sumQuantity()?.doubleValue(for: unit)
+                    
+                case .activeEnergyBurned:
                     unit = .kilocalorie()
+                    value = result.sumQuantity()?.doubleValue(for: unit)
+                    
+                case .appleExerciseTime:
+                    unit = .minute()
+                    value = result.sumQuantity()?.doubleValue(for: unit)
+                    
+                default:
+                    value = result.averageQuantity()?.doubleValue(for: .count())
                 }
                 
-                continuation.resume(returning: average.doubleValue(for: unit))
+                continuation.resume(returning: value)
+            }
+            
+            healthStore.execute(query)
+        }
+    }
+    
+    private func fetchSleepDuration(start: Date, end: Date) async -> Double? {
+        guard let sleepType = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) else {
+            return nil
+        }
+        
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: .strictStartDate)
+        
+        return await withCheckedContinuation { continuation in
+            let query = HKSampleQuery(
+                sampleType: sleepType,
+                predicate: predicate,
+                limit: HKObjectQueryNoLimit,
+                sortDescriptors: nil
+            ) { _, samples, error in
+                if let error = error {
+                    print("⚠️ [HealthKit] Sleep query error: \(error)")
+                    continuation.resume(returning: nil)
+                    return
+                }
+                
+                guard let sleepSamples = samples as? [HKCategorySample] else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+                
+                // Calculate total sleep time (excluding awake periods)
+                var totalSleep: TimeInterval = 0
+                for sample in sleepSamples {
+                    // Only count actual sleep, not "in bed" or "awake"
+                    if sample.value == HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue ||
+                       sample.value == HKCategoryValueSleepAnalysis.asleepCore.rawValue ||
+                       sample.value == HKCategoryValueSleepAnalysis.asleepDeep.rawValue ||
+                       sample.value == HKCategoryValueSleepAnalysis.asleepREM.rawValue {
+                        totalSleep += sample.endDate.timeIntervalSince(sample.startDate)
+                    }
+                }
+                
+                // Convert to hours
+                let hours = totalSleep / 3600
+                continuation.resume(returning: hours > 0 ? hours : nil)
             }
             
             healthStore.execute(query)

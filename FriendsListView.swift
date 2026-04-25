@@ -67,6 +67,9 @@ struct FriendsListView: View {
             .task {
                 loadDataTask()
             }
+            .onReceive(NotificationCenter.default.publisher(for: .friendListDidChange)) { _ in
+                loadDataTask()
+            }
         }
     }
 
@@ -180,14 +183,33 @@ struct FriendsListView: View {
             async let blocked = APIClient.shared.getBlockedUsers()
 
             friendships = try await friends
-            receivedRequests = try await received
+            let newReceived = try await received
             pendingRequests = try await pending.filter { $0.userAId == sessionManager.currentUser?.id.uuidString }
             blockedUsers = try await blocked
+
+            scheduleNotificationsForNewRequests(newReceived)
+            receivedRequests = newReceived
         } catch {
             errorMessage = "We couldn't load your friends list. Check your connection and try again."
         }
 
         isLoading = false
+    }
+
+    /// Schedule a local notification for each new incoming friend request that hasn't been seen before.
+    private func scheduleNotificationsForNewRequests(_ requests: [FriendshipResponse]) {
+        let seenKey = "seen_friend_request_ids"
+        let seen = Set(UserDefaults.standard.stringArray(forKey: seenKey) ?? [])
+        let newOnes = requests.filter { !seen.contains($0.id) }
+
+        for request in newOnes {
+            NotificationManager.shared.scheduleFriendRequestNotification(
+                fromUser: "Someone",
+                friendshipId: request.id
+            )
+        }
+
+        UserDefaults.standard.set(requests.map(\.id), forKey: seenKey)
     }
 
     // MARK: - Actions
@@ -566,7 +588,7 @@ struct UserSearchRowView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(user.username)
                     .font(.headline)
-                Text(user.fullName)
+                Text(user.fullName ?? "")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }

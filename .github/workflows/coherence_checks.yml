@@ -1,0 +1,43 @@
+name: Coherence Checks
+
+# Run on all pushes to main and checkpoint branches, and on all PRs targeting main.
+# Each step is an independent integrity check; failures are reported individually.
+on:
+  push:
+    branches:
+      - main
+      - "checkpoint/**"
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  coherence:
+    name: Coherence & Integrity Checks
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Make scripts executable
+        run: chmod +x scripts/check_fake_delays.sh scripts/check_empty_actions.sh scripts/check_hardcoded_cdn.sh scripts/check_todo_action_handlers.sh
+
+      # ── Phase 9 checks ───────────────────────────────────────────────────────
+
+      - name: "Check: no fake delays in production paths"
+        run: scripts/check_fake_delays.sh
+
+      - name: "Check: no empty swipeActions closures"
+        run: scripts/check_empty_actions.sh
+
+      - name: "Check: no hardcoded external CDN URLs"
+        run: scripts/check_hardcoded_cdn.sh
+
+      - name: "Check: no TODO/FIXME inside action closures"
+        run: scripts/check_todo_action_handlers.sh
+
+      # ── Phase 7 contract validator ────────────────────────────────────────────
+
+      - name: "Validate API contract (Phase 7)"
+        run: bash validate_api_contract.sh

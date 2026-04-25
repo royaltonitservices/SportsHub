@@ -6,26 +6,12 @@
 //
 
 import SwiftUI
-import SwiftData
 
 @main
 struct SportsHubApp: App {
     @StateObject private var sessionManager = SessionManager.shared
     @AppStorage("isDarkMode") private var isDarkMode = true
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
-    
-    var sharedModelContainer: ModelContainer = {
-        let schema = Schema([
-            Item.self,
-        ])
-        let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
-
-        do {
-            return try ModelContainer(for: schema, configurations: [modelConfiguration])
-        } catch {
-            fatalError("Could not create ModelContainer: \(error)")
-        }
-    }()
 
     var body: some Scene {
         WindowGroup {
@@ -34,7 +20,15 @@ struct SportsHubApp: App {
                     OnboardingView()
                         .environmentObject(sessionManager)
                 } else if sessionManager.isAuthenticated {
-                    if sessionManager.isAdmin {
+                    if let maskedEmail = sessionManager.pendingVerificationEmail {
+                        // New user — must verify email before accessing the app
+                        EmailVerificationView(maskedEmail: maskedEmail)
+                            .environmentObject(sessionManager)
+                    } else if sessionManager.requiresSurvey {
+                        // Verified but hasn't completed onboarding survey
+                        OnboardingSurveyView()
+                            .environmentObject(sessionManager)
+                    } else if sessionManager.isAdmin {
                         AdminDashboardView()
                             .environmentObject(sessionManager)
                     } else {
@@ -47,7 +41,15 @@ struct SportsHubApp: App {
                 }
             }
             .preferredColorScheme(isDarkMode ? .dark : .light)
+            .task {
+                // Startup connectivity check — logs clearly if backend is unreachable
+                await APIClient.shared.checkConnectivity()
+                #if DEBUG
+                CoherenceValidator.runLaunchChecks()
+                FeatureManifest.printReport()
+                AIConsistencyValidator.runIfEnabled()
+                #endif
+            }
         }
-        .modelContainer(sharedModelContainer)
     }
 }

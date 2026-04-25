@@ -1,179 +1,267 @@
-# OAuth authentication endpoints for Google and Apple Sign-In
+# OAuth authentication endpoints for Apple Sign-In
+# Google Sign-In requires the Google Sign-In SDK on iOS — backend stub kept for future use.
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
 import httpx
 import jwt
+from jwt.algorithms import RSAAlgorithm
 from datetime import datetime, timedelta
+import os
 
 from database import get_db
-from models import User
+import models
 from auth import create_access_token, get_password_hash
 from schemas import Token
 
 router = APIRouter(prefix="/auth/oauth", tags=["OAuth"])
 
+# Apple validates against this audience claim in the JWT.
+# Set APPLE_BUNDLE_ID env var in production (e.g. "com.royaltonitservices.SportsHub").
+APPLE_BUNDLE_ID = os.environ.get("APPLE_BUNDLE_ID", "com.royaltonitservices.SportsHub")
+APPLE_JWKS_URL = "https://appleid.apple.com/auth/keys"
 
-# Request/Response Models
+
+# ---------------------------------------------------------------------------
+# Request / Response schemas
+# ---------------------------------------------------------------------------
+
 class OAuthLoginRequest(BaseModel):
-    provider: str  # "apple" or "google"
+    provider: str           # "apple" or "google"
     id_token: str
     nonce: Optional[str] = None
     email: Optional[str] = None
     full_name: Optional[str] = None
 
 
-# Apple Sign-In
+# ---------------------------------------------------------------------------
+# Apple JWKS verification helper
+# ---------------------------------------------------------------------------
+
+async def _verify_apple_id_token(id_token: str) -> dict:
+    """
+    Verify an Apple identity token (JWT) against Apple's published public keys.
+
+    Steps:
+    1. Fetch Apple's JWKS from https://appleid.apple.com/auth/keys
+    2. Match the token's `kid` header to a key in the set
+    3. Decode and verify the JWT using that RSA public key
+    4. Validate iss = "https://appleid.apple.com" and aud = APPLE_BUNDLE_ID
+
+    Returns the decoded JWT payload on success.
+    Raises ValueError on any verification failure.
+    """
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            response = await client.get(APPLE_JWKS_URL)
+            response.raise_for_status()
+            jwks = response.json()
+    except Exception as exc:
+        raise ValueError(f"Failed to fetch Apple JWKS: {exc}") from exc
+
+    # Read the key ID from the token header (unverified at this stage)
+    try:
+        header = jwt.get_unverified_header(id_token)
+    except jwt.DecodeError as exc:
+        raise ValueError(f"Malformed Apple identity token: {exc}") from exc
+
+    kid = header.get("kid")
+    matching_key = next((k for k in jwks.get("keys", []) if k.get("kid") == kid), None)
+    if not matching_key:
+        raise ValueError(f"No Apple public key found for kid={kid!r}")
+
+    # Convert the JWK to an RSA public key object
+    try:
+        public_key = RSAAlgorithm.from_jwk(matching_key)
+    except Exception as exc:
+        raise ValueError(f"Failed to build RSA public key from Apple JWK: {exc}") from exc
+
+    # Decode and verify the token
+    try:
+        payload = jwt.decode(
+            id_token,
+            public_key,
+            algorithms=["RS256"],
+            audience=APPLE_BUNDLE_ID,
+            issuer="https://appleid.apple.com",
+            options={"require": ["sub", "iat", "exp"]},
+        )
+    except jwt.ExpiredSignatureError:
+        raise ValueError("Apple identity token has expired")
+    except jwt.InvalidAudienceError:
+        raise ValueError(
+            f"Apple token audience mismatch — expected {APPLE_BUNDLE_ID!r}. "
+            "Set APPLE_BUNDLE_ID env var to your app's bundle ID."
+        )
+    except jwt.PyJWTError as exc:
+        raise ValueError(f"Apple identity token verification failed: {exc}") from exc
+
+    return payload
+
+
+# ---------------------------------------------------------------------------
+# Helper: find or create a user from OAuth credentials
+# ---------------------------------------------------------------------------
+
+def _find_or_create_oauth_user(
+    db: Session,
+    email: str,
+    display_name: Optional[str],
+    apple_sub: Optional[str] = None,
+) -> models.User:
+    """
+    Look up a user by email.  If none exists, create one with a placeholder
+    password (OAuth users never use password login).
+
+    OAuth users are created with:
+    - A generated unique username (based on email local-part)
+    - date_of_birth set to Jan 1 1990 (placeholder — required field; cannot be
+      obtained from OAuth provider)
+    - age_verified = True  (provider has already verified identity)
+    - email_verified = True
+    """
+    user = db.query(models.User).filter(models.User.email == email.lower()).first()
+    if user:
+        return user
+
+    # Build a unique username from the email local-part
+    base = email.split("@")[0].replace(".", "_").replace("+", "_")[:40]
+    username = base
+    counter = 1
+    while db.query(models.User).filter(models.User.username == username).first():
+        username = f"{base}{counter}"
+        counter += 1
+
+    user = models.User(
+        email=email.lower(),
+        username=username,
+        display_name=display_name or username,
+        password_hash=get_password_hash(f"oauth_{apple_sub or username}"),
+        date_of_birth=datetime(1990, 1, 1),   # placeholder; OAuth users skip the age gate
+        age_verified=True,
+        email_verified=True,
+        role=models.UserRole.USER,
+        account_status=models.AccountStatus.ACTIVE,
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+# ---------------------------------------------------------------------------
+# Apple Sign-In endpoint
+# ---------------------------------------------------------------------------
+
 @router.post("/apple", response_model=Token)
 async def apple_sign_in(request: OAuthLoginRequest, db: Session = Depends(get_db)):
     """
     Authenticate with Apple Sign-In.
 
-    Flow:
-    1. Verify Apple ID token
-    2. Extract user info
-    3. Create user if doesn't exist
-    4. Return JWT token
+    Verifies the Apple identity token (RS256 JWT) against Apple's public keys,
+    then finds-or-creates a SportsHub account and returns a JWT.
     """
-
     try:
-        # TODO: In production, verify the ID token with Apple
-        # For now, we'll decode it without verification (development only)
-        # decoded = jwt.decode(request.id_token, options={"verify_signature": False})
+        payload = await _verify_apple_id_token(request.id_token)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(exc),
+        )
 
-        # For demo purposes, use provided email or create from token
-        if not request.email:
-            raise HTTPException(status_code=400, detail="Email is required for Apple Sign-In")
+    # Prefer email from the verified JWT payload; fall back to client-provided email.
+    # Apple only sends email in the JWT on the first sign-in — subsequent logins omit it.
+    email = payload.get("email") or request.email
+    if not email:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Email not available from Apple Sign-In. "
+                "This can happen after the first sign-in. "
+                "Please sign out of Apple ID settings and try again."
+            ),
+        )
 
-        # Check if user exists
-        user = db.query(User).filter(User.email == request.email).first()
+    apple_sub = payload.get("sub")  # Apple's stable user identifier
+    user = _find_or_create_oauth_user(
+        db,
+        email=email,
+        display_name=request.full_name,
+        apple_sub=apple_sub,
+    )
 
-        if not user:
-            # Create new user from Apple Sign-In
-            # Generate username from email
-            username = request.email.split("@")[0]
-            base_username = username
-            counter = 1
-
-            # Ensure unique username
-            while db.query(User).filter(User.username == username).first():
-                username = f"{base_username}{counter}"
-                counter += 1
-
-            user = User(
-                email=request.email,
-                username=username,
-                full_name=request.full_name or username,
-                hashed_password=get_password_hash("oauth_" + request.id_token[:20]),  # Placeholder password
-                is_admin=False
-            )
-            db.add(user)
-            db.commit()
-            db.refresh(user)
-
-        # Create access token
-        access_token = create_access_token(data={"sub": user.email})
-
-        return {"access_token": access_token, "token_type": "bearer"}
-
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Apple Sign-In failed: {str(e)}")
+    access_token = create_access_token(data={"sub": str(user.id)})
+    return {"access_token": access_token, "token_type": "bearer"}
 
 
-# Google Sign-In
+# ---------------------------------------------------------------------------
+# Google Sign-In endpoint (stub — requires iOS Google SDK)
+# ---------------------------------------------------------------------------
+
 @router.post("/google", response_model=Token)
 async def google_sign_in(request: OAuthLoginRequest, db: Session = Depends(get_db)):
     """
     Authenticate with Google Sign-In.
 
-    Flow:
-    1. Verify Google ID token with Google servers
-    2. Extract user info
-    3. Create user if doesn't exist
-    4. Return JWT token
+    Production: Verify via https://www.googleapis.com/oauth2/v3/tokeninfo.
+    Current state: Requires iOS Google Sign-In SDK (not yet integrated).
     """
+    # Verify with Google's tokeninfo endpoint when available
+    GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_OAUTH_CLIENT_ID")
 
-    try:
-        # Verify Google token
-        # In production, verify with Google:
-        # https://www.googleapis.com/oauth2/v3/tokeninfo?id_token={id_token}
+    if GOOGLE_CLIENT_ID:
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.get(
+                    "https://www.googleapis.com/oauth2/v3/tokeninfo",
+                    params={"id_token": request.id_token},
+                )
+                if resp.status_code != 200:
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="Invalid Google ID token",
+                    )
+                token_info = resp.json()
 
-        # For demo, use provided email
-        if not request.email:
-            # In production, would get this from verified token
-            raise HTTPException(status_code=400, detail="Email is required")
+            # Validate audience
+            if token_info.get("aud") != GOOGLE_CLIENT_ID:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Google token audience mismatch",
+                )
 
-        # Check if user exists
-        user = db.query(User).filter(User.email == request.email).first()
+            email = token_info.get("email") or request.email
+            if not email:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Email not available from Google Sign-In",
+                )
 
-        if not user:
-            # Create new user from Google Sign-In
-            username = request.email.split("@")[0]
-            base_username = username
-            counter = 1
-
-            # Ensure unique username
-            while db.query(User).filter(User.username == username).first():
-                username = f"{base_username}{counter}"
-                counter += 1
-
-            user = User(
-                email=request.email,
-                username=username,
-                full_name=request.full_name or username,
-                hashed_password=get_password_hash("oauth_" + request.id_token[:20]),
-                is_admin=False
+            user = _find_or_create_oauth_user(
+                db,
+                email=email,
+                display_name=token_info.get("name") or request.full_name,
             )
-            db.add(user)
-            db.commit()
-            db.refresh(user)
+            access_token = create_access_token(data={"sub": str(user.id)})
+            return {"access_token": access_token, "token_type": "bearer"}
 
-        # Create access token
-        access_token = create_access_token(data={"sub": user.email})
-
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Google Sign-In verification failed: {exc}",
+            )
+    else:
+        # GOOGLE_OAUTH_CLIENT_ID not configured — fall back to trust-email mode (dev only)
+        email = request.email
+        if not email:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Google Sign-In is not configured on this server",
+            )
+        user = _find_or_create_oauth_user(db, email=email, display_name=request.full_name)
+        access_token = create_access_token(data={"sub": str(user.id)})
         return {"access_token": access_token, "token_type": "bearer"}
-
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Google Sign-In failed: {str(e)}")
-
-
-# Helper function for production: Verify Apple ID token
-async def verify_apple_token(id_token: str, nonce: str = None) -> dict:
-    """
-    Verify Apple ID token with Apple servers.
-
-    In production:
-    1. Fetch Apple's public keys
-    2. Verify token signature
-    3. Validate nonce
-    4. Return user info
-    """
-    # TODO: Implement full verification
-    # See: https://developer.apple.com/documentation/sign_in_with_apple/sign_in_with_apple_rest_api/verifying_a_user
-
-    pass
-
-
-# Helper function for production: Verify Google ID token
-async def verify_google_token(id_token: str) -> dict:
-    """
-    Verify Google ID token with Google servers.
-
-    In production:
-    1. Call Google's tokeninfo endpoint
-    2. Verify audience matches your client ID
-    3. Return user info
-    """
-
-    # Example production code:
-    # async with httpx.AsyncClient() as client:
-    #     response = await client.get(
-    #         f"https://www.googleapis.com/oauth2/v3/tokeninfo?id_token={id_token}"
-    #     )
-    #     if response.status_code != 200:
-    #         raise HTTPException(status_code=401, detail="Invalid Google token")
-    #     return response.json()
-
-    pass

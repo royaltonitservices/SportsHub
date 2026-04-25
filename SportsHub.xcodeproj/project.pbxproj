@@ -7,12 +7,31 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		4E122F662F95AB8800CE18EE /* AIConsistencyValidator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E122F652F95AB8800CE18EE /* AIConsistencyValidator.swift */; };
+		4E122F682F95BC1200CE18EE /* CoachingPhilosophy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E122F672F95BC1200CE18EE /* CoachingPhilosophy.swift */; };
+		4E122F6A2F95C61200CE18EE /* CoachTelemetry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E122F692F95C61200CE18EE /* CoachTelemetry.swift */; };
+		4E122F6C2F95E78300CE18EE /* AIEndToEndValidation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E122F6B2F95E78300CE18EE /* AIEndToEndValidation.swift */; };
 		4E1969552F6C65AD000277D0 /* ResultSubmissionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E1969542F6C65AD000277D0 /* ResultSubmissionView.swift */; };
 		4E1969572F6C9309000277D0 /* DisputeDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E1969562F6C9309000277D0 /* DisputeDetailView.swift */; };
 		4E288EA92F6E335200387E29 /* TennisCourtPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E288EA82F6E335200387E29 /* TennisCourtPickerView.swift */; };
 		4E288EAB2F6F942B00387E29 /* VoiceInputManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E288EAA2F6F942B00387E29 /* VoiceInputManager.swift */; };
 		4E288EAD2F6F987600387E29 /* WeeklyDrillsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E288EAC2F6F987600387E29 /* WeeklyDrillsView.swift */; };
 		4E288EAF2F709A0B00387E29 /* PostDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E288EAE2F709A0B00387E29 /* PostDetailView.swift */; };
+		4E7C5FA52F85850A0075EE36 /* AI_COACH_FIX_README.md in Resources */ = {isa = PBXBuildFile; fileRef = 4E7C5FA42F85850A0075EE36 /* AI_COACH_FIX_README.md */; };
+		4E7C5FA72F85853E0075EE36 /* BACKEND_IMPLEMENTATION_GUIDE.md in Resources */ = {isa = PBXBuildFile; fileRef = 4E7C5FA62F85853E0075EE36 /* BACKEND_IMPLEMENTATION_GUIDE.md */; };
+		4E7C5FA92F85856D0075EE36 /* TROUBLESHOOTING.md in Resources */ = {isa = PBXBuildFile; fileRef = 4E7C5FA82F85856D0075EE36 /* TROUBLESHOOTING.md */; };
+		4E7C5FAB2F8585930075EE36 /* FIX_SUMMARY.md in Resources */ = {isa = PBXBuildFile; fileRef = 4E7C5FAA2F8585930075EE36 /* FIX_SUMMARY.md */; };
+		4E7C5FAD2F8585B80075EE36 /* AICoachConnectionTestView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E7C5FAC2F8585B80075EE36 /* AICoachConnectionTestView.swift */; };
+		4E7C5FAF2F8585EE0075EE36 /* IMPLEMENTATION_INSTRUCTIONS.md in Resources */ = {isa = PBXBuildFile; fileRef = 4E7C5FAE2F8585EE0075EE36 /* IMPLEMENTATION_INSTRUCTIONS.md */; };
+		4E7C5FB12F8586140075EE36 /* QUICK_START.md in Resources */ = {isa = PBXBuildFile; fileRef = 4E7C5FB02F8586140075EE36 /* QUICK_START.md */; };
+		4E7C5FB52F85878D0075EE36 /* SMARTWATCH_SYNC_GUIDE.md in Resources */ = {isa = PBXBuildFile; fileRef = 4E7C5FB42F85878D0075EE36 /* SMARTWATCH_SYNC_GUIDE.md */; };
+		4E7C5FB72F8587C10075EE36 /* SYSTEM_WIDE_FIXES_SUMMARY.md in Resources */ = {isa = PBXBuildFile; fileRef = 4E7C5FB62F8587C10075EE36 /* SYSTEM_WIDE_FIXES_SUMMARY.md */; };
+		4E7C5FB92F8587E90075EE36 /* TROUBLESHOOTING_CHECKLIST.md in Resources */ = {isa = PBXBuildFile; fileRef = 4E7C5FB82F8587E90075EE36 /* TROUBLESHOOTING_CHECKLIST.md */; };
+		4E7C60302F8C0F460075EE36 /* WearableProviderManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E7C602F2F8C0F460075EE36 /* WearableProviderManager.swift */; };
+		4E7C60322F8CA5CF0075EE36 /* WeaknessSurveyView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E7C60312F8CA5CF0075EE36 /* WeaknessSurveyView.swift */; };
+		4E7C60362F8E8C9F0075EE36 /* AICoachReasoning.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E7C60352F8E8C9F0075EE36 /* AICoachReasoning.swift */; };
+		4E7C603A2F8EDB840075EE36 /* EmailVerificationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E7C60392F8EDB840075EE36 /* EmailVerificationView.swift */; };
+		4E7C603C2F8EDBBD0075EE36 /* OnboardingSurveyView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E7C603B2F8EDBBD0075EE36 /* OnboardingSurveyView.swift */; };
 		4EC0B81F2F5FBB0C001DC532 /* PremiumModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EC0B81E2F5FBB0C001DC532 /* PremiumModels.swift */; };
 		4EC0B8212F5FBB28001DC532 /* PremiumAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EC0B8202F5FBB28001DC532 /* PremiumAPIClient.swift */; };
 		4EC0B8232F5FBB85001DC532 /* AICoachFloatingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EC0B8222F5FBB85001DC532 /* AICoachFloatingView.swift */; };
@@ -63,12 +82,31 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		4E122F652F95AB8800CE18EE /* AIConsistencyValidator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIConsistencyValidator.swift; sourceTree = "<group>"; };
+		4E122F672F95BC1200CE18EE /* CoachingPhilosophy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachingPhilosophy.swift; sourceTree = "<group>"; };
+		4E122F692F95C61200CE18EE /* CoachTelemetry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachTelemetry.swift; sourceTree = "<group>"; };
+		4E122F6B2F95E78300CE18EE /* AIEndToEndValidation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIEndToEndValidation.swift; sourceTree = "<group>"; };
 		4E1969542F6C65AD000277D0 /* ResultSubmissionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResultSubmissionView.swift; sourceTree = "<group>"; };
 		4E1969562F6C9309000277D0 /* DisputeDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DisputeDetailView.swift; sourceTree = "<group>"; };
 		4E288EA82F6E335200387E29 /* TennisCourtPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TennisCourtPickerView.swift; sourceTree = "<group>"; };
 		4E288EAA2F6F942B00387E29 /* VoiceInputManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceInputManager.swift; sourceTree = "<group>"; };
 		4E288EAC2F6F987600387E29 /* WeeklyDrillsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeeklyDrillsView.swift; sourceTree = "<group>"; };
 		4E288EAE2F709A0B00387E29 /* PostDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PostDetailView.swift; sourceTree = "<group>"; };
+		4E7C5FA42F85850A0075EE36 /* AI_COACH_FIX_README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = AI_COACH_FIX_README.md; sourceTree = "<group>"; };
+		4E7C5FA62F85853E0075EE36 /* BACKEND_IMPLEMENTATION_GUIDE.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = BACKEND_IMPLEMENTATION_GUIDE.md; sourceTree = "<group>"; };
+		4E7C5FA82F85856D0075EE36 /* TROUBLESHOOTING.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = TROUBLESHOOTING.md; sourceTree = "<group>"; };
+		4E7C5FAA2F8585930075EE36 /* FIX_SUMMARY.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = FIX_SUMMARY.md; sourceTree = "<group>"; };
+		4E7C5FAC2F8585B80075EE36 /* AICoachConnectionTestView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AICoachConnectionTestView.swift; sourceTree = "<group>"; };
+		4E7C5FAE2F8585EE0075EE36 /* IMPLEMENTATION_INSTRUCTIONS.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = IMPLEMENTATION_INSTRUCTIONS.md; sourceTree = "<group>"; };
+		4E7C5FB02F8586140075EE36 /* QUICK_START.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = QUICK_START.md; sourceTree = "<group>"; };
+		4E7C5FB42F85878D0075EE36 /* SMARTWATCH_SYNC_GUIDE.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = SMARTWATCH_SYNC_GUIDE.md; sourceTree = "<group>"; };
+		4E7C5FB62F8587C10075EE36 /* SYSTEM_WIDE_FIXES_SUMMARY.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = SYSTEM_WIDE_FIXES_SUMMARY.md; sourceTree = "<group>"; };
+		4E7C5FB82F8587E90075EE36 /* TROUBLESHOOTING_CHECKLIST.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = TROUBLESHOOTING_CHECKLIST.md; sourceTree = "<group>"; };
+		4E7C602F2F8C0F460075EE36 /* WearableProviderManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WearableProviderManager.swift; sourceTree = "<group>"; };
+		4E7C60312F8CA5CF0075EE36 /* WeaknessSurveyView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeaknessSurveyView.swift; sourceTree = "<group>"; };
+		4E7C60352F8E8C9F0075EE36 /* AICoachReasoning.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AICoachReasoning.swift; sourceTree = "<group>"; };
+		4E7C60392F8EDB840075EE36 /* EmailVerificationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmailVerificationView.swift; sourceTree = "<group>"; };
+		4E7C603B2F8EDBBD0075EE36 /* OnboardingSurveyView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingSurveyView.swift; sourceTree = "<group>"; };
 		4E86B1A12F5AB3730027B3C2 /* SportsHub.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SportsHub.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		4E86B1B22F5AB3740027B3C2 /* SportsHubTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SportsHubTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		4E86B1BC2F5AB3740027B3C2 /* SportsHubUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SportsHubUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -203,6 +241,25 @@
 				4E288EAA2F6F942B00387E29 /* VoiceInputManager.swift */,
 				4E288EAC2F6F987600387E29 /* WeeklyDrillsView.swift */,
 				4E288EAE2F709A0B00387E29 /* PostDetailView.swift */,
+				4E7C5FA42F85850A0075EE36 /* AI_COACH_FIX_README.md */,
+				4E7C5FA62F85853E0075EE36 /* BACKEND_IMPLEMENTATION_GUIDE.md */,
+				4E7C5FA82F85856D0075EE36 /* TROUBLESHOOTING.md */,
+				4E7C5FAA2F8585930075EE36 /* FIX_SUMMARY.md */,
+				4E7C5FAC2F8585B80075EE36 /* AICoachConnectionTestView.swift */,
+				4E7C5FAE2F8585EE0075EE36 /* IMPLEMENTATION_INSTRUCTIONS.md */,
+				4E7C5FB02F8586140075EE36 /* QUICK_START.md */,
+				4E7C5FB42F85878D0075EE36 /* SMARTWATCH_SYNC_GUIDE.md */,
+				4E7C5FB62F8587C10075EE36 /* SYSTEM_WIDE_FIXES_SUMMARY.md */,
+				4E7C5FB82F8587E90075EE36 /* TROUBLESHOOTING_CHECKLIST.md */,
+				4E7C602F2F8C0F460075EE36 /* WearableProviderManager.swift */,
+				4E7C60312F8CA5CF0075EE36 /* WeaknessSurveyView.swift */,
+				4E7C60352F8E8C9F0075EE36 /* AICoachReasoning.swift */,
+				4E7C60392F8EDB840075EE36 /* EmailVerificationView.swift */,
+				4E7C603B2F8EDBBD0075EE36 /* OnboardingSurveyView.swift */,
+				4E122F652F95AB8800CE18EE /* AIConsistencyValidator.swift */,
+				4E122F672F95BC1200CE18EE /* CoachingPhilosophy.swift */,
+				4E122F692F95C61200CE18EE /* CoachTelemetry.swift */,
+				4E122F6B2F95E78300CE18EE /* AIEndToEndValidation.swift */,
 			);
 			sourceTree = "<group>";
 		};
@@ -336,6 +393,15 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				4E7C5FA72F85853E0075EE36 /* BACKEND_IMPLEMENTATION_GUIDE.md in Resources */,
+				4E7C5FA92F85856D0075EE36 /* TROUBLESHOOTING.md in Resources */,
+				4E7C5FB92F8587E90075EE36 /* TROUBLESHOOTING_CHECKLIST.md in Resources */,
+				4E7C5FAF2F8585EE0075EE36 /* IMPLEMENTATION_INSTRUCTIONS.md in Resources */,
+				4E7C5FAB2F8585930075EE36 /* FIX_SUMMARY.md in Resources */,
+				4E7C5FB12F8586140075EE36 /* QUICK_START.md in Resources */,
+				4E7C5FB52F85878D0075EE36 /* SMARTWATCH_SYNC_GUIDE.md in Resources */,
+				4E7C5FA52F85850A0075EE36 /* AI_COACH_FIX_README.md in Resources */,
+				4E7C5FB72F8587C10075EE36 /* SYSTEM_WIDE_FIXES_SUMMARY.md in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -360,12 +426,18 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				4E122F6A2F95C61200CE18EE /* CoachTelemetry.swift in Sources */,
+				4E7C60302F8C0F460075EE36 /* WearableProviderManager.swift in Sources */,
 				4EC0B8472F6476EB001DC532 /* AICoachLevelView.swift in Sources */,
 				4EC0B84B2F64A5FD001DC532 /* DailyReadinessView.swift in Sources */,
+				4E122F682F95BC1200CE18EE /* CoachingPhilosophy.swift in Sources */,
+				4E122F662F95AB8800CE18EE /* AIConsistencyValidator.swift in Sources */,
+				4E122F6C2F95E78300CE18EE /* AIEndToEndValidation.swift in Sources */,
 				4EC0B8232F5FBB85001DC532 /* AICoachFloatingView.swift in Sources */,
 				4EC6943A2F6DB41C00518941 /* DisputeHistoryView.swift in Sources */,
 				4EC0B8452F64764A001DC532 /* DirectMessageView.swift in Sources */,
 				4EC0B8352F627969001DC532 /* WorkoutBuilderView.swift in Sources */,
+				4E7C603A2F8EDB840075EE36 /* EmailVerificationView.swift in Sources */,
 				4EC0B8332F627932001DC532 /* HighlightsView.swift in Sources */,
 				4EC0B8392F6469D5001DC532 /* TrainingSessionView.swift in Sources */,
 				4EC0B8212F5FBB28001DC532 /* PremiumAPIClient.swift in Sources */,
@@ -373,13 +445,17 @@
 				4EC0B8372F6279AA001DC532 /* PerformanceGraphsView.swift in Sources */,
 				4E288EA92F6E335200387E29 /* TennisCourtPickerView.swift in Sources */,
 				4E288EAF2F709A0B00387E29 /* PostDetailView.swift in Sources */,
+				4E7C60322F8CA5CF0075EE36 /* WeaknessSurveyView.swift in Sources */,
 				4E1969572F6C9309000277D0 /* DisputeDetailView.swift in Sources */,
 				4EC0B82B2F5FC1E5001DC532 /* PremiumSubscriptionView.swift in Sources */,
 				4EC0B8292F5FC12E001DC532 /* TournamentView.swift in Sources */,
 				4EC0B8252F5FBF42001DC532 /* GoalsSurveyView.swift in Sources */,
+				4E7C603C2F8EDBBD0075EE36 /* OnboardingSurveyView.swift in Sources */,
 				4EC0B84D2F64AE89001DC532 /* SkillProgressionModels.swift in Sources */,
 				4E1969552F6C65AD000277D0 /* ResultSubmissionView.swift in Sources */,
 				4EC0B8532F64C7F4001DC532 /* AICoachChatView.swift in Sources */,
+				4E7C5FAD2F8585B80075EE36 /* AICoachConnectionTestView.swift in Sources */,
+				4E7C60362F8E8C9F0075EE36 /* AICoachReasoning.swift in Sources */,
 				4E288EAD2F6F987600387E29 /* WeeklyDrillsView.swift in Sources */,
 				4EC6943C2F6DB85300518941 /* FriendsListView.swift in Sources */,
 				4EC0B84F2F64AEBF001DC532 /* SkillProgressionEngine.swift in Sources */,

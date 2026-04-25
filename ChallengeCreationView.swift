@@ -10,78 +10,24 @@ import SwiftUI
 struct ChallengeCreationView: View {
     @Environment(\.dismiss) var dismiss
     @EnvironmentObject var sessionManager: SessionManager
-    
+
     let sport: Sport
-    
-    @State private var challengeName = ""
-    @State private var description = ""
-    @State private var difficulty: ChallengeDifficulty = .intermediate
-    @State private var duration = 30
+
+    // Only fields that actually reach the backend
     @State private var challengeType: ChallengeType = .individual
-    @State private var requiresProof = true
-    @State private var selectedMetric: ChallengeMetric = .reps
-    @State private var targetValue = ""
-    @State private var isPublic = true
-    @State private var inviteFriends: [String] = []
+    @State private var selectedMetric: ChallengeMetric = .reps  // solo only: passed as challenge category to AI
+    @State private var isPublic = true                          // maps to "ranked"/"unranked"
+    @State private var inviteFriends: [String] = []             // group only: one request per friend
+
     @State private var isLoading = false
     @State private var errorMessage = ""
     @State private var showError = false
     @State private var showSuccess = false
-    
+
     var body: some View {
         NavigationStack {
             Form {
-                // Basic Information
-                Section("Challenge Details") {
-                    TextField("Challenge Name", text: $challengeName)
-                        .textInputAutocapitalization(.words)
-                    
-                    TextField("Description", text: $description, axis: .vertical)
-                        .lineLimit(3...6)
-                    
-                    Picker("Sport", selection: .constant(sport)) {
-                        Text(sport.rawValue).tag(sport)
-                    }
-                    .disabled(true)
-                    
-                    Picker("Difficulty", selection: $difficulty) {
-                        ForEach(ChallengeDifficulty.allCases, id: \.self) { diff in
-                            HStack {
-                                Image(systemName: diff.icon)
-                                Text(diff.rawValue)
-                            }
-                            .tag(diff)
-                        }
-                    }
-                }
-                
-                // Goal & Metrics
-                Section("Challenge Goal") {
-                    HStack {
-                        Text("Duration")
-                        Spacer()
-                        Stepper("\(duration) min", value: $duration, in: 5...120, step: 5)
-                    }
-                    
-                    Picker("Metric Type", selection: $selectedMetric) {
-                        ForEach(ChallengeMetric.allCases, id: \.self) { metric in
-                            Text(metric.rawValue).tag(metric)
-                        }
-                    }
-                    
-                    HStack {
-                        Text("Target")
-                        Spacer()
-                        TextField("Value", text: $targetValue)
-                            .keyboardType(.numberPad)
-                            .multilineTextAlignment(.trailing)
-                            .frame(width: 100)
-                        Text(selectedMetric.unit)
-                            .foregroundStyle(Color.appTextSecondary)
-                    }
-                }
-                
-                // Challenge Type & Settings
+                // Challenge mode
                 Section("Challenge Type") {
                     Picker("Type", selection: $challengeType) {
                         ForEach(ChallengeType.allCases, id: \.self) { type in
@@ -93,7 +39,7 @@ struct ChallengeCreationView: View {
                         }
                     }
                     .pickerStyle(.segmented)
-                    
+
                     if challengeType == .group {
                         NavigationLink {
                             FriendSelectionView(selectedFriends: $inviteFriends)
@@ -107,22 +53,23 @@ struct ChallengeCreationView: View {
                         }
                     }
                 }
-                
-                // Verification Settings
-                Section("Verification") {
-                    Toggle(isOn: $requiresProof) {
-                        HStack {
-                            Image(systemName: "camera.fill")
-                                .foregroundStyle(Color.appPrimary)
-                            VStack(alignment: .leading) {
-                                Text("Require Photo/Video Proof")
-                                Text("Participants must submit evidence")
-                                    .font(.caption)
-                                    .foregroundStyle(Color.appTextSecondary)
+
+                // Metric — only meaningful for solo (AI uses it to pick challenge category)
+                if challengeType == .individual {
+                    Section("What to Measure") {
+                        Picker("Metric", selection: $selectedMetric) {
+                            ForEach(ChallengeMetric.allCases, id: \.self) { metric in
+                                Text(metric.rawValue).tag(metric)
                             }
                         }
+                        Text("The AI will generate a challenge focused on this metric.")
+                            .font(.caption)
+                            .foregroundStyle(Color.appTextSecondary)
                     }
-                    
+                }
+
+                // Visibility — maps public→"ranked", private→"unranked"
+                Section("Visibility") {
                     Toggle(isOn: $isPublic) {
                         HStack {
                             Image(systemName: isPublic ? "globe" : "lock.fill")
@@ -136,43 +83,22 @@ struct ChallengeCreationView: View {
                         }
                     }
                 }
-                
-                // Preview
-                Section("Preview") {
-                    ChallengePreviewCard(
-                        name: challengeName.isEmpty ? "Challenge Name" : challengeName,
-                        description: description.isEmpty ? "Challenge description will appear here" : description,
-                        sport: sport,
-                        difficulty: difficulty,
-                        duration: duration,
-                        metric: selectedMetric,
-                        target: targetValue.isEmpty ? "?" : targetValue,
-                        requiresProof: requiresProof
-                    )
-                }
             }
             .navigationTitle("Create Challenge")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
-                        dismiss()
-                    }
+                    Button("Cancel") { dismiss() }
                 }
-                
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Create") {
-                        Task {
-                            await createChallenge()
-                        }
+                    Button(isLoading ? "Creating…" : "Create") {
+                        Task { await createChallenge() }
                     }
                     .disabled(!isFormValid || isLoading)
                 }
             }
             .alert("Challenge Created!", isPresented: $showSuccess) {
-                Button("OK") {
-                    dismiss()
-                }
+                Button("OK") { dismiss() }
             } message: {
                 Text("Your challenge has been created successfully!")
             }
@@ -183,62 +109,54 @@ struct ChallengeCreationView: View {
             }
         }
     }
-    
-    // MARK: - Form Validation
-    
+
+    // MARK: - Validation
+
     private var isFormValid: Bool {
-        !challengeName.isEmpty &&
-        !description.isEmpty &&
-        !targetValue.isEmpty &&
-        Int(targetValue) != nil &&
-        Int(targetValue)! > 0
+        // Group mode requires at least one friend selected; solo is always ready
+        if challengeType == .group { return !inviteFriends.isEmpty }
+        return true
     }
-    
-    // MARK: - Create Challenge
-    
+
+    // MARK: - Submit
+
     private func createChallenge() async {
         isLoading = true
-        
-        // TODO: API call to create challenge
-        // For now, simulate network delay
-        try? await Task.sleep(nanoseconds: 1_000_000_000)
-        
-        isLoading = false
-        showSuccess = true
+        defer { isLoading = false }
+
+        do {
+            if challengeType == .group && !inviteFriends.isEmpty {
+                // One match request per invited friend.
+                // matchType must be "ranked" or "unranked" — the only values the backend MatchType enum accepts.
+                for friendId in inviteFriends {
+                    let request = CreateChallengeRequest(
+                        opponentId: friendId,
+                        sport: sport.rawValue,
+                        matchType: isPublic ? "ranked" : "unranked"
+                    )
+                    _ = try await APIClient.shared.createChallenge(request: request)
+                }
+            } else {
+                // Solo: AI generates a sport-specific challenge based on metric category.
+                _ = try await APIClient.shared.generateChallenge(
+                    sport: sport,
+                    challengeType: selectedMetric.rawValue.lowercased()
+                )
+            }
+            showSuccess = true
+        } catch {
+            errorMessage = error.localizedDescription
+            showError = true
+        }
     }
 }
 
 // MARK: - Supporting Types
 
-enum ChallengeDifficulty: String, CaseIterable {
-    case beginner = "Beginner"
-    case intermediate = "Intermediate"
-    case advanced = "Advanced"
-    case expert = "Expert"
-    
-    var icon: String {
-        switch self {
-        case .beginner: return "star"
-        case .intermediate: return "star.leadinghalf.filled"
-        case .advanced: return "star.fill"
-        case .expert: return "flame.fill"
-        }
-    }
-    
-    var color: Color {
-        switch self {
-        case .beginner: return .green
-        case .intermediate: return Color.appSecondary
-        case .advanced: return .red
-        case .expert: return .purple
-        }
-    }
-}
-
 enum ChallengeType: String, CaseIterable {
     case individual = "Solo"
     case group = "Group"
-    
+
     var icon: String {
         switch self {
         case .individual: return "person.fill"
@@ -255,7 +173,7 @@ enum ChallengeMetric: String, CaseIterable {
     case time = "Time"
     case sets = "Sets"
     case points = "Points"
-    
+
     var unit: String {
         switch self {
         case .reps: return "reps"
@@ -269,104 +187,22 @@ enum ChallengeMetric: String, CaseIterable {
     }
 }
 
-// MARK: - Challenge Preview Card
-
-struct ChallengePreviewCard: View {
-    let name: String
-    let description: String
-    let sport: Sport
-    let difficulty: ChallengeDifficulty
-    let duration: Int
-    let metric: ChallengeMetric
-    let target: String
-    let requiresProof: Bool
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: Spacing.sm) {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(name)
-                        .font(.headline)
-                        .foregroundStyle(Color.appTextPrimary)
-                    
-                    HStack(spacing: Spacing.xs) {
-                        Image(systemName: sport.icon)
-                            .font(.caption)
-                        Text(sport.rawValue)
-                            .font(.caption)
-                        
-                        Text("•")
-                        
-                        HStack(spacing: 4) {
-                            Image(systemName: difficulty.icon)
-                                .font(.caption)
-                            Text(difficulty.rawValue)
-                                .font(.caption)
-                        }
-                        .foregroundStyle(difficulty.color)
-                    }
-                    .foregroundStyle(Color.appTextSecondary)
-                }
-                
-                Spacer()
-                
-                // Target badge
-                VStack(spacing: 2) {
-                    Text(target)
-                        .font(.title2)
-                        .fontWeight(.bold)
-                        .foregroundStyle(Color.appPrimary)
-                    Text(metric.unit)
-                        .font(.caption2)
-                        .foregroundStyle(Color.appTextSecondary)
-                }
-                .padding(.horizontal, Spacing.sm)
-                .padding(.vertical, Spacing.xs)
-                .background(Color.appPrimary.opacity(0.1))
-                .cornerRadius(8)
-            }
-            
-            Text(description)
-                .font(.subheadline)
-                .foregroundStyle(Color.appTextSecondary)
-                .lineLimit(2)
-            
-            HStack(spacing: Spacing.md) {
-                Label("\(duration) min", systemImage: "clock")
-                    .font(.caption)
-                    .foregroundStyle(Color.appTextSecondary)
-                
-                if requiresProof {
-                    Label("Proof Required", systemImage: "camera")
-                        .font(.caption)
-                        .foregroundStyle(Color.appSecondary)
-                }
-            }
-        }
-        .padding(Spacing.md)
-        .background(Color.appCardBackground)
-        .cornerRadius(12)
-    }
-}
-
 // MARK: - Friend Selection View
 
 struct FriendSelectionView: View {
     @Environment(\.dismiss) var dismiss
     @Binding var selectedFriends: [String]
-    
+
     @State private var friends: [FriendPreview] = []
     @State private var searchText = ""
-    
+
     var body: some View {
         List {
             ForEach(filteredFriends) { friend in
-                Button(action: {
-                    toggleFriend(friend.id)
-                }) {
+                Button(action: { toggleFriend(friend.id) }) {
                     HStack {
                         AvatarView(name: friend.name, size: 40)
-                        
+
                         VStack(alignment: .leading) {
                             Text(friend.name)
                                 .foregroundStyle(Color.appTextPrimary)
@@ -374,9 +210,9 @@ struct FriendSelectionView: View {
                                 .font(.caption)
                                 .foregroundStyle(Color.appTextSecondary)
                         }
-                        
+
                         Spacer()
-                        
+
                         if selectedFriends.contains(friend.id) {
                             Image(systemName: "checkmark.circle.fill")
                                 .foregroundStyle(Color.appPrimary)
@@ -390,26 +226,20 @@ struct FriendSelectionView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
-                Button("Done") {
-                    dismiss()
-                }
+                Button("Done") { dismiss() }
             }
         }
-        .onAppear {
-            loadFriends()
-        }
+        .onAppear { loadFriends() }
     }
-    
+
     private var filteredFriends: [FriendPreview] {
-        if searchText.isEmpty {
-            return friends
-        }
+        if searchText.isEmpty { return friends }
         return friends.filter {
             $0.name.localizedCaseInsensitiveContains(searchText) ||
             $0.username.localizedCaseInsensitiveContains(searchText)
         }
     }
-    
+
     private func toggleFriend(_ id: String) {
         if let index = selectedFriends.firstIndex(of: id) {
             selectedFriends.remove(at: index)
@@ -417,14 +247,24 @@ struct FriendSelectionView: View {
             selectedFriends.append(id)
         }
     }
-    
+
     private func loadFriends() {
-        // TODO: Load from API
-        friends = [
-            FriendPreview(id: "1", name: "Alex Johnson", username: "alexj"),
-            FriendPreview(id: "2", name: "Sam Taylor", username: "samtay"),
-            FriendPreview(id: "3", name: "Jordan Lee", username: "jlee")
-        ]
+        Task {
+            do {
+                let friendships = try await APIClient.shared.getFriends()
+                let currentUserId = SessionManager.shared.currentUser?.id.uuidString ?? ""
+                friends = friendships.map { friendship in
+                    let friendId = friendship.userAId == currentUserId ? friendship.userBId : friendship.userAId
+                    return FriendPreview(
+                        id: friendId,
+                        name: "User \(friendId.prefix(8))",
+                        username: friendId.prefix(8).lowercased()
+                    )
+                }
+            } catch {
+                friends = []
+            }
+        }
     }
 }
 

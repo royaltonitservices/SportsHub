@@ -17,6 +17,9 @@ struct ProfileView: View {
     @State private var showEditBio = false
     @State private var bioText = ""
     @State private var showPremiumSheet = false
+    @State private var sportProfile: SportProfileResponse?
+    @State private var isLoadingProfile = false
+    @State private var uploadErrorMessage: String? = nil
     
     private var bioButtonText: String {
         if let bio = sessionManager.currentUser?.bio, !bio.isEmpty {
@@ -119,23 +122,30 @@ struct ProfileView: View {
                         }
 
                         VStack(spacing: Spacing.md) {
-                            HStack(spacing: Spacing.lg) {
-                                StatCard(title: "Games", value: "0")
-                                StatCard(title: "Wins", value: "0")
-                                StatCard(title: "Rating", value: "1500")
+                            if isLoadingProfile {
+                                ProgressView()
+                                    .padding()
+                            } else {
+                                HStack(spacing: Spacing.lg) {
+                                    StatCard(title: "Games", value: "\(sportProfile?.gamesPlayed ?? 0)")
+                                    StatCard(title: "Wins", value: "\(sportProfile?.wins ?? 0)")
+                                    StatCard(title: "Rating", value: "\(sportProfile?.rating ?? 1500)")
+                                }
                             }
                             
                             // Helpful tip for new users
-                            HStack(spacing: Spacing.sm) {
-                                Image(systemName: "info.circle.fill")
-                                    .font(.caption)
-                                    .foregroundStyle(Color.appPrimary)
-                                Text("Play your first match to establish your rating")
-                                    .font(.caption)
-                                    .foregroundStyle(Color.appTextSecondary)
-                                Spacer()
+                            if let profile = sportProfile, profile.gamesPlayed == 0 {
+                                HStack(spacing: Spacing.sm) {
+                                    Image(systemName: "info.circle.fill")
+                                        .font(.caption)
+                                        .foregroundStyle(Color.appPrimary)
+                                    Text("Play your first match to establish your rating")
+                                        .font(.caption)
+                                        .foregroundStyle(Color.appTextSecondary)
+                                    Spacer()
+                                }
+                                .padding(.horizontal, Spacing.sm)
                             }
-                            .padding(.horizontal, Spacing.sm)
                         }
                         .cardBackground()
                     }
@@ -191,6 +201,9 @@ struct ProfileView: View {
                     }
                 }
             }
+            .task(id: selectedSport) {
+                await loadSportProfile()
+            }
             .sheet(isPresented: $showImagePicker) {
                 ImagePicker(selectedImage: $selectedImage)
             }
@@ -201,10 +214,37 @@ struct ProfileView: View {
                     showEditBio = false
                 })
             }
+            .alert("Upload Failed", isPresented: Binding(
+                get: { uploadErrorMessage != nil },
+                set: { if !$0 { uploadErrorMessage = nil } }
+            )) {
+                Button("OK") { uploadErrorMessage = nil }
+            } message: {
+                Text(uploadErrorMessage ?? "")
+            }
+            .alert("Bio Sync Warning", isPresented: Binding(
+                get: { sessionManager.bioSyncError != nil },
+                set: { if !$0 { sessionManager.bioSyncError = nil } }
+            )) {
+                Button("OK") { sessionManager.bioSyncError = nil }
+            } message: {
+                Text(sessionManager.bioSyncError ?? "")
+            }
             .onChange(of: selectedImage) { oldValue, newImage in
                 if let newImage = newImage {
                     customProfilePicture = Image(uiImage: newImage)
-                    // TODO: Upload to backend
+                    // Save locally for offline use
+                    if let data = newImage.jpegData(compressionQuality: 0.8) {
+                        UserDefaults.standard.set(data, forKey: "profile_picture_data")
+                        // Upload to backend
+                        Task {
+                            do {
+                                let _ = try await APIClient.shared.uploadProfilePicture(imageData: data)
+                            } catch {
+                                uploadErrorMessage = "Photo upload failed. Your picture was saved locally and will retry next time."
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -517,6 +557,17 @@ struct ProfileView: View {
             )
         }
         .buttonStyle(PlainButtonStyle())
+    }
+    
+    private func loadSportProfile() async {
+        isLoadingProfile = true
+        do {
+            sportProfile = try await APIClient.shared.getSportProfile(sport: selectedSport.rawValue)
+        } catch {
+            // Profile may not exist yet for this sport — silently stay at defaults
+            sportProfile = nil
+        }
+        isLoadingProfile = false
     }
     
     private func premiumFeatureBadge(icon: String, text: String, color: Color) -> some View {

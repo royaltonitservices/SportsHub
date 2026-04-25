@@ -71,6 +71,7 @@ async def get_my_badges(
         if badge_data:
             result.append({
                 **badge_data,
+                "badge_id": ub.badge_id,
                 "earned_at": ub.earned_at,
                 "sport": ub.sport.value
             })

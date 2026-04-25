@@ -86,13 +86,7 @@ struct MessagesListView: View {
                 } label: {
                     ConversationRowView(conversation: conversation)
                 }
-                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                    Button(role: .destructive) {
-                        // Optional: Delete conversation
-                    } label: {
-                        Label("Delete", systemImage: "trash")
-                    }
-                }
+
             }
         }
         .listStyle(.plain)

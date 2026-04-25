@@ -13,6 +13,33 @@ import schemas
 router = APIRouter(prefix="/posts", tags=["posts"])
 
 
+def _build_post_response(post: models.Post, liked_ids: set) -> dict:
+    """Convert a Post ORM object to a response dict with is_liked computed."""
+    return {
+        "id": post.id,
+        "author_id": post.author_id,
+        "user_id": post.author_id,
+        "username": post.author.username if hasattr(post, "author") and post.author else "unknown",
+        "content": post.content,
+        "sport": post.sport,
+        "likes_count": post.likes_count,
+        "comments_count": post.comments_count,
+        "created_at": post.created_at,
+        "is_liked": post.id in liked_ids,
+    }
+
+
+def _get_liked_post_ids(db: Session, user_id, post_ids: list) -> set:
+    """Return the set of post_ids that the given user has liked, from a batch of post_ids."""
+    if not post_ids:
+        return set()
+    rows = db.query(models.PostLike.post_id).filter(
+        models.PostLike.user_id == user_id,
+        models.PostLike.post_id.in_(post_ids),
+    ).all()
+    return {row.post_id for row in rows}
+
+
 @router.post("/create", response_model=schemas.PostResponse, status_code=status.HTTP_201_CREATED)
 async def create_post(
     post_data: schemas.PostCreate,
@@ -36,7 +63,7 @@ async def create_post(
     # Load author relationship for response
     post.author = current_user
 
-    return post
+    return _build_post_response(post, set())
 
 
 @router.get("/feed", response_model=List[schemas.PostResponse])
@@ -60,7 +87,10 @@ async def get_feed(
 
     posts = query.order_by(models.Post.created_at.desc()).offset(skip).limit(limit).all()
 
-    return posts
+    post_ids = [p.id for p in posts]
+    liked_ids = _get_liked_post_ids(db, current_user.id, post_ids)
+
+    return [_build_post_response(p, liked_ids) for p in posts]
 
 
 @router.get("/{post_id}", response_model=schemas.PostResponse)
@@ -81,7 +111,8 @@ async def get_post(
             detail="Post not found"
         )
 
-    return post
+    liked_ids = _get_liked_post_ids(db, current_user.id, [post_id])
+    return _build_post_response(post, liked_ids)
 
 
 @router.get("/user/{user_id}", response_model=List[schemas.PostResponse])
@@ -101,7 +132,10 @@ async def get_user_posts(
         models.Post.moderation_status != "removed"
     ).order_by(models.Post.created_at.desc()).offset(skip).limit(limit).all()
 
-    return posts
+    post_ids = [p.id for p in posts]
+    liked_ids = _get_liked_post_ids(db, current_user.id, post_ids)
+
+    return [_build_post_response(p, liked_ids) for p in posts]
 
 
 @router.post("/{post_id}/like")
@@ -110,7 +144,7 @@ async def like_post(
     current_user: models.User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
-    """Like a post"""
+    """Like a post (idempotent — no-op if already liked)"""
 
     post = db.query(models.Post).filter(models.Post.id == post_id).first()
 
@@ -120,8 +154,15 @@ async def like_post(
             detail="Post not found"
         )
 
-    post.likes_count += 1
-    db.commit()
+    existing = db.query(models.PostLike).filter(
+        models.PostLike.user_id == current_user.id,
+        models.PostLike.post_id == post_id,
+    ).first()
+
+    if not existing:
+        db.add(models.PostLike(user_id=current_user.id, post_id=post_id))
+        post.likes_count += 1
+        db.commit()
 
     return {"message": "Post liked"}
 
@@ -132,7 +173,7 @@ async def unlike_post(
     current_user: models.User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
-    """Unlike a post"""
+    """Unlike a post (idempotent — no-op if not liked)"""
 
     post = db.query(models.Post).filter(models.Post.id == post_id).first()
 
@@ -142,8 +183,15 @@ async def unlike_post(
             detail="Post not found"
         )
 
-    if post.likes_count > 0:
-        post.likes_count -= 1
+    existing = db.query(models.PostLike).filter(
+        models.PostLike.user_id == current_user.id,
+        models.PostLike.post_id == post_id,
+    ).first()
+
+    if existing:
+        db.delete(existing)
+        if post.likes_count > 0:
+            post.likes_count -= 1
         db.commit()
 
     return {"message": "Post unliked"}

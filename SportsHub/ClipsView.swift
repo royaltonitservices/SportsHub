@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import AVKit
 
 struct ClipsView: View {
     @EnvironmentObject var sessionManager: SessionManager
@@ -180,20 +181,72 @@ struct ClipsView: View {
 
 struct ClipCard: View {
     let clip: ClipResponse
+    @State private var player: AVPlayer?
+    @State private var playerLoadFailed = false
+    @State private var isLoadingVideo = false
     
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
-            // Thumbnail placeholder
+            // Video player
             ZStack {
-                Rectangle()
-                    .fill(Color.appSurface)
-                    .aspectRatio(16/9, contentMode: .fit)
-                
-                Image(systemName: "play.circle.fill")
-                    .font(.system(size: 48))
-                    .foregroundStyle(Color.appPrimary)
+                if let player = player, !playerLoadFailed {
+                    VideoPlayer(player: player)
+                        .aspectRatio(16/9, contentMode: .fit)
+                        .cornerRadius(CornerRadius.md)
+                } else {
+                    // Thumbnail / idle / error state
+                    Rectangle()
+                        .fill(Color.appSurface)
+                        .aspectRatio(16/9, contentMode: .fit)
+                        .overlay {
+                            if let thumbnailUrl = clip.thumbnailUrl,
+                               let url = URL(string: thumbnailUrl) {
+                                AsyncImage(url: url) { image in
+                                    image.resizable().scaledToFill()
+                                } placeholder: {
+                                    Color.appSurface
+                                }
+                            }
+                        }
+                        .cornerRadius(CornerRadius.md)
+                        .overlay {
+                            if playerLoadFailed {
+                                // Clear error state with retry
+                                VStack(spacing: Spacing.xs) {
+                                    Image(systemName: "exclamationmark.triangle.fill")
+                                        .font(.system(size: 28))
+                                        .foregroundStyle(.white.opacity(0.8))
+                                    Text("Video unavailable")
+                                        .font(.caption)
+                                        .foregroundStyle(.white.opacity(0.8))
+                                    Button("Retry") {
+                                        playerLoadFailed = false
+                                        loadAndPlay()
+                                    }
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 4)
+                                    .background(Color.white.opacity(0.2))
+                                    .cornerRadius(8)
+                                }
+                            } else if isLoadingVideo {
+                                ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                    .scaleEffect(1.5)
+                            } else {
+                                Button {
+                                    loadAndPlay()
+                                } label: {
+                                    Image(systemName: "play.circle.fill")
+                                        .font(.system(size: 48))
+                                        .foregroundStyle(.white.opacity(0.9))
+                                        .shadow(radius: 4)
+                                }
+                            }
+                        }
+                }
             }
-            .cornerRadius(CornerRadius.md)
             
             // Clip info
             HStack(spacing: Spacing.sm) {
@@ -211,7 +264,7 @@ struct ClipCard: View {
                             .font(.caption)
                             .foregroundStyle(Color.appTextSecondary)
                         
-                        Text("•")
+                        Text("\u{2022}")
                             .foregroundStyle(Color.appTextSecondary)
                         
                         Text("\(clip.viewsCount) views")
@@ -225,6 +278,51 @@ struct ClipCard: View {
         }
         .padding(Spacing.sm)
         .cardBackground()
+        .onDisappear {
+            player?.pause()
+            player = nil
+            playerLoadFailed = false
+            isLoadingVideo = false
+        }
+    }
+    
+    private func loadAndPlay() {
+        // Resolve the video URL — handle relative paths by prepending base URL
+        let urlString: String
+        if clip.videoUrl.hasPrefix("http://") || clip.videoUrl.hasPrefix("https://") {
+            urlString = clip.videoUrl
+        } else {
+            urlString = APIConfig.baseURL + clip.videoUrl
+        }
+        
+        guard let url = URL(string: urlString) else {
+            playerLoadFailed = true
+            return
+        }
+        
+        isLoadingVideo = true
+        let item = AVPlayerItem(url: url)
+        let avPlayer = AVPlayer(playerItem: item)
+        self.player = avPlayer
+        
+        // Poll for item status — max 6 seconds (60 × 100ms)
+        Task {
+            var attempts = 0
+            while item.status == .unknown && attempts < 60 {
+                try? await Task.sleep(nanoseconds: 100_000_000)
+                attempts += 1
+            }
+            await MainActor.run {
+                if item.status == .readyToPlay {
+                    isLoadingVideo = false
+                    avPlayer.play()
+                } else {
+                    isLoadingVideo = false
+                    playerLoadFailed = true
+                    self.player = nil
+                }
+            }
+        }
     }
 }
 

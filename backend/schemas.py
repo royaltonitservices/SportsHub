@@ -44,6 +44,9 @@ class UserResponse(UserBase):
     role: models.UserRole
     account_status: models.AccountStatus
     age_verified: bool
+    email_verified: bool = False
+    survey_completed: bool = False
+    is_legacy_account: bool = False
     created_at: datetime
     full_name: Optional[str] = None
     is_admin: bool = False
@@ -65,6 +68,9 @@ class UserResponse(UserBase):
                 'role': obj.role,
                 'account_status': obj.account_status,
                 'age_verified': obj.age_verified,
+                'email_verified': getattr(obj, 'email_verified', False) or False,
+                'survey_completed': getattr(obj, 'survey_completed', False) or False,
+                'is_legacy_account': getattr(obj, 'is_legacy_account', False) or False,
                 'created_at': obj.created_at,
                 'full_name': obj.display_name,
                 'is_admin': obj.role == models.UserRole.ADMIN
@@ -84,6 +90,10 @@ class UpdateUsername(BaseModel):
 
 class UpdateDisplayName(BaseModel):
     new_display_name: str = Field(..., min_length=1, max_length=100)
+
+
+class UpdateBio(BaseModel):
+    bio: str = Field(..., max_length=500)
 
 
 # Sport Profile Schemas
@@ -238,7 +248,7 @@ class PostResponse(BaseModel):
                 'likes_count': obj.likes_count,
                 'comments_count': obj.comments_count,
                 'created_at': obj.created_at,
-                'is_liked': False  # TODO: Check if current user liked this post
+                'is_liked': False  # Default; router overrides with per-user value
             }
         return data
 
@@ -290,7 +300,7 @@ class ClipResponse(BaseModel):
                 'views_count': obj.views_count,
                 'likes_count': obj.likes_count,
                 'created_at': obj.created_at,
-                'is_liked': False  # TODO: Check if current user liked this clip
+                'is_liked': False  # Default; router overrides with per-user value
             }
         return data
 
@@ -482,6 +492,14 @@ class EvidenceResponse(BaseModel):
         from_attributes = True
 
 
+class EvidenceFileUploadResponse(BaseModel):
+    """Returned by POST /evidence/upload after a successful multipart file upload."""
+    upload_id: str      # UUID of the UploadRecord; pass this to associate with a challenge
+    file_url: str       # Server-generated canonical CDN URL
+    mime_type: str
+    size_bytes: int
+
+
 # Tennis Court Schemas
 class TennisCourtCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=200)
@@ -620,7 +638,7 @@ class TournamentResponse(BaseModel):
                 "entry_fee": obj.entry_fee,
                 "prize_description": obj.prize_description,
                 "created_at": obj.created_at,
-                "is_registered": False  # TODO: Check if current user is registered
+                "is_registered": False  # Default; router overrides with per-user value
             }
         return data
 
@@ -667,6 +685,48 @@ class SubscriptionStatusResponse(BaseModel):
     status: Optional[str] = None  # "active", "cancelled", "expired", "trial"
     expires_at: Optional[datetime] = None
     features: dict = {}
+
+    class Config:
+        from_attributes = True
+
+
+# Verification Schemas
+class VerifyCodeRequest(BaseModel):
+    """6-digit code submission for email verification."""
+    code: str = Field(..., min_length=6, max_length=6, pattern=r"^\d{6}$")
+
+
+class SendCodeResponse(BaseModel):
+    message: str
+    email: str  # Masked email shown to user
+
+
+# Onboarding Survey Schemas
+class OnboardingSurveyRequest(BaseModel):
+    """Survey submitted at the end of onboarding."""
+    main_sport: models.Sport
+    # skill_ratings: {"shooting": 7, "dribbling": 5} — keys are sport-specific
+    skill_ratings: dict = Field(default_factory=dict)
+    # self-identified strengths and weaknesses (max 5 each)
+    strengths: List[str] = Field(default_factory=list, max_length=5)
+    weaknesses: List[str] = Field(default_factory=list, max_length=5)
+    # athlete training goals — e.g. ["make varsity", "improve athleticism"]
+    goals: List[str] = Field(default_factory=list)
+    onboarding_version: int = 1
+
+
+class OnboardingSurveyResponse(BaseModel):
+    """Survey data returned to iOS for AI Coach context loading."""
+    id: UUID
+    user_id: UUID
+    main_sport: models.Sport
+    skill_ratings: dict
+    strengths: List[str]
+    weaknesses: List[str]
+    goals: List[str] = []   # default empty list for rows created before goals column was added
+    onboarding_version: int
+    created_at: datetime
+    updated_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True

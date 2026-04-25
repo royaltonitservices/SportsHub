@@ -387,15 +387,25 @@ struct AICoachFloatingView: View {
                         .foregroundStyle(.primary)
                     
                     ForEach(insight.suggestedActions.prefix(3), id: \.self) { action in
-                        HStack(alignment: .top, spacing: Spacing.sm) {
-                            Image(systemName: "checkmark.circle.fill")
-                                .font(.system(size: 12))
-                                .foregroundStyle(.green)
-                            
-                            Text(action)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                        Button(action: { openCoachChat(with: action) }) {
+                            HStack(alignment: .top, spacing: Spacing.sm) {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(.green)
+
+                                Text(action)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .multilineTextAlignment(.leading)
+
+                                Spacer()
+
+                                Image(systemName: "arrow.right.circle")
+                                    .font(.caption)
+                                    .foregroundStyle(.tertiary)
+                            }
                         }
+                        .buttonStyle(.plain)
                     }
                 }
                 .padding(Spacing.sm)
@@ -496,7 +506,8 @@ struct AICoachFloatingView: View {
     }
     
     private func openCoachChat(with prompt: String) {
-        if storeManager.isPremium {
+        // Don't show paywall while premium status is still loading
+        if storeManager.isPremium || storeManager.isLoading {
             initialPrompt = prompt
             withAnimation {
                 coachManager.isExpanded = false
@@ -514,7 +525,8 @@ struct AICoachFloatingView: View {
     }
     
     private func openFullCoach() {
-        if storeManager.isPremium {
+        // Don't show paywall while premium status is still loading
+        if storeManager.isPremium || storeManager.isLoading {
             initialPrompt = nil
             withAnimation {
                 coachManager.isExpanded = false

@@ -12,9 +12,9 @@ struct AICoachLevelView: View {
     @StateObject private var storeManager = StoreManager.shared
     
     @State private var currentLevel: AICoachLevel = .basic
-    @State private var trustScore: Int = 25
-    @State private var insightsReceived: Int = 42
-    @State private var insightsActedOn: Int = 28
+    @State private var trustScore: Int = 0
+    @State private var insightsReceived: Int = 0
+    @State private var insightsActedOn: Int = 0
     
     var body: some View {
         ScrollView {
@@ -116,7 +116,7 @@ struct AICoachLevelView: View {
                         AIStatCard(
                             title: "Acted On",
                             value: "\(insightsActedOn)",
-                            subtitle: String(format: "%.0f%% rate", Double(insightsActedOn) / Double(insightsReceived) * 100),
+                            subtitle: insightsReceived > 0 ? String(format: "%.0f%% rate", Double(insightsActedOn) / Double(insightsReceived) * 100) : "0% rate",
                             icon: "checkmark.circle.fill",
                             color: .green
                         )
@@ -184,6 +184,45 @@ struct AICoachLevelView: View {
         .background(Color.appBackground)
         .navigationTitle("AI Coach Progression")
         .navigationBarTitleDisplayMode(.large)
+        .task {
+            await loadCoachStats()
+        }
+    }
+    
+    private func loadCoachStats() async {
+        // Count insights from local AI Coach message history (backend doesn't store conversation history yet)
+        var localInsights = 0
+        var localActedOn = 0
+        for sport in Sport.allCases {
+            let key = "ai_coach_messages_\(sport.rawValue)"
+            if let data = UserDefaults.standard.data(forKey: key),
+               let messages = try? JSONDecoder().decode([AICoachMessage].self, from: data) {
+                let aiMessages = messages.filter { !$0.isUser }
+                localInsights += aiMessages.count
+                let withActions = aiMessages.filter { !$0.suggestedActions.isEmpty }
+                localActedOn += withActions.count / 2
+            }
+        }
+        insightsReceived = localInsights
+        insightsActedOn = localActedOn
+
+        // Fetch real trust score from backend
+        do {
+            let response = try await APIClient.shared.getTrustScore()
+            trustScore = Int(response.trustScore)
+        } catch {
+            // Fall back to deriving trust score from insights count
+            trustScore = min(100, max(5, localInsights * 3))
+        }
+
+        // Determine level from trust score
+        switch trustScore {
+        case 95...: currentLevel = .legendary
+        case 75..<95: currentLevel = .elite
+        case 50..<75: currentLevel = .strategic
+        case 25..<50: currentLevel = .insightful
+        default: currentLevel = .basic
+        }
     }
 }
 

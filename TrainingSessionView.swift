@@ -14,6 +14,13 @@ struct TrainingSessionView: View {
     
     let sport: Sport
     var prefilledDrillName: String? = nil
+    var prefilledDuration: Int? = nil
+    /// Pre-populated drill notes (e.g. key instructions and tips from the drill definition).
+    var prefilledDrillNotes: String? = nil
+    /// Pre-selected effort level derived from the drill's difficulty rating.
+    var prefilledEffort: EffortLevel? = nil
+    /// Pre-selected metric type derived from the drill's primary metric string.
+    var prefilledMetricType: MetricType? = nil
     
     // Multi-drill session state
     @State private var drillEntries: [DrillEntry] = []
@@ -78,6 +85,18 @@ struct TrainingSessionView: View {
             .onAppear {
                 if let prefilled = prefilledDrillName {
                     currentDrill.drillName = prefilled
+                }
+                if let duration = prefilledDuration {
+                    currentDrill.duration = duration
+                }
+                if let notes = prefilledDrillNotes {
+                    currentDrill.notes = notes
+                }
+                if let effort = prefilledEffort {
+                    currentDrill.effort = effort
+                }
+                if let metric = prefilledMetricType {
+                    currentDrill.metricType = metric
                 }
             }
             .sheet(isPresented: $showDrillSuggestions) {
@@ -496,11 +515,80 @@ struct TrainingSessionView: View {
     private func saveSession() async {
         isLoading = true
         defer { isLoading = false }
-        
-        // TODO: API call to save multi-drill training session
-        // Will send: sport, drillEntries, sessionNotes, photoImages
-        try? await Task.sleep(nanoseconds: 500_000_000)
+
+        // Step 1: Get AI analysis
+        var aiResult: TrainingAnalysisResponse? = nil
+        do {
+            let drillsData: [[String: String]] = drillEntries.map { entry in
+                var drill: [String: String] = [
+                    "name": entry.drillName,
+                    "duration_minutes": "\(entry.duration)",
+                    "effort": entry.effort.rawValue
+                ]
+                if let metric = entry.metricType {
+                    drill["metric_type"] = metric.rawValue
+                    drill["metric_value"] = entry.metricValue
+                }
+                if !entry.notes.isEmpty {
+                    drill["notes"] = entry.notes
+                }
+                return drill
+            }
+            let sessionData: [String: Any] = [
+                "drills": drillsData,
+                "notes": sessionNotes,
+                "drill_count": drillEntries.count,
+                "total_duration": drillEntries.reduce(0) { $0 + $1.duration }
+            ]
+            aiResult = try await APIClient.shared.analyzeTrainingSession(
+                sport: sport,
+                sessionData: sessionData
+            )
+        } catch {
+            print("Training session analysis failed: \(error)")
+        }
+
+        // Step 2: Persist session + AI result to backend
+        do {
+            _ = try await APIClient.shared.logTrainingSession(
+                sport: sport,
+                drills: drillEntries,
+                notes: sessionNotes.isEmpty ? nil : sessionNotes,
+                aiAnalysis: aiResult
+            )
+        } catch {
+            print("Training session backend log failed: \(error)")
+        }
+
+        // Step 3: Always keep a local UserDefaults cache for offline resilience
+        persistSessionLocally()
         showSuccess = true
+    }
+    
+    private func persistSessionLocally() {
+        let key = "recent_sessions_\(sport.rawValue)"
+        var existing: [SavedSessionData] = []
+        if let data = UserDefaults.standard.data(forKey: key) {
+            existing = (try? JSONDecoder().decode([SavedSessionData].self, from: data)) ?? []
+        }
+        
+        for entry in drillEntries {
+            let saved = SavedSessionData(
+                drillName: entry.drillName,
+                duration: entry.duration,
+                metricType: entry.metricType?.rawValue ?? "",
+                metricValue: entry.metricValue,
+                date: Date(),
+                effortLevel: entry.effort.rawValue
+            )
+            existing.insert(saved, at: 0)
+        }
+        
+        // Keep only the last 20 entries
+        let trimmed = Array(existing.prefix(20))
+        if let encoded = try? JSONEncoder().encode(trimmed) {
+            UserDefaults.standard.set(encoded, forKey: key)
+        }
     }
 }
 

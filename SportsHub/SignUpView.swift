@@ -17,6 +17,7 @@ struct SignUpView: View {
     @State private var password = ""
     @State private var confirmPassword = ""
     @State private var dateOfBirth = Date()
+    @State private var parentEmail = ""
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var showPassword = false
@@ -30,10 +31,31 @@ struct SignUpView: View {
 
     // MARK: - Validation
 
+    private var userAge: Int {
+        Calendar.current.dateComponents([.year], from: dateOfBirth, to: Date()).year ?? 0
+    }
+    
+    private var isUnder18: Bool {
+        userAge < 18
+    }
+    
     private var isAtLeast13: Bool {
-        let calendar = Calendar.current
-        let ageComponents = calendar.dateComponents([.year], from: dateOfBirth, to: Date())
-        return (ageComponents.year ?? 0) >= 13
+        userAge >= 13
+    }
+    
+    private var isParentEmailValid: Bool {
+        // Only required for under-18
+        guard isUnder18 else { return true }
+        let trimmed = parentEmail.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        let components = trimmed.split(separator: "@")
+        guard components.count == 2,
+              !components[0].isEmpty,
+              components[1].contains("."),
+              components[1].count > 2 else {
+            return false
+        }
+        return true
     }
 
     private var isEmailValid: Bool {
@@ -73,7 +95,8 @@ struct SignUpView: View {
         isUsernameValid &&
         isPasswordValid &&
         passwordsMatch &&
-        isAtLeast13
+        isAtLeast13 &&
+        isParentEmailValid
     }
 
     private var ageWarningMessage: String? {
@@ -204,6 +227,48 @@ struct SignUpView: View {
                                         .foregroundStyle(Color.appTextSecondary)
                                 }
                             }
+                            
+                            // Parent/Guardian Email (required for under-18)
+                            if isAtLeast13 && isUnder18 {
+                                VStack(alignment: .leading, spacing: Spacing.xs) {
+                                    HStack(spacing: Spacing.xs) {
+                                        Image(systemName: "shield.checkered")
+                                            .font(.subheadline)
+                                            .foregroundStyle(Color.appPrimary)
+                                        Text("Parent/Guardian Email")
+                                            .font(.subheadline)
+                                            .fontWeight(.medium)
+                                            .foregroundStyle(Color.appTextPrimary)
+                                        Text("Required")
+                                            .font(.caption2)
+                                            .fontWeight(.semibold)
+                                            .foregroundStyle(.white)
+                                            .padding(.horizontal, 6)
+                                            .padding(.vertical, 2)
+                                            .background(Color.appPrimary)
+                                            .cornerRadius(4)
+                                    }
+                                    
+                                    TextField("parent@example.com", text: $parentEmail)
+                                        .textContentType(.emailAddress)
+                                        .keyboardType(.emailAddress)
+                                        .textInputAutocapitalization(.never)
+                                        .autocorrectionDisabled()
+                                        .padding(Spacing.md)
+                                        .background(Color.appSurface)
+                                        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.medium))
+                                        .foregroundStyle(Color.appTextPrimary)
+                                        .onChange(of: parentEmail) { _, _ in clearErrorIfNeeded() }
+                                    
+                                    if !parentEmail.isEmpty && !isParentEmailValid {
+                                        ValidationMessage(text: "Enter a valid parent/guardian email")
+                                    }
+                                    
+                                    Text("A parent or guardian must provide consent for users under 18. We'll send a verification email to this address.")
+                                        .font(.caption)
+                                        .foregroundStyle(Color.appTextSecondary)
+                                }
+                            }
 
                             // Error Message
                             if let errorMessage {
@@ -315,11 +380,14 @@ struct SignUpView: View {
                 let cleanEmail = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
                 let cleanUsername = username.trimmingCharacters(in: .whitespacesAndNewlines)
 
+                let cleanParentEmail = parentEmail.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                
                 try await sessionManager.signUp(
                     email: cleanEmail,
                     username: cleanUsername,
                     password: password, // Preserve exactly as entered
-                    dateOfBirth: dateOfBirth
+                    dateOfBirth: dateOfBirth,
+                    parentEmail: cleanParentEmail.isEmpty ? nil : cleanParentEmail
                 )
 
                 // Success - dismiss on main actor

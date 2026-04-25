@@ -16,6 +16,7 @@ struct BadgeSystemView: View {
     @State private var unlockedBadges: [Badge] = []
     @State private var allBadges: [Badge] = []
     @State private var searchText = ""
+    @State private var loadError: String?
     
     var body: some View {
         VStack(spacing: 0) {
@@ -73,6 +74,15 @@ struct BadgeSystemView: View {
             .padding(.horizontal, Spacing.md)
             .padding(.bottom, Spacing.sm)
             
+            // Error state
+            if let error = loadError {
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(Color.appError)
+                    .padding(.horizontal, Spacing.md)
+                    .padding(.top, Spacing.xs)
+            }
+
             // Badges Grid
             ScrollView {
                 LazyVGrid(columns: [
@@ -118,9 +128,21 @@ struct BadgeSystemView: View {
     
     private func loadBadges() {
         allBadges = Badge.badgesForSport(sport)
-        // TODO: Load from API - fetch actual earned badges
-        // For now, start with 0 unlocked badges until backend integration
-        unlockedBadges = []
+        
+        // Fetch earned badges from API
+        Task {
+            do {
+                let earnedBadges = try await APIClient.shared.getMyBadges()
+                let sportBadgeNames = Set(earnedBadges
+                    .filter { $0.sport.lowercased() == sport.rawValue.lowercased() }
+                    .map { $0.name })
+                
+                unlockedBadges = allBadges.filter { sportBadgeNames.contains($0.name) }
+            } catch {
+                unlockedBadges = []
+                loadError = "Couldn't load your badges. Pull to refresh."
+            }
+        }
     }
 }
 

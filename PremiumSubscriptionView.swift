@@ -124,7 +124,7 @@ struct PremiumSubscriptionView: View {
             FeatureRow(
                 icon: "calendar.badge.clock",
                 title: "AI Weekly Drills",
-                description: "Fresh, personalized drills every week",
+                description: "Sport-specific drill recommendations",
                 color: .cyan
             )
             
@@ -145,7 +145,7 @@ struct PremiumSubscriptionView: View {
             FeatureRow(
                 icon: "chart.line.uptrend.xyaxis",
                 title: "Advanced Analytics",
-                description: "Performance predictions and trends",
+                description: "Win/loss trends and match history",
                 color: .green
             )
             
@@ -370,17 +370,43 @@ struct PlanCard: View {
 class StoreManager: ObservableObject {
     static let shared = StoreManager()
     
+    private let premiumCacheKey = "sportshub_backend_premium"
+    private let premiumTierCacheKey = "sportshub_backend_tier"
+    private let accountPremiumCacheKey = "sportshub_account_premium"
+    
+    /// Accounts that are always recognized as Premium (owner/dev accounts).
+    /// This is a system-level entitlement, not a UI hack — it flows through
+    /// the same isPremium computed property that all views check.
+    private static let premiumEntitledAccounts: Set<String> = [
+        "aarushkhanna11@gmail.com"
+    ]
+    
     @Published var products: [Product] = []
     @Published var purchasedProductIDs: Set<String> = []
+    @Published var isLoading: Bool = true
     
     // Backend subscription status (server-side Premium grants)
-    @Published var backendHasPremium: Bool = false
-    @Published var backendSubscriptionTier: String = "free"
+    @Published var backendHasPremium: Bool
+    @Published var backendSubscriptionTier: String
+    
+    // Account-level premium entitlement (recognized by email)
+    @Published var accountHasPremium: Bool
     
     private var updateListenerTask: Task<Void, Error>?
     
     init() {
+        // Restore cached premium status immediately (no async delay)
+        self.backendHasPremium = UserDefaults.standard.bool(forKey: "sportshub_backend_premium")
+        self.backendSubscriptionTier = UserDefaults.standard.string(forKey: "sportshub_backend_tier") ?? "free"
+        self.accountHasPremium = UserDefaults.standard.bool(forKey: "sportshub_account_premium")
+        
         updateListenerTask = listenForTransactions()
+        // Restore existing entitlements and sync backend status on launch
+        Task { @MainActor in
+            await updatePurchasedProducts()
+            await syncBackendSubscription()
+            isLoading = false
+        }
     }
     
     deinit {
@@ -468,25 +494,55 @@ class StoreManager: ObservableObject {
             backendHasPremium = status.hasPremium
             backendSubscriptionTier = status.tier
             
+            // Cache for instant restore on next launch
+            UserDefaults.standard.set(status.hasPremium, forKey: premiumCacheKey)
+            UserDefaults.standard.set(status.tier, forKey: premiumTierCacheKey)
+            
             if APIConfig.enableDebugLogging {
                 print("✓ Backend subscription synced: tier=\(status.tier), premium=\(status.hasPremium)")
             }
         } catch {
             // Non-fatal error - just log it
-            // StoreKit purchases still work even if backend sync fails
+            // Cached premium status + StoreKit purchases still work if backend sync fails
             if APIConfig.enableDebugLogging {
                 print("⚠️ Failed to sync backend subscription: \(error)")
             }
         }
     }
     
+    /// Notify StoreManager of the authenticated user's email.
+    /// If the email matches a known premium-entitled account, premium is granted
+    /// at the system level and cached for session persistence.
+    func setAuthenticatedUser(email: String) {
+        let entitled = Self.premiumEntitledAccounts.contains(email.lowercased())
+        accountHasPremium = entitled
+        UserDefaults.standard.set(entitled, forKey: accountPremiumCacheKey)
+        
+        if entitled && APIConfig.enableDebugLogging {
+            print("✓ Account-level Premium entitlement recognized for \(email)")
+        }
+    }
+    
+    /// Clear all premium state on logout — account-level, backend cache, and StoreKit set
+    func clearAccountEntitlement() {
+        accountHasPremium = false
+        backendHasPremium = false
+        backendSubscriptionTier = "free"
+        purchasedProductIDs = []
+        UserDefaults.standard.removeObject(forKey: accountPremiumCacheKey)
+        UserDefaults.standard.removeObject(forKey: premiumCacheKey)
+        UserDefaults.standard.removeObject(forKey: premiumTierCacheKey)
+    }
+    
     /// Check if user has Premium access from ANY source
-    /// This includes both StoreKit purchases AND backend-granted subscriptions
+    /// This includes StoreKit purchases, backend-granted subscriptions,
+    /// and account-level entitlements (owner/dev accounts)
     var isPremium: Bool {
         // Premium if:
         // 1. User purchased via StoreKit, OR
-        // 2. User has backend Premium subscription (e.g., admin grant, manual grant)
-        !purchasedProductIDs.isEmpty || backendHasPremium
+        // 2. User has backend Premium subscription (e.g., admin grant), OR
+        // 3. User has account-level entitlement (recognized by email)
+        !purchasedProductIDs.isEmpty || backendHasPremium || accountHasPremium
     }
 }
 

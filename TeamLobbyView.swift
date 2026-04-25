@@ -10,23 +10,26 @@ import SwiftUI
 struct TeamLobbyView: View {
     @Environment(\.dismiss) var dismiss
     @EnvironmentObject var sessionManager: SessionManager
-    
+
     let sport: Sport
-    
+
     @State private var teamSize: TeamSize = .threeVthree
     @State private var lobbyType: LobbyType = .open
     @State private var teamName = ""
     @State private var teamMembers: [TeamMember] = []
     @State private var availableLobbies: [TeamLobby] = []
+    @State private var myTeams: [TeamResponse] = []
     @State private var selectedTab: LobbyTab = .create
     @State private var isCreatingLobby = false
-    @State private var isJoiningLobby = false
+    @State private var isLoadingLobbies = false
     @State private var showInviteFriends = false
-    
+    @State private var createError: String?
+    @State private var joinError: String?
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                // Tab Selector
+                // Tab Picker
                 Picker("", selection: $selectedTab) {
                     ForEach(LobbyTab.allCases, id: \.self) { tab in
                         Text(tab.rawValue).tag(tab)
@@ -34,64 +37,55 @@ struct TeamLobbyView: View {
                 }
                 .pickerStyle(.segmented)
                 .padding(Spacing.md)
-                
-                // Content based on selected tab
-                TabView(selection: $selectedTab) {
+                .background(Color.appBackground)
+
+                if selectedTab == .create {
                     createTeamView
-                        .tag(LobbyTab.create)
-                    
+                } else {
                     joinTeamView
-                        .tag(LobbyTab.join)
                 }
-                .tabViewStyle(.page(indexDisplayMode: .never))
             }
             .background(Color.appBackground)
             .navigationTitle("Team Play")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Close") {
-                        dismiss()
-                    }
+                    Button("Close") { dismiss() }
                 }
             }
-            .sheet(isPresented: $showInviteFriends) {
-                FriendSelectionView(selectedFriends: .constant([]))
+            .onChange(of: selectedTab) { _, newTab in
+                if newTab == .join { Task { await loadAvailableLobbies() } }
             }
         }
     }
-    
+
     // MARK: - Create Team View
-    
+
     private var createTeamView: some View {
         ScrollView {
             VStack(spacing: Spacing.lg) {
                 // Team Configuration
                 VStack(alignment: .leading, spacing: Spacing.md) {
                     SectionHeader(icon: "person.3.fill", title: "Team Configuration")
-                    
+
                     VStack(spacing: Spacing.sm) {
-                        // Team Name
                         VStack(alignment: .leading, spacing: Spacing.xs) {
                             Text("Team Name")
                                 .font(.subheadline)
                                 .fontWeight(.semibold)
                                 .foregroundStyle(Color.appTextPrimary)
-                            
                             TextField("Enter team name", text: $teamName)
                                 .textFieldStyle(.roundedBorder)
                         }
-                        
-                        // Sport (Fixed)
+
                         VStack(alignment: .leading, spacing: Spacing.xs) {
                             Text("Sport")
                                 .font(.subheadline)
                                 .fontWeight(.semibold)
                                 .foregroundStyle(Color.appTextPrimary)
-                            
                             HStack {
                                 Image(systemName: sport.icon)
-                                Text(sport.rawValue)
+                                Text(sport.rawValue.capitalized)
                             }
                             .foregroundStyle(Color.appPrimary)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -99,14 +93,12 @@ struct TeamLobbyView: View {
                             .background(Color.appCardBackground)
                             .cornerRadius(8)
                         }
-                        
-                        // Team Size
+
                         VStack(alignment: .leading, spacing: Spacing.xs) {
                             Text("Team Size")
                                 .font(.subheadline)
                                 .fontWeight(.semibold)
                                 .foregroundStyle(Color.appTextPrimary)
-                            
                             Picker("Team Size", selection: $teamSize) {
                                 ForEach(TeamSize.allCases, id: \.self) { size in
                                     Text(size.rawValue).tag(size)
@@ -114,54 +106,27 @@ struct TeamLobbyView: View {
                             }
                             .pickerStyle(.segmented)
                         }
-                        
-                        // Lobby Type
-                        VStack(alignment: .leading, spacing: Spacing.xs) {
-                            Text("Lobby Type")
-                                .font(.subheadline)
-                                .fontWeight(.semibold)
-                                .foregroundStyle(Color.appTextPrimary)
-                            
-                            Picker("Lobby Type", selection: $lobbyType) {
-                                ForEach(LobbyType.allCases, id: \.self) { type in
-                                    HStack {
-                                        Image(systemName: type.icon)
-                                        Text(type.rawValue)
-                                    }
-                                    .tag(type)
-                                }
-                            }
-                            .pickerStyle(.segmented)
-                        }
                     }
                 }
                 .padding(Spacing.md)
                 .cardBackground()
-                
+
                 // Current Team Members
                 VStack(alignment: .leading, spacing: Spacing.md) {
-                    SectionHeader(icon: "person.2.fill", title: "Team Members (\(teamMembers.count + 1)/\(teamSize.playersPerTeam))")
-                    
+                    SectionHeader(icon: "person.2.fill", title: "Team Members (1/\(teamSize.playersPerTeam))")
+
                     VStack(spacing: Spacing.sm) {
-                        // Captain (current user)
                         TeamMemberRow(
                             name: sessionManager.currentUser?.displayName ?? "You",
                             username: sessionManager.currentUser?.username ?? "",
                             role: "Captain",
                             isConfirmed: true
                         )
-                        
-                        // Team members
+
                         ForEach(teamMembers) { member in
-                            TeamMemberRow(
-                                name: member.name,
-                                username: member.username,
-                                role: "Member",
-                                isConfirmed: member.isConfirmed
-                            )
+                            TeamMemberRow(name: member.name, username: member.username, role: "Member", isConfirmed: member.isConfirmed)
                         }
-                        
-                        // Empty slots
+
                         ForEach(0..<(teamSize.playersPerTeam - teamMembers.count - 1), id: \.self) { _ in
                             EmptySlotRow()
                         }
@@ -169,35 +134,36 @@ struct TeamLobbyView: View {
                 }
                 .padding(Spacing.md)
                 .cardBackground()
-                
-                // Invite Friends Button
-                Button(action: {
-                    showInviteFriends = true
-                }) {
-                    HStack {
-                        Image(systemName: "person.badge.plus")
-                        Text("Invite Friends")
-                            .fontWeight(.semibold)
-                    }
-                    .foregroundStyle(Color.appPrimary)
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(Color.appPrimary.opacity(0.1))
-                    .cornerRadius(12)
+
+                if let error = createError {
+                    Text(error)
+                        .font(.caption)
+                        .foregroundColor(.appError)
+                        .padding(.horizontal, Spacing.md)
                 }
-                .padding(.horizontal, Spacing.md)
-                
+
+                // My Teams (existing)
+                if !myTeams.isEmpty {
+                    VStack(alignment: .leading, spacing: Spacing.md) {
+                        SectionHeader(icon: "list.bullet", title: "Your Teams")
+                        VStack(spacing: Spacing.sm) {
+                            ForEach(myTeams) { team in
+                                myTeamRow(team)
+                            }
+                        }
+                    }
+                    .padding(Spacing.md)
+                    .cardBackground()
+                }
+
                 // Create Lobby Button
-                Button(action: {
-                    createLobby()
-                }) {
+                Button(action: { Task { await createLobby() } }) {
                     HStack {
                         if isCreatingLobby {
-                            ProgressView()
-                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                            ProgressView().progressViewStyle(CircularProgressViewStyle(tint: .white))
                         } else {
                             Image(systemName: "checkmark.circle.fill")
-                            Text("Create Team Lobby")
+                            Text("Create Team")
                                 .fontWeight(.semibold)
                         }
                     }
@@ -213,25 +179,49 @@ struct TeamLobbyView: View {
             }
             .padding(.vertical, Spacing.md)
         }
+        .task {
+            await loadMyTeams()
+        }
     }
-    
+
+    private func myTeamRow(_ team: TeamResponse) -> some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(team.name)
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(Color.appTextPrimary)
+                Text("Rating: \(team.rating) • W\(team.wins)/L\(team.losses)")
+                    .font(.caption)
+                    .foregroundStyle(Color.appTextSecondary)
+            }
+            Spacer()
+            Image(systemName: "crown.fill")
+                .font(.caption)
+                .foregroundStyle(Color.appSecondary)
+        }
+        .padding(Spacing.sm)
+        .background(Color.appCardBackground)
+        .cornerRadius(10)
+    }
+
     // MARK: - Join Team View
-    
+
     private var joinTeamView: some View {
         ScrollView {
             VStack(spacing: Spacing.md) {
-                if availableLobbies.isEmpty {
-                    // Empty State
+                if isLoadingLobbies {
+                    ProgressView()
+                        .padding(.vertical, Spacing.xl)
+                } else if availableLobbies.isEmpty {
                     VStack(spacing: Spacing.md) {
                         Image(systemName: "person.3.fill")
                             .font(.system(size: 64))
                             .foregroundStyle(Color.appTextSecondary.opacity(0.3))
-                        
                         Text("No Active Lobbies")
                             .font(.headline)
                             .foregroundStyle(Color.appTextSecondary)
-                        
-                        Text("Be the first to create a team lobby for \(sport.rawValue)!")
+                        Text("Be the first to create a team lobby for \(sport.rawValue.capitalized)!")
                             .font(.subheadline)
                             .foregroundStyle(Color.appTextSecondary.opacity(0.8))
                             .multilineTextAlignment(.center)
@@ -239,71 +229,90 @@ struct TeamLobbyView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, Spacing.xl * 2)
                 } else {
+                    if let error = joinError {
+                        Text(error)
+                            .font(.caption)
+                            .foregroundColor(.appError)
+                            .padding(.horizontal, Spacing.md)
+                    }
                     ForEach(availableLobbies) { lobby in
                         LobbyCard(lobby: lobby, onJoin: {
-                            joinLobby(lobby)
+                            Task { await joinLobby(lobby) }
                         })
                     }
                 }
             }
             .padding(Spacing.md)
         }
-        .onAppear {
-            loadAvailableLobbies()
+        .task {
+            await loadAvailableLobbies()
+        }
+        .refreshable {
+            await loadAvailableLobbies()
         }
     }
-    
+
     // MARK: - Form Validation
-    
+
     private var isCreateFormValid: Bool {
         !teamName.isEmpty && teamName.count >= 3
     }
-    
+
     // MARK: - Actions
-    
-    private func createLobby() {
+
+    private func loadMyTeams() async {
+        do {
+            myTeams = try await APIClient.shared.getMyTeams()
+        } catch {
+            // Non-critical — user may have no teams
+        }
+    }
+
+    private func createLobby() async {
         isCreatingLobby = true
-        
-        // TODO: API call to create team lobby
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-            isCreatingLobby = false
-            // Switch to join tab or dismiss
+        createError = nil
+        defer { isCreatingLobby = false }
+
+        do {
+            let team = try await APIClient.shared.createTeam(name: teamName, sport: sport.rawValue)
+            myTeams.insert(team, at: 0)
+            teamName = ""
             selectedTab = .join
-            loadAvailableLobbies()
+            await loadAvailableLobbies()
+        } catch let apiError as APIError {
+            createError = apiError.localizedDescription
+        } catch {
+            createError = "Couldn't create team. Please try again."
         }
     }
-    
-    private func joinLobby(_ lobby: TeamLobby) {
-        isJoiningLobby = true
-        
-        // TODO: API call to join lobby
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-            isJoiningLobby = false
-        }
+
+    private func joinLobby(_ lobby: TeamLobby) async {
+        // Team-vs-team challenges require a dedicated matchmaking flow that is not yet built.
+        // Direct the user to the Play tab where 1v1 challenges with any opponent are available.
+        joinError = "Team challenges are coming soon. To play against \(lobby.captain), find them through the Play tab and send a 1v1 challenge."
     }
-    
-    private func loadAvailableLobbies() {
-        // TODO: Load from API
-        availableLobbies = [
-            TeamLobby(
-                id: "1",
-                name: "Elite Squad",
-                captain: "Alex J",
-                sport: sport,
-                teamSize: .fiveVfive,
-                currentPlayers: 3,
-                lobbyType: .open
-            ),
-            TeamLobby(
-                id: "2",
-                name: "Weekend Warriors",
-                captain: "Sam T",
-                sport: sport,
-                teamSize: .threeVthree,
-                currentPlayers: 2,
-                lobbyType: .open
-            )
-        ]
+
+    private func loadAvailableLobbies() async {
+        isLoadingLobbies = true
+        joinError = nil
+        defer { isLoadingLobbies = false }
+
+        do {
+            let openTeams = try await APIClient.shared.getOpenTeams(sport: sport.rawValue)
+            availableLobbies = openTeams.map { team in
+                TeamLobby(
+                    id: team.id,
+                    name: team.name,
+                    captain: "@\(team.captainUsername)",
+                    sport: sport,
+                    teamSize: .threeVthree,
+                    currentPlayers: team.memberCount,
+                    lobbyType: .open
+                )
+            }
+        } catch {
+            joinError = "Couldn't load lobbies. Pull to refresh."
+        }
     }
 }
 
@@ -312,7 +321,7 @@ struct TeamLobbyView: View {
 struct SectionHeader: View {
     let icon: String
     let title: String
-    
+
     var body: some View {
         HStack {
             Image(systemName: icon)
@@ -329,32 +338,30 @@ struct TeamMemberRow: View {
     let username: String
     let role: String
     let isConfirmed: Bool
-    
+
     var body: some View {
         HStack(spacing: Spacing.md) {
             AvatarView(name: name, size: 40)
-            
+
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: Spacing.xs) {
                     Text(name)
                         .font(.subheadline)
                         .fontWeight(.semibold)
                         .foregroundStyle(Color.appTextPrimary)
-                    
                     if role == "Captain" {
                         Image(systemName: "crown.fill")
                             .font(.caption)
                             .foregroundStyle(Color.appSecondary)
                     }
                 }
-                
                 Text("@\(username)")
                     .font(.caption)
                     .foregroundStyle(Color.appTextSecondary)
             }
-            
+
             Spacer()
-            
+
             if isConfirmed {
                 Image(systemName: "checkmark.circle.fill")
                     .foregroundStyle(.green)
@@ -385,11 +392,9 @@ struct EmptySlotRow: View {
                         .font(.caption)
                         .foregroundStyle(Color.appTextSecondary.opacity(0.5))
                 )
-            
             Text("Open Slot")
                 .font(.subheadline)
                 .foregroundStyle(Color.appTextSecondary)
-            
             Spacer()
         }
         .padding(Spacing.sm)
@@ -405,7 +410,7 @@ struct EmptySlotRow: View {
 struct LobbyCard: View {
     let lobby: TeamLobby
     let onJoin: () -> Void
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
             HStack {
@@ -414,47 +419,38 @@ struct LobbyCard: View {
                         Text(lobby.name)
                             .font(.headline)
                             .foregroundStyle(Color.appTextPrimary)
-                        
                         Image(systemName: lobby.lobbyType.icon)
                             .font(.caption)
                             .foregroundStyle(lobby.lobbyType == .open ? .green : Color.appSecondary)
                     }
-                    
                     Text("Captain: \(lobby.captain)")
                         .font(.caption)
                         .foregroundStyle(Color.appTextSecondary)
                 }
-                
                 Spacer()
-                
                 VStack(alignment: .trailing, spacing: 4) {
                     Text("\(lobby.currentPlayers)/\(lobby.teamSize.playersPerTeam)")
                         .font(.title3)
                         .fontWeight(.bold)
                         .foregroundStyle(Color.appPrimary)
-                    
                     Text("players")
                         .font(.caption2)
                         .foregroundStyle(Color.appTextSecondary)
                 }
             }
-            
+
             HStack {
-                Label(lobby.sport.rawValue, systemImage: lobby.sport.icon)
+                Label(lobby.sport.rawValue.capitalized, systemImage: lobby.sport.icon)
                     .font(.caption)
                     .foregroundStyle(Color.appTextSecondary)
-                
                 Text("•")
                     .foregroundStyle(Color.appTextSecondary)
-                
                 Text(lobby.teamSize.rawValue)
                     .font(.caption)
                     .foregroundStyle(Color.appTextSecondary)
-                
                 Spacer()
-                
                 Button(action: onJoin) {
-                    Text("Join")
+                    Text("Challenge")
                         .font(.subheadline)
                         .fontWeight(.semibold)
                         .foregroundStyle(.white)
@@ -474,14 +470,14 @@ struct LobbyCard: View {
 
 enum LobbyTab: String, CaseIterable {
     case create = "Create"
-    case join = "Join"
+    case join = "Browse"
 }
 
 enum TeamSize: String, CaseIterable {
     case twoVtwo = "2v2"
     case threeVthree = "3v3"
     case fiveVfive = "5v5"
-    
+
     var playersPerTeam: Int {
         switch self {
         case .twoVtwo: return 2
@@ -494,7 +490,7 @@ enum TeamSize: String, CaseIterable {
 enum LobbyType: String, CaseIterable {
     case open = "Open"
     case inviteOnly = "Invite Only"
-    
+
     var icon: String {
         switch self {
         case .open: return "globe"

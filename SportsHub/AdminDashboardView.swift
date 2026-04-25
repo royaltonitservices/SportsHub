@@ -345,40 +345,154 @@ struct AdminActionRowLive: View {
 
 struct AdminSettingsView: View {
     @EnvironmentObject var sessionManager: SessionManager
+    @AppStorage("isDarkMode") private var isDarkMode = true
+    @AppStorage("enableDebugLogging") private var enableDebugLogging = false
+    
+    @State private var subscriptionStatus: SubscriptionStatusResponse?
+    @State private var serverHealthy: Bool? = nil
+    @State private var isCheckingHealth = false
+    @State private var showLogoutConfirm = false
     
     var body: some View {
         NavigationStack {
             List {
-                Section {
-                    HStack {
-                        Text("Role")
-                        Spacer()
-                        Text("Administrator")
-                            .foregroundStyle(Color.appPrimary)
-                    }
-                    
-                    HStack {
-                        Text("Email")
-                        Spacer()
-                        Text(sessionManager.currentUser?.email ?? "")
-                            .foregroundStyle(Color.appTextSecondary)
+                // MARK: Account
+                Section("Account") {
+                    adminInfoRow("Role", value: "Administrator", icon: "shield.fill", iconColor: .orange)
+                    adminInfoRow("Email", value: sessionManager.currentUser?.email ?? "—", icon: "envelope.fill", iconColor: .blue)
+                    adminInfoRow("Username", value: sessionManager.currentUser?.username ?? "—", icon: "at", iconColor: .purple)
+                }
+                
+                // MARK: Subscription
+                Section("Premium Subscription") {
+                    if let sub = subscriptionStatus {
+                        adminInfoRow("Status", value: sub.hasPremium ? "Active" : "Inactive",
+                                     icon: "star.fill",
+                                     iconColor: sub.hasPremium ? .yellow : .gray)
+                        adminInfoRow("Tier", value: sub.tier.capitalized, icon: "crown.fill", iconColor: .yellow)
+                        if let expires = sub.expiresAt, !expires.isEmpty {
+                            adminInfoRow("Expires", value: formatExpiry(expires), icon: "calendar", iconColor: .green)
+                        } else {
+                            adminInfoRow("Expires", value: "Never (lifetime)", icon: "infinity", iconColor: .green)
+                        }
+                    } else {
+                        HStack {
+                            ProgressView()
+                                .padding(.trailing, 4)
+                            Text("Loading subscription…")
+                                .foregroundStyle(Color.appTextSecondary)
+                        }
                     }
                 }
                 
-                Section {
-                    Button(action: {
-                        sessionManager.logout()
-                    }) {
+                // MARK: Server
+                Section("Server") {
+                    HStack {
+                        Label("Backend", systemImage: "server.rack")
+                        Spacer()
+                        Text("localhost:8000")
+                            .font(.caption)
+                            .foregroundStyle(Color.appTextSecondary)
+                    }
+                    
+                    Button {
+                        Task { await checkHealth() }
+                    } label: {
                         HStack {
-                            Image(systemName: "arrow.right.square")
-                            Text("Logout")
+                            Label("Check Health", systemImage: "waveform.path.ecg")
+                            Spacer()
+                            if isCheckingHealth {
+                                ProgressView()
+                            } else if let healthy = serverHealthy {
+                                Image(systemName: healthy ? "checkmark.circle.fill" : "xmark.circle.fill")
+                                    .foregroundStyle(healthy ? Color.appSuccess : Color.appError)
+                            }
                         }
-                        .foregroundStyle(Color.appError)
+                    }
+                    .foregroundStyle(Color.primary)
+                }
+                
+                // MARK: App Settings
+                Section("App") {
+                    Toggle(isOn: $isDarkMode) {
+                        Label("Dark Mode", systemImage: "moon.fill")
+                    }
+                    .tint(Color.appPrimary)
+                    
+                    Toggle(isOn: $enableDebugLogging) {
+                        Label("Debug Logging", systemImage: "ant.fill")
+                    }
+                    .tint(Color.appPrimary)
+                }
+                
+                // MARK: Danger Zone
+                Section("Danger Zone") {
+                    Button {
+                        showLogoutConfirm = true
+                    } label: {
+                        Label("Logout", systemImage: "arrow.right.square")
+                            .foregroundStyle(Color.appError)
                     }
                 }
             }
             .navigationTitle("Settings")
+            .task {
+                await loadSubscriptionStatus()
+                await checkHealth()
+            }
+            .confirmationDialog("Logout?", isPresented: $showLogoutConfirm, titleVisibility: .visible) {
+                Button("Logout", role: .destructive) {
+                    sessionManager.logout()
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("You will be returned to the login screen.")
+            }
         }
+    }
+    
+    // MARK: - Helpers
+    
+    @ViewBuilder
+    private func adminInfoRow(_ label: String, value: String, icon: String, iconColor: Color) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .foregroundStyle(iconColor)
+                .frame(width: 20)
+            Text(label)
+            Spacer()
+            Text(value)
+                .foregroundStyle(Color.appTextSecondary)
+                .lineLimit(1)
+        }
+    }
+    
+    private func loadSubscriptionStatus() async {
+        if let status = try? await APIClient.shared.getSubscriptionStatus() {
+            subscriptionStatus = status
+        }
+    }
+    
+    private func checkHealth() async {
+        isCheckingHealth = true
+        defer { isCheckingHealth = false }
+        struct HealthResponse: Decodable { let status: String }
+        do {
+            let response: HealthResponse = try await APIClient.shared.get("/health")
+            serverHealthy = response.status == "healthy"
+        } catch {
+            serverHealthy = false
+        }
+    }
+    
+    private func formatExpiry(_ isoString: String) -> String {
+        let iso = ISO8601DateFormatter()
+        if let date = iso.date(from: isoString) {
+            let formatter = DateFormatter()
+            formatter.dateStyle = .medium
+            return formatter.string(from: date)
+        }
+        return isoString
     }
 }
 

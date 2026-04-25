@@ -14,6 +14,7 @@ struct SettingsView: View {
     @AppStorage("soundEnabled") private var soundEnabled = true
     @State private var showEditUsername = false
     @State private var showEditDisplayName = false
+    @State private var showTrainingProfile = false
 
     var body: some View {
         List {
@@ -26,30 +27,33 @@ struct SettingsView: View {
                     }
                 }
 
-                HStack {
-                    Image(systemName: "paintpalette.fill")
-                        .foregroundColor(.appPrimary)
-                    Text("Theme Color")
-                    Spacer()
-                    Text("Orange")
-                        .foregroundColor(Color.appSecondary)
-                }
+                // Theme color is fixed (not configurable in this version)
             }
 
             Section("Notifications") {
                 Toggle(isOn: $notificationsEnabled) {
-                    HStack {
-                        Image(systemName: "bell.fill")
-                            .foregroundColor(.appPrimary)
-                        Text("Push Notifications")
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack {
+                            Image(systemName: "bell.fill")
+                                .foregroundColor(.appPrimary)
+                            Text("In-App Alerts")
+                        }
+                        Text("Local alerts only — push notifications not available")
+                            .font(.caption)
+                            .foregroundColor(Color.appTextSecondary)
                     }
                 }
 
                 Toggle(isOn: $soundEnabled) {
-                    HStack {
-                        Image(systemName: "speaker.wave.2.fill")
-                            .foregroundColor(.appPrimary)
-                        Text("Sound Effects")
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack {
+                            Image(systemName: "speaker.wave.2.fill")
+                                .foregroundColor(.appPrimary)
+                            Text("Sound Effects")
+                        }
+                        Text("Preference saved — audio not yet wired")
+                            .font(.caption)
+                            .foregroundColor(Color.appTextSecondary)
                     }
                 }
             }
@@ -62,6 +66,23 @@ struct SettingsView: View {
                         Image(systemName: "figure.run.circle.fill")
                             .foregroundColor(.appPrimary)
                         Text("Connect Fitness Tracker")
+                    }
+                }
+            }
+
+            Section("Training Profile") {
+                NavigationLink {
+                    TrainingProfileSettingsView()
+                } label: {
+                    HStack {
+                        Image(systemName: "figure.run.square.stack.fill")
+                            .foregroundColor(.appPrimary)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Edit Training Profile")
+                            Text("Update sport, skill ratings, and goals")
+                                .font(.caption)
+                                .foregroundColor(.appTextSecondary)
+                        }
                     }
                 }
             }
@@ -700,5 +721,354 @@ struct GuidelineRow: View {
     NavigationStack {
         SettingsView()
             .environmentObject(SessionManager.shared)
+    }
+}
+
+// MARK: - Training Profile Settings View
+
+/// Full editable athlete survey reachable from Settings → Training Profile.
+/// Submits the idempotent POST /onboarding/survey endpoint (upsert).
+/// Detects material skill improvements (≤3 → ≥5) and clears stale AI Coach
+/// weakness cache entries so the next session uses the refreshed baseline.
+struct TrainingProfileSettingsView: View {
+    @EnvironmentObject var sessionManager: SessionManager
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var selectedSport: Sport = .basketball
+    @State private var skillRatings: [String: Int] = [:]
+    @State private var originalSkillRatings: [String: Int] = [:]
+    /// Skills the athlete has explicitly rated (even if set to 5). Skills NOT in this set
+    /// are displayed as "Not rated" and excluded from the save payload.
+    @State private var ratedSkills: Set<String> = []
+    @State private var selectedStrengths: Set<String> = []
+    @State private var selectedWeaknesses: Set<String> = []
+    @State private var selectedGoals: Set<String> = []
+
+    @State private var isSaving = false
+    @State private var saveSuccess = false
+    @State private var errorMessage: String?
+
+    private static let surveyLocalKey        = "ai_coach_survey_cache"
+    private static let coachContextKeyPrefix = "ai_coach_context_"
+
+    // MARK: - Computed
+
+    private var skillKeys: [String] {
+        SurveySkillDefinitions.skills[selectedSport] ?? []
+    }
+    private var strengthOptions: [String] {
+        SurveySkillDefinitions.strengths[selectedSport] ?? []
+    }
+    private var weaknessOptions: [String] {
+        SurveySkillDefinitions.weaknesses[selectedSport] ?? []
+    }
+    /// Sport-specific training goals the athlete can declare for AI Coach context.
+    private var goalOptions: [String] {
+        switch selectedSport {
+        case .basketball:
+            return ["Make varsity team", "Become a starter", "Improve shooting percentage",
+                    "Increase athleticism", "Play in college", "Be a better teammate", "Improve defense"]
+        case .football:
+            return ["Make varsity team", "Master my position", "Get recruited",
+                    "Improve physical conditioning", "Be a team leader", "Increase speed and strength",
+                    "Improve playbook knowledge"]
+        case .soccer:
+            return ["Make varsity team", "Score more goals", "Become a starter",
+                    "Get recruited", "Improve fitness", "Develop leadership", "Improve game vision"]
+        case .tennis:
+            return ["Win at local tournaments", "Improve ranking", "Get to varsity",
+                    "Develop a consistent serve", "Improve footwork", "Play at college level",
+                    "Compete regionally"]
+        }
+    }
+
+    // MARK: - Body
+
+    var body: some View {
+        List {
+            Section {
+                Text("Update your training profile so the AI Coach reflects your real skill level. Changes take effect in your next conversation.")
+                    .font(.subheadline)
+                    .foregroundColor(.appTextSecondary)
+            }
+
+            // MARK: Sport picker
+            Section("Primary Sport") {
+                Picker("Sport", selection: $selectedSport) {
+                    ForEach(Sport.allCases, id: \.self) { sport in
+                        Text(sport.rawValue.capitalized).tag(sport)
+                    }
+                }
+                .pickerStyle(.segmented)
+            }
+
+            // MARK: Skill ratings
+            Section {
+                ForEach(skillKeys, id: \.self) { skill in
+                    let isRated = ratedSkills.contains(skill)
+                    HStack {
+                        Text(skill)
+                            .font(.subheadline)
+                        Spacer()
+                        if isRated {
+                            Stepper(
+                                value: Binding(
+                                    get: { skillRatings[skill] ?? 5 },
+                                    set: { newVal in
+                                        skillRatings[skill] = newVal
+                                        ratedSkills.insert(skill)
+                                    }
+                                ),
+                                in: 1...10
+                            ) {
+                                ProfileRatingBadge(rating: skillRatings[skill] ?? 5)
+                            }
+                        } else {
+                            Button("Rate this skill") {
+                                skillRatings[skill] = 5
+                                ratedSkills.insert(skill)
+                            }
+                            .font(.caption)
+                            .foregroundColor(.appPrimary)
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+            } header: {
+                Text("Skill Ratings")
+            } footer: {
+                Text("Tap \"Rate this skill\" to add a rating. Unrated skills are excluded from your AI Coach baseline. 1 = Beginner · 5 = Average · 10 = Elite.")
+                    .font(.caption)
+                    .foregroundColor(.appTextSecondary)
+            }
+
+            // MARK: Strengths
+            Section("Strengths") {
+                ForEach(strengthOptions, id: \.self) { option in
+                    Toggle(option, isOn: Binding(
+                        get: { selectedStrengths.contains(option) },
+                        set: { on in
+                            if on { selectedStrengths.insert(option) }
+                            else  { selectedStrengths.remove(option) }
+                        }
+                    ))
+                    .tint(.appSuccess)
+                    .font(.subheadline)
+                }
+            }
+
+            // MARK: Weaknesses / Focus Areas
+            Section {
+                ForEach(weaknessOptions, id: \.self) { option in
+                    Toggle(option, isOn: Binding(
+                        get: { selectedWeaknesses.contains(option) },
+                        set: { on in
+                            if on { selectedWeaknesses.insert(option) }
+                            else  { selectedWeaknesses.remove(option) }
+                        }
+                    ))
+                    .tint(.appPrimary)
+                    .font(.subheadline)
+                }
+            } header: {
+                Text("Focus Areas")
+            } footer: {
+                Text("Areas you want to improve. The AI Coach prioritises drills for these areas.")
+                    .font(.caption)
+                    .foregroundColor(.appTextSecondary)
+            }
+
+            // MARK: Goals
+            Section {
+                ForEach(goalOptions, id: \.self) { option in
+                    Toggle(option, isOn: Binding(
+                        get: { selectedGoals.contains(option) },
+                        set: { on in
+                            if on { selectedGoals.insert(option) }
+                            else  { selectedGoals.remove(option) }
+                        }
+                    ))
+                    .tint(.appAccent)
+                    .font(.subheadline)
+                }
+            } header: {
+                Text("Training Goals")
+            } footer: {
+                Text("What you are working toward this season. The AI Coach surfaces these in your coaching context.")
+                    .font(.caption)
+                    .foregroundColor(.appTextSecondary)
+            }
+
+            // MARK: Save
+            Section {
+                if saveSuccess {
+                    Label(
+                        "Profile updated! AI Coach will reflect your changes next session.",
+                        systemImage: "checkmark.circle.fill"
+                    )
+                    .foregroundColor(.appSuccess)
+                    .font(.subheadline)
+                }
+                if let err = errorMessage {
+                    Text(err)
+                        .foregroundColor(.appError)
+                        .font(.caption)
+                }
+                Button { saveProfile() } label: {
+                    HStack {
+                        Spacer()
+                        if isSaving {
+                            ProgressView()
+                        } else {
+                            Text("Save Training Profile")
+                                .fontWeight(.semibold)
+                        }
+                        Spacer()
+                    }
+                }
+                .disabled(isSaving)
+            } footer: {
+                Text("Saving immediately updates your AI Coach baseline.")
+                    .font(.caption)
+                    .foregroundColor(.appTextSecondary)
+            }
+        }
+        .navigationTitle("Training Profile")
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear { loadFromCache() }
+        .onChange(of: selectedSport) { _ in refreshSkillsForCurrentSport() }
+    }
+
+    // MARK: - Data
+
+    private func loadFromCache() {
+        guard let data = UserDefaults.standard.data(forKey: Self.surveyLocalKey),
+              let survey = try? JSONDecoder().decode(OnboardingSurveyResponse.self, from: data) else {
+            // No cached survey — all skills start as unrated (do NOT default to 5)
+            return
+        }
+        if let sport = Sport(rawValue: survey.mainSport) { selectedSport = sport }
+        skillRatings         = survey.skillRatings
+        originalSkillRatings = survey.skillRatings
+        // Mark every skill with a prior rating as "rated" — the rest remain unrated
+        ratedSkills          = Set(survey.skillRatings.keys)
+        selectedStrengths    = Set(survey.strengths)
+        selectedWeaknesses   = Set(survey.weaknesses)
+        selectedGoals        = Set(survey.goals)
+    }
+
+    /// Called when sport changes. Does NOT assign default ratings — new skills start unrated.
+    private func refreshSkillsForCurrentSport() {
+        // Intentionally empty: unknown skills stay unrated until the athlete actively sets them.
+        // The UI shows a "Rate this skill" button for any skill not in ratedSkills.
+    }
+
+    // MARK: - Save
+
+    private func saveProfile() {
+        isSaving     = true
+        errorMessage = nil
+        saveSuccess  = false
+
+        let improved = detectMaterialImprovements()
+
+        // Only send skills the athlete has explicitly rated — exclude unrated (nil) ones.
+        let ratedPayload = skillRatings.filter { ratedSkills.contains($0.key) }
+
+        let request = OnboardingSurveyRequest(
+            mainSport: selectedSport.rawValue,
+            skillRatings: ratedPayload,
+            strengths: Array(selectedStrengths),
+            weaknesses: Array(selectedWeaknesses),
+            goals: Array(selectedGoals),
+            onboardingVersion: 1
+        )
+
+        Task {
+            do {
+                try await APIClient.shared.submitOnboardingSurvey(request)
+
+                // Clear stale AI Coach weakness cache for materially improved skills
+                if !improved.isEmpty {
+                    clearStaleWeaknessCache(for: improved)
+                }
+
+                // Refresh local survey cache from server so AI Coach sees updated values
+                if let fresh = try? await APIClient.shared.getOnboardingSurvey(),
+                   let encoded = try? JSONEncoder().encode(fresh) {
+                    UserDefaults.standard.set(encoded, forKey: Self.surveyLocalKey)
+                }
+
+                CoachTelemetry.recordSurveyUpdated(sport: selectedSport, changedSkillCount: improved.count)
+
+                await MainActor.run {
+                    originalSkillRatings = skillRatings
+                    isSaving    = false
+                    saveSuccess = true
+                }
+            } catch {
+                await MainActor.run {
+                    isSaving     = false
+                    errorMessage = "Couldn't save your profile. Please try again."
+                }
+            }
+        }
+    }
+
+    /// Skills that moved from ≤3 to ≥5 — qualifies as a material improvement.
+    /// Only considers skills that were rated in the original survey (had a value ≤3).
+    private func detectMaterialImprovements() -> [String] {
+        ratedSkills.compactMap { skill in
+            guard let newRating = skillRatings[skill] else { return nil }
+            let old = originalSkillRatings[skill] ?? 0
+            return (old > 0 && old <= 3 && newRating >= 5) ? skill : nil
+        }
+    }
+
+    /// Removes improved skill keys from the AI Coach's stale recurring-weakness cache
+    /// stored under "ai_coach_context_<sport>" in UserDefaults.
+    private func clearStaleWeaknessCache(for skills: [String]) {
+        let contextKey = "\(Self.coachContextKeyPrefix)\(selectedSport.rawValue)"
+        guard var dict = UserDefaults.standard.dictionary(forKey: contextKey),
+              var weaknesses = dict["recurringWeaknesses"] as? [String: Int] else { return }
+        let lowered = skills.map { $0.lowercased() }
+        for skill in lowered { weaknesses.removeValue(forKey: skill) }
+        dict["recurringWeaknesses"] = weaknesses
+        UserDefaults.standard.set(dict, forKey: contextKey)
+    }
+}
+
+/// Small colored badge showing a skill self-rating (1-10).
+private struct ProfileRatingBadge: View {
+    let rating: Int
+
+    var color: Color {
+        switch rating {
+        case 1...3: return .appError
+        case 4...6: return .orange
+        default:    return .appSuccess
+        }
+    }
+
+    var label: String {
+        switch rating {
+        case 1...3: return "Needs work"
+        case 4...6: return "Developing"
+        default:    return "Strong"
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Text("\(rating)/10")
+                .font(.caption.weight(.semibold))
+            Text(label)
+                .font(.caption2)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
+        .background(color.opacity(0.15))
+        .foregroundColor(color)
+        .cornerRadius(6)
     }
 }

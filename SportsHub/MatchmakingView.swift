@@ -1223,8 +1223,7 @@ struct MatchmakingView: View {
             let request = CreateChallengeRequest(
                 opponentId: friendUserId,
                 sport: sport.apiValue,
-                matchType: matchTypeString,
-                friendsOnly: true
+                matchType: matchTypeString
             )
             _ = try await APIClient.shared.createChallenge(request: request)
             
@@ -1255,8 +1254,7 @@ struct MatchmakingView: View {
             let request = CreateChallengeRequest(
                 opponentId: opponent.userId,
                 sport: sport.apiValue,
-                matchType: matchTypeString,
-                friendsOnly: false
+                matchType: matchTypeString
             )
             _ = try await APIClient.shared.createChallenge(request: request)
             

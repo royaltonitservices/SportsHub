@@ -242,8 +242,8 @@ struct DailyReadinessView: View {
             biometricRow(
                 icon: "heart.fill",
                 label: "HRV Status",
-                value: recovery.hrvStatus.capitalized,
-                color: hrvStatusColor(recovery.hrvStatus)
+                value: (recovery.hrvStatus ?? "unknown").capitalized,
+                color: hrvStatusColor(recovery.hrvStatus ?? "unknown")
             )
             
             if let recoveryScore = recovery.recoveryScore {
@@ -450,17 +450,6 @@ struct DailyReadinessView: View {
                 .cornerRadius(CornerRadius.md)
             }
             
-            Divider()
-                .padding(.vertical, Spacing.lg)
-            
-            Text("Using Manual Input")
-                .font(.subheadline)
-                .fontWeight(.semibold)
-            
-            Text("Without wearable data, recommendations are based on your training history and goals.")
-                .font(.caption)
-                .foregroundColor(.appSecondary)
-                .multilineTextAlignment(.center)
         }
         .padding(Spacing.xl)
     }
@@ -534,6 +523,23 @@ struct DailyReadinessView: View {
             // Generate training recommendation based on recovery status
             if let recovery = recoveryStatus {
                 trainingRecommendation = generateRecommendation(from: recovery)
+                
+                // Cache readiness tier for AI Coach context integration
+                let readiness = recovery.readinessScore ?? 50
+                let tier: String
+                if readiness >= 80 { tier = "match_ready" }
+                else if readiness >= 60 { tier = "good" }
+                else if readiness >= 40 { tier = "light" }
+                else { tier = "recovery" }
+                UserDefaults.standard.set(tier, forKey: "daily_readiness_\(sport.rawValue)")
+                
+                // Cache recovery metrics for AI Coach wearable context
+                if let recoveryScore = recovery.recoveryScore {
+                    UserDefaults.standard.set(recoveryScore, forKey: "smartwatch_resting_hr")
+                }
+                if let sleepQuality = recovery.sleepQuality {
+                    UserDefaults.standard.set(sleepQuality, forKey: "smartwatch_sleep_hours")
+                }
             }
             
             isLoading = false

@@ -15,6 +15,44 @@ import schemas
 router = APIRouter(prefix="/tournaments", tags=["tournaments"])
 
 
+def _get_registered_tournament_ids(db: Session, user_id, tournament_ids: list) -> set:
+    """Return the set of tournament_ids the user is registered for, from a batch."""
+    if not tournament_ids:
+        return set()
+    rows = db.query(models_premium.TournamentParticipant.tournament_id).filter(
+        models_premium.TournamentParticipant.user_id == user_id,
+        models_premium.TournamentParticipant.tournament_id.in_(tournament_ids),
+    ).all()
+    return {row.tournament_id for row in rows}
+
+
+def _build_tournament_response(tournament: models_premium.Tournament, registered_ids: set) -> dict:
+    """Convert a Tournament ORM object to a response dict with is_registered computed."""
+    return {
+        "id": tournament.id,
+        "creator_id": tournament.creator_id,
+        "creator_username": tournament.creator.username if tournament.creator else "unknown",
+        "name": tournament.name,
+        "sport": tournament.sport,
+        "description": tournament.description,
+        "format": tournament.format,
+        "status": tournament.status,
+        "max_participants": tournament.max_participants,
+        "current_participants": tournament.current_participants,
+        "is_premium_only": tournament.is_premium_only,
+        "registration_opens": getattr(tournament, "registration_opens", None),
+        "registration_closes": tournament.registration_closes,
+        "start_date": tournament.start_date,
+        "end_date": tournament.end_date,
+        "location": tournament.location,
+        "is_online": tournament.is_online,
+        "entry_fee": tournament.entry_fee,
+        "prize_description": tournament.prize_description,
+        "created_at": tournament.created_at,
+        "is_registered": tournament.id in registered_ids,
+    }
+
+
 @router.post("/create", response_model=schemas.TournamentResponse, status_code=status.HTTP_201_CREATED)
 async def create_tournament(
     tournament_data: schemas.TournamentCreate,
@@ -51,7 +89,7 @@ async def create_tournament(
     # Load creator relationship for response
     tournament.creator = current_user
 
-    return tournament
+    return _build_tournament_response(tournament, set())
 
 
 @router.get("/discover", response_model=List[schemas.TournamentResponse])
@@ -83,7 +121,10 @@ async def discover_tournaments(
 
     tournaments = query.order_by(models_premium.Tournament.start_date.asc()).offset(skip).limit(limit).all()
 
-    return tournaments
+    tournament_ids = [t.id for t in tournaments]
+    registered_ids = _get_registered_tournament_ids(db, current_user.id, tournament_ids)
+
+    return [_build_tournament_response(t, registered_ids) for t in tournaments]
 
 
 @router.get("/{tournament_id}", response_model=schemas.TournamentResponse)
@@ -104,7 +145,8 @@ async def get_tournament(
             detail="Tournament not found"
         )
 
-    return tournament
+    registered_ids = _get_registered_tournament_ids(db, current_user.id, [tournament_id])
+    return _build_tournament_response(tournament, registered_ids)
 
 
 @router.post("/{tournament_id}/join", status_code=status.HTTP_201_CREATED)
@@ -264,5 +306,9 @@ async def get_my_tournaments(
 
     # Combine and deduplicate
     all_tournaments = {str(t.id): t for t in created_tournaments + participating_tournaments}
+    unique_tournaments = list(all_tournaments.values())
 
-    return list(all_tournaments.values())
+    tournament_ids = [t.id for t in unique_tournaments]
+    registered_ids = _get_registered_tournament_ids(db, current_user.id, tournament_ids)
+
+    return [_build_tournament_response(t, registered_ids) for t in unique_tournaments]

@@ -3,10 +3,11 @@ Team formation and team matches
 """
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from sqlalchemy import and_
+from sqlalchemy import and_, func
 from typing import List
 from uuid import UUID
 from datetime import datetime
+from pydantic import BaseModel
 
 from database import get_db
 from dependencies import get_current_user
@@ -16,16 +17,66 @@ import models
 router = APIRouter(prefix="/teams", tags=["teams"])
 
 
+class CreateTeamRequest(BaseModel):
+    name: str
+    sport: str
+
+
+@router.get("/open")
+async def list_open_teams(
+    sport: str,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """List teams for a sport that others can join (not captained by current user)"""
+    try:
+        sport_enum = models.Sport(sport)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Invalid sport: {sport}")
+
+    teams = db.query(models.Team).filter(
+        and_(
+            models.Team.sport == sport_enum,
+            models.Team.captain_id != current_user.id
+        )
+    ).limit(20).all()
+
+    result = []
+    for team in teams:
+        member_count = db.query(func.count(models.TeamMember.user_id)).filter(
+            models.TeamMember.team_id == team.id
+        ).scalar() or 0
+        captain = db.query(models.User).filter(models.User.id == team.captain_id).first()
+        result.append({
+            "id": str(team.id),
+            "name": team.name,
+            "sport": team.sport.value,
+            "captain_id": str(team.captain_id),
+            "captain_username": captain.username if captain else "Unknown",
+            "rating": team.rating,
+            "games_played": team.games_played,
+            "wins": team.wins,
+            "losses": team.losses,
+            "member_count": member_count
+        })
+
+    return result
+
+
 @router.post("/create")
 async def create_team(
-    name: str,
-    sport: models.Sport,
+    request: CreateTeamRequest,
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
     Create a new team
     """
+    try:
+        sport = models.Sport(request.sport)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Invalid sport: {request.sport}")
+    name = request.name
     # Check if user is already captain of a team for this sport
     existing = db.query(models.Team).filter(
         and_(

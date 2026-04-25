@@ -1,3 +1,4 @@
+
 //
 //  HomeView.swift
 //  SportsHub
@@ -7,33 +8,29 @@
 
 import SwiftUI
 
-enum Sport: String, CaseIterable {
-    case basketball = "Basketball"
-    case football = "Football"
-    case soccer = "Soccer"
-    case tennis = "Tennis"
+// Sport enum is defined in Sport.swift
 
-    var icon: String {
-        switch self {
-        case .basketball: return "basketball.fill"
-        case .football: return "football.fill"
-        case .soccer: return "soccerball"
-        case .tennis: return "tennisball.fill"
-        }
-    }
-    
-    // Lowercase value for API calls (matches backend enum)
-    var apiValue: String {
-        return self.rawValue.lowercased()
-    }
+// MARK: - Activity Load State
+
+private enum ActivityLoadState {
+    case idle
+    case loading
+    case loaded([ActivityItem])
+    case failed
 }
 
 struct HomeView: View {
     @EnvironmentObject var sessionManager: SessionManager
+    @Binding var selectedTab: Int
     @State private var selectedSport: Sport = .basketball
     @State private var showNotifications = false
     @State private var showMessages = false
+    @State private var showSearchSheet = false
     @State private var searchText = ""
+
+    // Activity feed state
+    @State private var activityState: ActivityLoadState = .idle
+    @State private var allActivityItems: [ActivityItem] = []
 
     var body: some View {
         ZStack {
@@ -70,8 +67,18 @@ struct HomeView: View {
         .sheet(isPresented: $showNotifications) {
             NotificationsView()
         }
+        .sheet(isPresented: $showSearchSheet) {
+            AddFriendView(onRequestSent: {})
+        }
         .sheet(isPresented: $showMessages) {
             MessagesListView()
+        }
+        .task {
+            await loadActivityFeed()
+        }
+        .onChange(of: selectedSport) {
+            // Re-filter cached data; no extra network call needed
+            applyActivityFilter()
         }
     }
 
@@ -83,7 +90,7 @@ struct HomeView: View {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(Color.appTextSecondary)
                 
-                TextField("Search athletes, matches, content...", text: $searchText)
+                TextField(SearchScope.friendSearch.placeholder, text: $searchText)
                     .foregroundStyle(Color.appTextPrimary)
                     .onSubmit {
                         performSearch()
@@ -230,7 +237,7 @@ struct HomeView: View {
 
     private var feedSection: some View {
         VStack(spacing: Spacing.md) {
-            // Recommended Actions
+            // Recommended Actions (static — always shown)
             VStack(alignment: .leading, spacing: Spacing.md) {
                 HStack {
                     Image(systemName: "sparkles")
@@ -242,14 +249,13 @@ struct HomeView: View {
                     Spacer()
                 }
                 
-                // Quick action cards
                 VStack(spacing: Spacing.sm) {
                     RecommendedActionCard(
                         icon: "figure.run",
                         title: "Quick \(selectedSport.rawValue) Session",
                         subtitle: "15 min skill drill",
                         color: .blue,
-                        action: { /* Navigate to train */ }
+                        action: { selectedTab = 2 }
                     )
                     
                     RecommendedActionCard(
@@ -257,7 +263,7 @@ struct HomeView: View {
                         title: "Find Opponents",
                         subtitle: "Play ranked match",
                         color: .green,
-                        action: { /* Navigate to play */ }
+                        action: { selectedTab = 1 }
                     )
                     
                     RecommendedActionCard(
@@ -265,13 +271,15 @@ struct HomeView: View {
                         title: "Ask AI Coach",
                         subtitle: "Get personalized tips",
                         color: .purple,
-                        action: { /* Open AI coach */ }
+                        action: {
+                            withAnimation { AICoachManager.shared.isExpanded = true }
+                        }
                     )
                 }
             }
             .cardBackground()
-            
-            // Activity placeholder with better prompt
+
+            // Activity section — driven by real backend data
             VStack(alignment: .leading, spacing: Spacing.md) {
                 HStack {
                     Image(systemName: selectedSport.icon)
@@ -283,34 +291,242 @@ struct HomeView: View {
                     Spacer()
                 }
 
-                VStack(spacing: Spacing.sm) {
-                    Image(systemName: "chart.line.uptrend.xyaxis")
-                        .font(.system(size: 48))
-                        .foregroundStyle(Color.appTextSecondary.opacity(0.4))
-
-                    Text("Start your journey")
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                        .foregroundStyle(Color.appTextPrimary)
-
-                    Text("Complete your first match to see your progress here")
-                        .font(.caption)
-                        .foregroundStyle(Color.appTextSecondary)
-                        .multilineTextAlignment(.center)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, Spacing.lg)
+                activityContent
             }
             .cardBackground()
         }
     }
-    
+
+    // MARK: - Activity Content (state-driven)
+
+    @ViewBuilder
+    private var activityContent: some View {
+        switch activityState {
+        case .idle:
+            EmptyView()
+
+        case .loading:
+            HStack {
+                Spacer()
+                ProgressView()
+                    .tint(Color.appPrimary)
+                Spacer()
+            }
+            .padding(.vertical, Spacing.lg)
+
+        case .loaded(let items) where items.isEmpty:
+            VStack(spacing: Spacing.sm) {
+                Image(systemName: "sportscourt")
+                    .font(.system(size: 40))
+                    .foregroundStyle(Color.appTextSecondary.opacity(0.35))
+
+                Text("No \(selectedSport.rawValue) activity yet")
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    .foregroundStyle(Color.appTextSecondary)
+
+                Text("Play your first match to see results here")
+                    .font(.caption)
+                    .foregroundStyle(Color.appTextSecondary.opacity(0.8))
+                    .multilineTextAlignment(.center)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, Spacing.lg)
+
+        case .loaded(let items):
+            VStack(spacing: 0) {
+                ForEach(Array(items.prefix(5).enumerated()), id: \.offset) { index, item in
+                    ActivityRow(item: item)
+                    if index < min(items.count, 5) - 1 {
+                        Divider()
+                            .background(Color.appTextSecondary.opacity(0.1))
+                    }
+                }
+            }
+
+        case .failed:
+            VStack(spacing: Spacing.sm) {
+                Image(systemName: "exclamationmark.triangle")
+                    .font(.system(size: 36))
+                    .foregroundStyle(Color.appError.opacity(0.7))
+
+                Text("Couldn't load activity")
+                    .font(.subheadline)
+                    .foregroundStyle(Color.appTextSecondary)
+
+                Button("Retry") {
+                    Task { await loadActivityFeed() }
+                }
+                .font(.subheadline)
+                .foregroundStyle(Color.appPrimary)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, Spacing.lg)
+        }
+    }
+
+    // MARK: - Activity Feed Load
+
+    private func loadActivityFeed() async {
+        transition(to: .loading)
+        do {
+            let items = try await APIClient.shared.getActivityFeed(limit: 50)
+            allActivityItems = items
+            applyActivityFilter()
+        } catch {
+            transition(to: .failed)
+        }
+    }
+
+    private func applyActivityFilter() {
+        let filtered = allActivityItems.filter {
+            $0.sport.lowercased() == selectedSport.rawValue.lowercased()
+        }
+        transition(to: .loaded(filtered))
+    }
+
+    /// Sets `activityState` and validates the transition in DEBUG builds.
+    ///
+    /// Pass `cameFromCache: true` when seeding state directly from a local
+    /// cache so the `.idle → .loaded` shortcut is treated as intentional.
+    private func transition(to next: ActivityLoadState, cameFromCache: Bool = false) {
+        let previous = activityState
+        #if DEBUG
+        if case .idle = previous, case .loaded = next, !cameFromCache {
+            print(
+                "⚠️ [CoherenceValidator] HomeView: skipped .loading state — " +
+                "transitioned .idle → .loaded without an intermediate .loading. " +
+                "If intentional (e.g. cache seed), call transition(to:cameFromCache: true)."
+            )
+        }
+        #endif
+        activityState = next
+    }
+
     // MARK: - Search Action
     
     private func performSearch() {
         guard !searchText.isEmpty else { return }
-        // TODO: Navigate to search results or filter feed
-        print("Searching for: \(searchText)")
+        showSearchSheet = true
+    }
+}
+
+// MARK: - Activity Row Component
+
+struct ActivityRow: View {
+    let item: ActivityItem
+
+    var body: some View {
+        HStack(spacing: Spacing.md) {
+            Image(systemName: icon)
+                .font(.body)
+                .foregroundStyle(iconColor)
+                .frame(width: 34, height: 34)
+                .background(iconColor.opacity(0.12))
+                .clipShape(Circle())
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(Color.appTextPrimary)
+
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(Color.appTextSecondary)
+                    .lineLimit(2)
+            }
+
+            Spacer()
+
+            Text(timeAgo)
+                .font(.caption2)
+                .foregroundStyle(Color.appTextSecondary.opacity(0.7))
+        }
+        .padding(.vertical, Spacing.sm)
+    }
+
+    private var icon: String {
+        switch item.type {
+        case "match_completed", "match_result":
+            return item.winnerUsername == item.username ? "trophy.fill" : "gamecontroller.fill"
+        case "challenge_received":  return "flag.fill"
+        case "challenge_accepted":  return "checkmark.circle.fill"
+        case "challenge_declined":  return "xmark.circle.fill"
+        case "friend_request", "friend_accepted": return "person.fill"
+        case "badge_earned":        return "rosette"
+        default:                    return "bell.fill"
+        }
+    }
+
+    private var iconColor: Color {
+        switch item.type {
+        case "match_completed", "match_result":
+            return item.winnerUsername == item.username ? Color.appSuccess : Color.appTextSecondary
+        case "challenge_received", "challenge_accepted": return Color.appPrimary
+        case "challenge_declined":  return Color.appError
+        case "friend_request", "friend_accepted": return .blue
+        case "badge_earned":        return .yellow
+        default:                    return Color.appPrimary
+        }
+    }
+
+    private var title: String {
+        let sport = item.sport.capitalized
+        switch item.type {
+        case "match_completed", "match_result":
+            return item.winnerUsername == item.username
+                ? "Won \(sport) Match"
+                : "\(sport) Match Result"
+        case "challenge_received":  return "New \(sport) Challenge"
+        case "challenge_accepted":  return "\(sport) Challenge Accepted"
+        case "challenge_declined":  return "\(sport) Challenge Declined"
+        case "friend_request":      return "Friend Request"
+        case "friend_accepted":     return "New Friend"
+        case "badge_earned":        return "\(sport) Badge Earned"
+        default:                    return "\(sport) Activity"
+        }
+    }
+
+    private var detail: String {
+        let opponent = item.opponentUsername.map { "@\($0)" } ?? "an opponent"
+        switch item.type {
+        case "match_completed", "match_result":
+            var text = "vs \(opponent)"
+            if let us = item.userScore, let them = item.opponentScore {
+                text += " · \(us)–\(them)"
+            }
+            if let delta = item.ratingChange, delta != 0 {
+                text += delta > 0 ? " · +\(delta) pts" : " · \(delta) pts"
+            }
+            return text
+        case "challenge_received":  return "\(opponent) sent you a challenge"
+        case "challenge_accepted":  return "\(opponent) accepted your challenge"
+        case "challenge_declined":  return "\(opponent) declined your challenge"
+        case "friend_request":      return "@\(item.username) sent you a friend request"
+        case "friend_accepted":     return "@\(item.username) is now your friend"
+        case "badge_earned":        return "You earned a new \(item.sport.capitalized) badge"
+        default:                    return "@\(item.username) had activity"
+        }
+    }
+
+    private var timeAgo: String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        var date = formatter.date(from: item.createdAt)
+        if date == nil {
+            formatter.formatOptions = [.withInternetDateTime]
+            date = formatter.date(from: item.createdAt)
+        }
+        guard let date else { return "Recently" }
+        let seconds = Int(-date.timeIntervalSinceNow)
+        switch seconds {
+        case ..<60:     return "Just now"
+        case 60..<3600: return "\(seconds / 60)m ago"
+        case 3600..<86400: return "\(seconds / 3600)h ago"
+        case 86400..<604800: return "\(seconds / 86400)d ago"
+        default:        return "\(seconds / 604800)w ago"
+        }
     }
 }
 
@@ -394,6 +610,6 @@ struct SportPillButton: View {
 }
 
 #Preview {
-    HomeView()
+    HomeView(selectedTab: .constant(0))
         .environmentObject(SessionManager.shared)
 }

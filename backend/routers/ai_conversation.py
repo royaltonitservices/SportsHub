@@ -24,6 +24,8 @@ class CoachMessageRequest(BaseModel):
     """User message to AI Coach"""
     message: str
     sport: str  # Sport context for conversation
+    context: Optional[dict] = None  # iOS context: weak_points, available_time, wearable_data, goals
+    conversation_history: Optional[List[dict]] = None  # Prior messages [{role, content}]
 
 
 class CoachMessageResponse(BaseModel):
@@ -134,19 +136,36 @@ async def send_message_to_coach(
     # Initialize AI orchestrator
     orchestrator = AIOrchestrator(db)
 
-    # TODO: Load conversation history from database
-    # For now, pass empty history
-    conversation_history = []
+    # Use conversation history from iOS (client maintains history)
+    conversation_history = request.conversation_history or []
 
-    # Generate AI response
+    # Generate AI response with full context
     response = await orchestrator.generate_coach_response(
         user_id=current_user.id,
         sport=sport,
         user_message=request.message,
-        conversation_history=conversation_history
+        conversation_history=conversation_history,
+        ios_context=request.context
     )
 
-    # TODO: Save conversation to database for history
+    # Persist both sides of the exchange for cross-device history
+    try:
+        sport_enum = models.Sport(sport)
+        db.add(models.CoachConversationMessage(
+            user_id=current_user.id,
+            sport=sport_enum,
+            role="user",
+            content=request.message,
+        ))
+        db.add(models.CoachConversationMessage(
+            user_id=current_user.id,
+            sport=sport_enum,
+            role="assistant",
+            content=response["response"],
+        ))
+        db.commit()
+    except Exception:
+        pass  # History persistence is non-critical; don't fail the response
 
     return CoachMessageResponse(
         response=response["response"],
@@ -322,9 +341,27 @@ async def get_conversation_history(
 
     Returns recent messages for context and continuity.
     """
-    # TODO: Implement conversation history storage and retrieval
-    # For now, return empty list
-    return []
+    try:
+        sport_enum = models.Sport(sport)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid sport: {sport}"
+        )
+
+    messages = db.query(models.CoachConversationMessage).filter(
+        models.CoachConversationMessage.user_id == current_user.id,
+        models.CoachConversationMessage.sport == sport_enum,
+    ).order_by(models.CoachConversationMessage.created_at.asc()).limit(limit).all()
+
+    return [
+        ConversationHistoryItem(
+            role=m.role,
+            content=m.content,
+            timestamp=m.created_at.isoformat(),
+        )
+        for m in messages
+    ]
 
 
 @router.delete("/history", dependencies=[Depends(require_premium)])
@@ -338,5 +375,18 @@ async def clear_conversation_history(
 
     Starts fresh conversation - useful for changing topics or resetting context.
     """
-    # TODO: Implement conversation deletion
+    try:
+        sport_enum = models.Sport(sport)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid sport: {sport}"
+        )
+
+    db.query(models.CoachConversationMessage).filter(
+        models.CoachConversationMessage.user_id == current_user.id,
+        models.CoachConversationMessage.sport == sport_enum,
+    ).delete(synchronize_session=False)
+    db.commit()
+
     return {"message": "Conversation history cleared"}

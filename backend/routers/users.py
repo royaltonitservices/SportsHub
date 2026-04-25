@@ -1,7 +1,7 @@
 """
 User profile and management endpoints
 """
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from sqlalchemy.orm import Session
 from typing import List
 from uuid import UUID
@@ -9,6 +9,7 @@ from database import get_db
 from dependencies import get_current_active_user
 import models
 import schemas
+import os
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -215,6 +216,79 @@ async def update_pronouns(
     return {"message": "Pronouns updated", "pronouns": pronouns}
 
 
+@router.put("/me/avatar")
+async def upload_avatar(
+    avatar: UploadFile = File(...),
+    current_user: models.User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """Upload a profile picture for the current user"""
+    MAX_SIZE = 5 * 1024 * 1024  # 5 MB
+    content = await avatar.read()
+
+    if len(content) > MAX_SIZE:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="Image must be under 5 MB"
+        )
+
+    allowed_types = {"image/jpeg", "image/jpg", "image/png", "image/webp"}
+    if avatar.content_type not in allowed_types:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only JPEG, PNG, and WebP images are supported"
+        )
+
+    ext = avatar.filename.rsplit(".", 1)[-1].lower() if "." in (avatar.filename or "") else "jpg"
+    filename = f"{current_user.id}.{ext}"
+    save_path = os.path.join("./uploads/avatars", filename)
+
+    with open(save_path, "wb") as f:
+        f.write(content)
+
+    current_user.avatar_url = f"/cdn/avatars/{filename}"
+    db.commit()
+
+    return {"avatar_url": current_user.avatar_url}
+
+
+@router.put("/me/bio")
+async def update_bio(
+    bio_data: schemas.UpdateBio,
+    current_user: models.User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """Update current user's bio"""
+    current_user.bio = bio_data.bio.strip()
+    db.commit()
+    return {"message": "Bio updated successfully"}
+
+
+@router.get("/me/trust-score")
+async def get_trust_score(
+    current_user: models.User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """Get current user's trust score and tier"""
+    score = float(current_user.trust_score or 100.0)
+    if score >= 90:
+        tier = "trusted"
+    elif score >= 60:
+        tier = "standard"
+    elif score >= 30:
+        tier = "caution"
+    else:
+        tier = "restricted"
+
+    return {
+        "trust_score": score,
+        "trust_tier": tier,
+        "matches_played": current_user.matches_played or 0,
+        "disputes_won": current_user.disputes_won or 0,
+        "disputes_lost": current_user.disputes_lost or 0
+    }
+
+
 @router.get("/me/subscription", response_model=schemas.SubscriptionStatusResponse)
 async def get_subscription_status(
     current_user: models.User = Depends(get_current_active_user),
@@ -235,14 +309,39 @@ async def get_subscription_status(
     ).first()
 
     if not subscription:
-        # No subscription record = free tier
-        return schemas.SubscriptionStatusResponse(
-            has_premium=False,
-            tier="free",
-            status=None,
-            expires_at=None,
-            features={}
-        )
+        # Admin accounts always have premium — create the record if missing
+        # (handles accounts created before the subscription auto-create logic was added)
+        if current_user.role == models.UserRole.ADMIN:
+            from datetime import timedelta
+            from models_premium import Subscription, SubscriptionTier, SubscriptionStatus
+            subscription = Subscription(
+                user_id=current_user.id,
+                tier=SubscriptionTier.PREMIUM,
+                status=SubscriptionStatus.ACTIVE,
+                price_per_month=0.00,
+                expires_at=datetime.utcnow() + timedelta(days=36500),
+                platform="admin_grant",
+                features={
+                    "ai_coach": True,
+                    "smartwatch_sync": True,
+                    "tournaments": True,
+                    "advanced_analytics": True,
+                    "goals_system": True,
+                    "performance_predictions": True
+                }
+            )
+            db.add(subscription)
+            db.commit()
+            db.refresh(subscription)
+        else:
+            # No subscription record = free tier
+            return schemas.SubscriptionStatusResponse(
+                has_premium=False,
+                tier="free",
+                status=None,
+                expires_at=None,
+                features={}
+            )
 
     # Check if subscription is active and valid
     is_active = (

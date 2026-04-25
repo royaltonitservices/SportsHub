@@ -509,49 +509,51 @@ struct EvidenceUploadView: View {
     private func handleMediaSelection() {
         Task {
             guard let selectedMedia else { return }
-            
-            // Extract filename if possible
+
             if let identifier = selectedMedia.itemIdentifier {
                 selectedMediaFileName = String(identifier.split(separator: "/").last ?? "Selected media")
             } else {
                 selectedMediaFileName = nil
             }
-            
+
             withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                 hasSelectedMedia = true
             }
         }
     }
-    
+
     private func submitEvidence() async {
         isUploading = true
         errorMessage = nil
 
         do {
-            // Only upload if media was selected
-            if hasSelectedMedia {
-                // In production, would upload actual image/video to CDN first
-                // Simulate realistic upload delay
-                try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
-                
-                let fileExtension = evidenceType == "video" ? "mp4" : "jpg"
-                let fileUrl = "https://cdn.sportshub.com/evidence/\(challenge.id)/\(evidenceType)_\(Date().timeIntervalSince1970).\(fileExtension)"
+            if hasSelectedMedia, let item = selectedMedia {
+                // Step 1: Extract real bytes from the PhotosPickerItem
+                let mimeType = evidenceType == "video" ? "video/mp4" : "image/jpeg"
+                guard let data = try await item.loadTransferable(type: Data.self), !data.isEmpty else {
+                    errorMessage = "Could not read the selected file. Please try a different one."
+                    isUploading = false
+                    return
+                }
 
-                _ = try await APIClient.shared.uploadEvidence(
+                // Step 2: Upload bytes to server — receive server-generated upload_id
+                let token = try await APIClient.shared.uploadEvidenceFile(data: data, mimeType: mimeType)
+
+                // Step 3: Associate upload with this challenge using upload_id
+                _ = try await APIClient.shared.associateEvidence(
                     challengeId: challenge.id,
+                    uploadId: token.uploadId,
                     evidenceType: evidenceType,
-                    fileUrl: fileUrl,
                     description: description.isEmpty ? nil : description
                 )
             }
 
-            // Show success
             withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
                 showSuccess = true
             }
 
-            // Dismiss after delay
-            try? await Task.sleep(nanoseconds: 2_500_000_000) // 2.5 seconds
+            // Show success overlay briefly before dismissing
+            try? await Task.sleep(for: .seconds(2))
             await onUploadComplete()
             dismiss()
         } catch {

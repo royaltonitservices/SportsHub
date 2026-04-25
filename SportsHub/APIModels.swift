@@ -24,11 +24,13 @@ struct SignupRequest: Codable {
     let password: String
     let displayName: String
     let dateOfBirth: String
+    let parentEmail: String?
     
     enum CodingKeys: String, CodingKey {
         case email, username, password
         case displayName = "display_name"
         case dateOfBirth = "date_of_birth"
+        case parentEmail = "parent_email"
     }
 }
 
@@ -36,15 +38,23 @@ struct UserResponse: Codable {
     let id: String
     let email: String
     let username: String
-    let fullName: String
+    let displayName: String
+    let fullName: String?
     let isAdmin: Bool
     let createdAt: String
-    
+    let emailVerified: Bool
+    let surveyCompleted: Bool
+    let isLegacyAccount: Bool
+
     enum CodingKeys: String, CodingKey {
         case id, email, username
+        case displayName = "display_name"
         case fullName = "full_name"
         case isAdmin = "is_admin"
         case createdAt = "created_at"
+        case emailVerified = "email_verified"
+        case surveyCompleted = "survey_completed"
+        case isLegacyAccount = "is_legacy_account"
     }
 }
 
@@ -161,14 +171,13 @@ struct LeaderboardEntry: Codable {
 struct CreateChallengeRequest: Codable {
     let opponentId: String
     let sport: String
+    /// Must be "ranked" or "unranked" — the only values the backend MatchType enum accepts.
     let matchType: String
-    let friendsOnly: Bool
-    
+
     enum CodingKeys: String, CodingKey {
         case opponentId = "opponent_id"
         case sport
         case matchType = "match_type"
-        case friendsOnly = "friends_only"
     }
 }
 
@@ -519,6 +528,23 @@ struct CreateClipRequest: Codable {
     }
 }
 
+// MARK: - Trust Score
+struct TrustScoreResponse: Codable {
+    let trustScore: Double
+    let trustTier: String
+    let matchesPlayed: Int
+    let disputesWon: Int
+    let disputesLost: Int
+
+    enum CodingKeys: String, CodingKey {
+        case trustScore = "trust_score"
+        case trustTier = "trust_tier"
+        case matchesPlayed = "matches_played"
+        case disputesWon = "disputes_won"
+        case disputesLost = "disputes_lost"
+    }
+}
+
 // MARK: - Activity Models
 struct ActivityItem: Codable {
     let type: String
@@ -588,8 +614,56 @@ struct UserBadgeResponse: Codable {
     }
 }
 
+// MARK: - Highlight API Models
+struct HighlightResponse: Codable {
+    let id: String
+    let userId: String
+    let mediaUrl: String
+    let thumbnailUrl: String?
+    let caption: String?
+    let sport: String?
+    let createdAt: String
+    let expiresAt: String
+    let viewsCount: Int
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case userId = "user_id"
+        case mediaUrl = "media_url"
+        case thumbnailUrl = "thumbnail_url"
+        case caption, sport
+        case createdAt = "created_at"
+        case expiresAt = "expires_at"
+        case viewsCount = "views_count"
+    }
+}
+
+// MARK: - Open Team Response
+struct OpenTeamResponse: Codable, Identifiable {
+    let id: String
+    let name: String
+    let sport: String
+    let captainId: String
+    let captainUsername: String
+    let rating: Int
+    let gamesPlayed: Int
+    let wins: Int
+    let losses: Int
+    let memberCount: Int
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, sport
+        case captainId = "captain_id"
+        case captainUsername = "captain_username"
+        case rating
+        case gamesPlayed = "games_played"
+        case wins, losses
+        case memberCount = "member_count"
+    }
+}
+
 // MARK: - Team Models
-struct TeamResponse: Codable {
+struct TeamResponse: Codable, Identifiable {
     let id: String
     let name: String
     let sport: String
@@ -628,6 +702,175 @@ struct SubscriptionStatusResponse: Codable {
         case tier, status
         case expiresAt = "expires_at"
         case features
+    }
+}
+
+// MARK: - Training API Models
+
+struct APIDrillResponse: Codable, Identifiable {
+    let id: String
+    let name: String
+    let category: String
+    let difficulty: String
+    let durationMinutes: Int
+    let equipment: [String]
+    let description: String
+    let focusAreas: [String]
+    let instructions: [String]
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, category, difficulty, description, equipment, instructions
+        case durationMinutes = "duration_minutes"
+        case focusAreas = "focus_areas"
+    }
+}
+
+struct DrillCategoriesResponse: Codable {
+    let sport: String
+    let categories: [String]
+}
+
+struct DrillLogEntryRequest: Codable {
+    let drillName: String
+    let drillOrder: Int
+    let duration: Int
+    let effort: String?
+    let metricType: String?
+    let metricValue: String?
+    let notes: String?
+
+    enum CodingKeys: String, CodingKey {
+        case duration, effort, notes
+        case drillName = "drill_name"
+        case drillOrder = "drill_order"
+        case metricType = "metric_type"
+        case metricValue = "metric_value"
+    }
+}
+
+struct LogSessionRequest: Codable {
+    let sport: String
+    let drills: [DrillLogEntryRequest]
+    let notes: String?
+    let aiPerformanceRating: Double?
+    let aiInsights: [String]?
+    let aiAreasToImprove: [String]?
+    let aiNextSessionRecs: [String]?
+
+    enum CodingKeys: String, CodingKey {
+        case sport, drills, notes
+        case aiPerformanceRating = "ai_performance_rating"
+        case aiInsights = "ai_insights"
+        case aiAreasToImprove = "ai_areas_to_improve"
+        case aiNextSessionRecs = "ai_next_session_recs"
+    }
+}
+
+struct DrillLogEntryResponse: Codable, Identifiable {
+    let id: String
+    let drillName: String
+    let drillOrder: Int
+    let duration: Int
+    let effort: String?
+    let metricType: String?
+    let metricValue: String?
+    let notes: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, duration, effort, notes
+        case drillName = "drill_name"
+        case drillOrder = "drill_order"
+        case metricType = "metric_type"
+        case metricValue = "metric_value"
+    }
+}
+
+struct TrainingSessionResponse: Codable, Identifiable {
+    let id: String
+    let sport: String
+    let totalDuration: Int
+    let notes: String?
+    let effortRating: Double?
+    let aiPerformanceRating: Double?
+    let aiInsights: [String]?
+    let aiAreasToImprove: [String]?
+    let aiNextSessionRecs: [String]?
+    let drills: [DrillLogEntryResponse]
+    let createdAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case id, sport, notes, drills
+        case totalDuration = "total_duration"
+        case effortRating = "effort_rating"
+        case aiPerformanceRating = "ai_performance_rating"
+        case aiInsights = "ai_insights"
+        case aiAreasToImprove = "ai_areas_to_improve"
+        case aiNextSessionRecs = "ai_next_session_recs"
+        case createdAt = "created_at"
+    }
+}
+
+struct SaveWorkoutRequest: Codable {
+    let sport: String
+    let name: String
+    let description: String?
+    let estimatedDuration: Int?
+    let difficulty: String?
+    let focusAreas: [String]?
+    let drills: [[String: String]]
+
+    enum CodingKeys: String, CodingKey {
+        case sport, name, description, difficulty, drills
+        case estimatedDuration = "estimated_duration"
+        case focusAreas = "focus_areas"
+    }
+}
+
+struct SavedWorkoutResponse: Codable, Identifiable {
+    let id: String
+    let sport: String
+    let name: String
+    let description: String?
+    let estimatedDuration: Int?
+    let difficulty: String?
+    let focusAreas: [String]
+    let drills: [[String: String]]
+    let timesUsed: Int
+    let createdAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case id, sport, name, description, difficulty, drills
+        case estimatedDuration = "estimated_duration"
+        case focusAreas = "focus_areas"
+        case timesUsed = "times_used"
+        case createdAt = "created_at"
+    }
+}
+
+// MARK: - Skill Progression Sync Models
+
+struct SkillScorePayload: Codable {
+    let category: String
+    let score: Double
+    let trend: String
+    let lastUpdated: String?
+    let dataPoints: Int
+
+    enum CodingKeys: String, CodingKey {
+        case category, score, trend
+        case lastUpdated = "last_updated"
+        case dataPoints = "data_points"
+    }
+}
+
+struct SkillSnapshotResponse: Codable {
+    let sport: String
+    let skills: [SkillScorePayload]
+    let updatedAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case sport, skills
+        case updatedAt = "updated_at"
     }
 }
 
@@ -689,4 +932,64 @@ struct TennisCourt: Codable, Identifiable {
     }
 }
 
+
+// MARK: - Email Verification Models
+
+struct SendCodeResponse: Codable {
+    let message: String
+    let email: String  // Masked email shown to user
+}
+
+struct VerifyCodeRequest: Codable {
+    let code: String
+}
+
+// MARK: - Onboarding Survey Models
+
+struct OnboardingSurveyRequest: Codable {
+    let mainSport: String
+    /// Skill ratings: {"shooting": 7, "dribbling": 5} — keys are sport-specific
+    let skillRatings: [String: Int]
+    let strengths: [String]
+    let weaknesses: [String]
+    /// Athlete training goals — e.g. ["make varsity", "improve athleticism"]
+    let goals: [String]
+    let onboardingVersion: Int
+
+    enum CodingKeys: String, CodingKey {
+        case mainSport = "main_sport"
+        case skillRatings = "skill_ratings"
+        case strengths
+        case weaknesses
+        case goals
+        case onboardingVersion = "onboarding_version"
+    }
+}
+
+struct OnboardingSurveyResponse: Codable {
+    let id: String
+    let userId: String
+    let mainSport: String
+    let skillRatings: [String: Int]
+    let strengths: [String]
+    let weaknesses: [String]
+    /// Athlete training goals — empty array for surveys created before Phase 13
+    let goals: [String]
+    let onboardingVersion: Int
+    let createdAt: String
+    let updatedAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case userId = "user_id"
+        case mainSport = "main_sport"
+        case skillRatings = "skill_ratings"
+        case strengths
+        case weaknesses
+        case goals
+        case onboardingVersion = "onboarding_version"
+        case createdAt = "created_at"
+        case updatedAt = "updated_at"
+    }
+}
 

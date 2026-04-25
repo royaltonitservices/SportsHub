@@ -11,18 +11,21 @@ struct GroupChatsView: View {
     @State private var groups: [GroupChat] = []
     @State private var isLoading = false
     @State private var showingCreateGroup = false
+    @State private var errorMessage: String?
     
     var body: some View {
         NavigationStack {
             Group {
-                if isLoading {
+                if isLoading && groups.isEmpty {
                     ProgressView()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if groups.isEmpty {
                     emptyState
                 } else {
                     groupsList
                 }
             }
+            .background(Color.appBackground)
             .navigationTitle("Group Chats")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
@@ -30,8 +33,7 @@ struct GroupChatsView: View {
                     Button {
                         showingCreateGroup = true
                     } label: {
-                        Image(systemName: "plus.circle.fill")
-                            .foregroundColor(.appPrimary)
+                        Image(systemName: "plus")
                     }
                 }
             }
@@ -91,12 +93,12 @@ struct GroupChatsView: View {
     private func loadGroups() async {
         isLoading = true
         defer { isLoading = false }
-        
-        // Placeholder - implement API call
-        // groups = await APIClient.shared.getGroupChats()
-        
-        // Mock data for now
-        groups = []
+        do {
+            groups = try await APIClient.shared.getGroups()
+        } catch {
+            // Stay empty — user can create a group
+            groups = []
+        }
     }
 }
 
@@ -190,7 +192,8 @@ struct CreateGroupView: View {
     @State private var selectedFriends: Set<UUID> = []
     @State private var friends: [User] = []
     @State private var isCreating = false
-    
+    @State private var createError: String? = nil
+
     let onCreate: (GroupChat) -> Void
     
     var body: some View {
@@ -249,6 +252,14 @@ struct CreateGroupView: View {
                     .disabled(groupName.isEmpty || selectedFriends.isEmpty || isCreating)
                 }
             }
+            .alert("Error", isPresented: Binding(
+                get: { createError != nil },
+                set: { if !$0 { createError = nil } }
+            )) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(createError ?? "")
+            }
             .task {
                 await loadFriends()
             }
@@ -256,33 +267,41 @@ struct CreateGroupView: View {
     }
     
     private func loadFriends() async {
-        // Placeholder - implement API call
-        // friends = await APIClient.shared.getFriends()
-        friends = []
+        do {
+            let friendships = try await APIClient.shared.getFriends()
+            let currentUserId = SessionManager.shared.currentUser?.id.uuidString ?? ""
+            friends = friendships.compactMap { f -> User? in
+                let friendId = f.userAId == currentUserId ? f.userBId : f.userAId
+                guard let uuid = UUID(uuidString: friendId) else { return nil }
+                return User(id: uuid, email: "", username: "User \(friendId.prefix(8))", displayName: "", role: .user)
+            }
+        } catch {
+            friends = []
+        }
     }
     
     private func createGroup() {
+        guard !groupName.isEmpty, !selectedFriends.isEmpty else { return }
         isCreating = true
         
         Task {
-            // Placeholder - implement API call
-            // let group = await APIClient.shared.createGroup(name: groupName, description: groupDescription, memberIds: selectedFriends.map { $0.uuidString })
-            
-            // Mock response
-            let mockGroup = GroupChat(
-                id: UUID().uuidString,
-                name: groupName,
-                description: groupDescription.isEmpty ? nil : groupDescription,
-                creatorId: "current-user-id",
-                avatarSeed: UUID().uuidString,
-                memberCount: selectedFriends.count + 1,
-                lastMessage: nil,
-                lastMessageAt: nil,
-                unreadCount: 0
-            )
-            
-            onCreate(mockGroup)
-            dismiss()
+            defer { isCreating = false }
+            do {
+                let memberIds = selectedFriends.map { $0.uuidString }
+                let group = try await APIClient.shared.createGroup(
+                    name: groupName,
+                    description: groupDescription.isEmpty ? nil : groupDescription,
+                    memberIds: memberIds
+                )
+                await MainActor.run {
+                    onCreate(group)
+                    dismiss()
+                }
+            } catch {
+                await MainActor.run {
+                    createError = "Couldn't create group. Please try again."
+                }
+            }
         }
     }
 }
@@ -291,6 +310,7 @@ struct GroupChatDetailView: View {
     let group: GroupChat
     @State private var messages: [GroupMessage] = []
     @State private var messageText = ""
+    @State private var sendError: String? = nil
     
     var body: some View {
         VStack(spacing: 0) {
@@ -303,6 +323,24 @@ struct GroupChatDetailView: View {
                 .padding(Spacing.md)
             }
             
+            // Send error banner
+            if let err = sendError {
+                HStack(spacing: Spacing.sm) {
+                    Image(systemName: "exclamationmark.circle.fill")
+                        .foregroundStyle(.red)
+                    Text(err)
+                        .font(.caption)
+                        .foregroundStyle(Color.appTextPrimary)
+                    Spacer()
+                    Button("Dismiss") { sendError = nil }
+                        .font(.caption)
+                        .foregroundStyle(Color.appPrimary)
+                }
+                .padding(.horizontal, Spacing.md)
+                .padding(.vertical, Spacing.sm)
+                .background(Color.red.opacity(0.1))
+            }
+
             // Message input
             HStack(spacing: Spacing.sm) {
                 TextField("Message", text: $messageText)
@@ -328,17 +366,30 @@ struct GroupChatDetailView: View {
     }
     
     private func loadMessages() async {
-        // Placeholder - implement API call
-        messages = []
+        do {
+            messages = try await APIClient.shared.getGroupMessages(groupId: group.id)
+        } catch {
+            messages = []
+        }
     }
     
     private func sendMessage() {
-        let _ = messageText
+        let text = messageText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
         messageText = ""
         
         Task {
-            // Placeholder - implement API call
-            // await APIClient.shared.sendGroupMessage(groupId: group.id, content: text)
+            do {
+                let sent = try await APIClient.shared.sendGroupMessage(groupId: group.id, content: text)
+                await MainActor.run {
+                    messages.append(sent)
+                }
+            } catch {
+                await MainActor.run {
+                    messageText = text  // Restore on failure
+                    sendError = "Message failed to send. Tap to retry."
+                }
+            }
         }
     }
 }

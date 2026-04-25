@@ -18,7 +18,13 @@ struct TrainView: View {
     @State private var showAICoach = false
     @State private var showPremiumUpgrade = false
     @State private var showFindPartner = false
+    @State private var showWeaknessSurvey = false
     @State private var recentSessions: [TrainingSessionPreview] = []
+    @State private var savedWorkouts: [SavedWorkout] = []
+    @State private var showQuickDrillSession = false
+    @State private var quickDrillName = ""
+    @State private var quickDrillDuration: Int = 0
+    @State private var selectedSessionDetail: TrainingSessionPreview? = nil
 
     var body: some View {
         NavigationStack {
@@ -39,7 +45,10 @@ struct TrainView: View {
                     
                     // AI Coach Chat (Visible to all, Premium-gated on tap)
                     aiCoachChatCard
-                    
+
+                    // Weakness / Focus Area Survey
+                    weaknessSurveyCard
+
                     // Quick Actions
                     quickActions
                     
@@ -50,7 +59,12 @@ struct TrainView: View {
                     if !recentSessions.isEmpty {
                         recentSessionsSection
                     }
-                    
+
+                    // Saved Workouts (built via Workout Builder)
+                    if !savedWorkouts.isEmpty {
+                        savedWorkoutsSection
+                    }
+
                     // Challenges Section
                     challengesSection
 
@@ -84,6 +98,7 @@ struct TrainView: View {
                         .padding(.vertical, Spacing.xl)
                         .cardBackground()
                     }
+                    .capabilityGated(.trainingPrograms)
 
                     // Skill Progression (Premium AI Feature)
                     NavigationLink {
@@ -144,7 +159,9 @@ struct TrainView: View {
             .background(Color.appBackground)
             .navigationTitle("Train")
             .navigationBarTitleDisplayMode(.large)
-            .sheet(isPresented: $showLogSession) {
+            .sheet(isPresented: $showLogSession, onDismiss: {
+                Task { await loadRecentSessions() }
+            }) {
                 TrainingSessionView(sport: selectedSport)
             }
             .sheet(isPresented: $showDrillLibrary) {
@@ -161,15 +178,79 @@ struct TrainView: View {
                     AICoachChatView(sport: selectedSport)
                 }
             }
+            .sheet(isPresented: $showWeaknessSurvey) {
+                WeaknessSurveyView(sport: selectedSport)
+            }
             .sheet(isPresented: $showFindPartner) {
                 MatchmakingView(sport: selectedSport)
             }
             .sheet(isPresented: $showPremiumUpgrade) {
                 PremiumSubscriptionView()
             }
+            .sheet(isPresented: $showQuickDrillSession) {
+                TrainingSessionView(sport: selectedSport, prefilledDrillName: quickDrillName, prefilledDuration: quickDrillDuration > 0 ? quickDrillDuration : nil)
+            }
+            .task(id: selectedSport) {
+                await loadRecentSessions()
+                loadSavedWorkouts()
+            }
         }
     }
     
+    private func loadRecentSessions() async {
+        // Try backend first
+        do {
+            let sessions = try await APIClient.shared.getTrainingHistory(sport: selectedSport)
+            // Flatten multi-drill sessions into individual preview entries
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            recentSessions = sessions.flatMap { session in
+                let date = formatter.date(from: session.createdAt) ?? Date()
+                return session.drills.map { drill in
+                    TrainingSessionPreview(
+                        drillName: drill.drillName,
+                        sport: selectedSport,
+                        duration: drill.duration,
+                        metricType: drill.metricType ?? "",
+                        metricValue: drill.metricValue ?? "",
+                        date: date,
+                        effortLevel: drill.effort ?? ""
+                    )
+                }
+            }
+            return
+        } catch {
+            print("Training history backend unavailable, using local cache: \(error)")
+        }
+        // Fallback: load from UserDefaults cache
+        let key = "recent_sessions_\(selectedSport.rawValue)"
+        guard let data = UserDefaults.standard.data(forKey: key),
+              let savedSessions = try? JSONDecoder().decode([SavedSessionData].self, from: data) else {
+            recentSessions = []
+            return
+        }
+        recentSessions = savedSessions.map { saved in
+            TrainingSessionPreview(
+                drillName: saved.drillName,
+                sport: selectedSport,
+                duration: saved.duration,
+                metricType: saved.metricType,
+                metricValue: saved.metricValue,
+                date: saved.date,
+                effortLevel: saved.effortLevel
+            )
+        }
+    }
+    
+    private func loadSavedWorkouts() {
+        guard let data = UserDefaults.standard.data(forKey: "saved_workouts_v2"),
+              let decoded = try? JSONDecoder().decode([SavedWorkout].self, from: data) else {
+            savedWorkouts = []
+            return
+        }
+        savedWorkouts = decoded.sorted { $0.createdAt > $1.createdAt }
+    }
+
     // MARK: - Weekly Drills Card
     
     private var weeklyDrillsCard: some View {
@@ -211,7 +292,7 @@ struct TrainView: View {
                                 .foregroundStyle(.cyan)
                         }
                         
-                        Text("Fresh, personalized drills every week")
+                        Text("Curated drill recommendations for your sport")
                             .font(.caption)
                             .foregroundStyle(Color.appSecondary)
                     }
@@ -229,7 +310,7 @@ struct TrainView: View {
                         Image(systemName: "target")
                             .font(.caption)
                             .foregroundStyle(Color.orange)
-                        Text("Tailored to weak points")
+                        Text("Sport-specific drills")
                             .font(.caption)
                             .foregroundStyle(Color.appTextSecondary)
                     }
@@ -339,6 +420,58 @@ struct TrainView: View {
         .buttonStyle(.plain)
     }
     
+    // MARK: - Weakness Survey Card
+
+    private var weaknessSurveyCard: some View {
+        Button(action: { showWeaknessSurvey = true }) {
+            HStack(spacing: Spacing.md) {
+                ZStack {
+                    Circle()
+                        .fill(Color.appAccent.opacity(0.15))
+                        .frame(width: 44, height: 44)
+                    Image(systemName: "target")
+                        .font(.title3)
+                        .foregroundStyle(Color.appAccent)
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: Spacing.xs) {
+                        Text("Set Focus Areas")
+                            .font(.headline)
+                            .foregroundStyle(Color.appTextPrimary)
+                        if SportWeaknesses.hasCompleted(for: selectedSport) {
+                            let count = SportWeaknesses.load(for: selectedSport).count
+                            Text("\(count) selected")
+                                .font(.caption)
+                                .fontWeight(.semibold)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Color.appPrimary.opacity(0.15))
+                                .foregroundStyle(Color.appPrimary)
+                                .cornerRadius(4)
+                        }
+                    }
+
+                    Text(SportWeaknesses.hasCompleted(for: selectedSport)
+                         ? "Tap to update your \(selectedSport.rawValue) weak points"
+                         : "Tell your coach what to target — sport-specific, personalized")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.leading)
+                }
+
+                Spacer()
+
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(Spacing.md)
+            .cardBackground()
+        }
+        .buttonStyle(.plain)
+    }
+
     // MARK: - Quick Actions
     
     private var quickActions: some View {
@@ -427,7 +560,73 @@ struct TrainView: View {
             
             VStack(spacing: Spacing.sm) {
                 ForEach(recentSessions.prefix(5)) { session in
-                    TrainingSessionCard(session: session)
+                    Button {
+                        selectedSessionDetail = session
+                    } label: {
+                        TrainingSessionCard(session: session)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .sheet(item: $selectedSessionDetail) { session in
+            TrainingSessionDetailSheet(session: session)
+        }
+    }
+
+    // MARK: - Saved Workouts Section
+
+    private var savedWorkoutsSection: some View {
+        VStack(spacing: Spacing.md) {
+            HStack {
+                Image(systemName: "bookmark.fill")
+                    .foregroundStyle(Color.appPrimary)
+                Text("Saved Workouts")
+                    .font(.title3)
+                    .fontWeight(.bold)
+                    .foregroundStyle(Color.appTextPrimary)
+                Spacer()
+                Text("Stored on this device")
+                    .font(.caption)
+                    .foregroundStyle(Color.appTextSecondary)
+            }
+
+            VStack(spacing: Spacing.sm) {
+                ForEach(savedWorkouts.prefix(5)) { workout in
+                    Button(action: {
+                        quickDrillName = workout.name
+                        quickDrillDuration = workout.drills.reduce(0) { $0 + $1.durationMinutes }
+                        showQuickDrillSession = true
+                    }) {
+                        HStack(spacing: Spacing.md) {
+                            Image(systemName: workout.sport.icon)
+                                .font(.title2)
+                                .foregroundStyle(Color.appPrimary)
+                                .frame(width: 44, height: 44)
+                                .background(Color.appPrimary.opacity(0.15))
+                                .cornerRadius(CornerRadius.sm)
+
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(workout.name)
+                                    .font(.subheadline)
+                                    .fontWeight(.semibold)
+                                    .foregroundStyle(Color.appTextPrimary)
+                                Text("\(workout.drills.count) drill\(workout.drills.count == 1 ? "" : "s") · \(workout.sport.rawValue.capitalized)")
+                                    .font(.caption)
+                                    .foregroundStyle(Color.appTextSecondary)
+                            }
+
+                            Spacer()
+
+                            Image(systemName: "play.circle.fill")
+                                .font(.title2)
+                                .foregroundStyle(Color.appPrimary)
+                        }
+                        .padding(Spacing.md)
+                        .background(Color.appSurface)
+                        .cornerRadius(CornerRadius.md)
+                    }
+                    .buttonStyle(.plain)
                 }
             }
         }
@@ -611,6 +810,15 @@ struct TrainingSessionPreview: Identifiable {
     let effortLevel: String
 }
 
+struct SavedSessionData: Codable {
+    let drillName: String
+    let duration: Int
+    let metricType: String
+    let metricValue: String
+    let date: Date
+    let effortLevel: String
+}
+
 struct TrainingSessionCard: View {
     let session: TrainingSessionPreview
     
@@ -657,6 +865,46 @@ struct TrainingSessionCard: View {
     }
 }
 
+// MARK: - Session Detail Sheet
+
+struct TrainingSessionDetailSheet: View {
+    let session: TrainingSessionPreview
+    @Environment(\.dismiss) private var dismiss
+
+    private var formattedDate: String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter.string(from: session.date)
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section("Drill") {
+                    LabeledContent("Name", value: session.drillName)
+                    LabeledContent("Sport", value: session.sport.rawValue.capitalized)
+                }
+                Section("Performance") {
+                    LabeledContent("Duration", value: "\(session.duration) min")
+                    LabeledContent(session.metricType, value: session.metricValue)
+                    LabeledContent("Effort", value: session.effortLevel.capitalized)
+                }
+                Section("Logged") {
+                    LabeledContent("Date", value: formattedDate)
+                }
+            }
+            .navigationTitle("Session Detail")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
+}
+
 // MARK: - Recommended Drills Extension
 
 extension TrainView {
@@ -676,7 +924,11 @@ extension TrainView {
             
             VStack(spacing: Spacing.sm) {
                 ForEach(recommendedDrills, id: \.title) { drill in
-                    QuickDrillCard(drill: drill, sport: selectedSport)
+                    QuickDrillCard(drill: drill, sport: selectedSport, onTap: {
+                        quickDrillName = drill.title
+                        quickDrillDuration = 0
+                        showQuickDrillSession = true
+                    })
                 }
             }
         }
@@ -722,11 +974,10 @@ struct QuickDrill {
 struct QuickDrillCard: View {
     let drill: QuickDrill
     let sport: Sport
-    
+    var onTap: () -> Void = {}
+
     var body: some View {
-        Button(action: {
-            // Navigate to drill detail or start session
-        }) {
+        Button(action: onTap) {
             HStack(spacing: Spacing.md) {
                 Image(systemName: drill.icon)
                     .font(.title2)

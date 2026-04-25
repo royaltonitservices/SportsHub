@@ -1,0 +1,396 @@
+{
+  "schema_version": "1.2",
+  "generated_at": "2026-04-19T00:00:00+00:00",
+  "note": "v1.2: ActivityItem cross-checked against backend/routers/activity.py — structural mismatch documented. Regenerate from Pydantic source with: cd backend && python generate_schema.py",
+  "description": "API contract between SportsHub FastAPI backend and iOS Swift client. JSON field names must match iOS CodingKey string literals. Used by validate_api_contract.sh for schema drift detection.",
+  "known_mismatch_reasons": {
+    "future-backed": "iOS has a stub OR backend sends this; the other side will catch up in a future sprint",
+    "client-only":   "field is derived/computed on the client; it never comes from or goes to the backend",
+    "deprecated":    "field exists on one side but should be removed or renamed; tracked for a cleanup sprint"
+  },
+  "models": {
+    "EvidenceFileUploadResponse": {
+      "source": "pydantic",
+      "pydantic_class": "EvidenceFileUploadResponse",
+      "backend_endpoint": "POST /evidence/upload",
+      "ios_file": "SportsHub/FileUploadToken.swift",
+      "ios_struct": "FileUploadToken",
+      "notes": [
+        "Real multipart upload pipeline implemented in Phase 4b.",
+        "iOS FileUploadToken.swift has explicit CodingKeys for all 4 fields.",
+        "Two-step flow: POST /evidence/upload → upload_id → POST /evidence/upload/{challenge_id}"
+      ],
+      "known_mismatches": {},
+      "fields": {
+        "upload_id":  {"type": "string",  "required": true},
+        "file_url":   {"type": "string",  "required": true},
+        "mime_type":  {"type": "string",  "required": true},
+        "size_bytes": {"type": "integer", "required": true}
+      }
+    },
+
+    "EvidenceResponse": {
+      "source": "pydantic",
+      "pydantic_class": "EvidenceResponse",
+      "backend_endpoint": "GET /evidence/match/{challenge_id}",
+      "ios_file": "SportsHub/APIModels.swift",
+      "ios_struct": "EvidenceResponse",
+      "notes": [
+        "12-field response. iOS EvidenceResponse struct maps all fields via explicit CodingKeys."
+      ],
+      "known_mismatches": {},
+      "fields": {
+        "id":            {"type": "string",  "required": true},
+        "challenge_id":  {"type": "string",  "required": true},
+        "submitter_id":  {"type": "string",  "required": true},
+        "evidence_type": {"type": "string",  "required": true},
+        "file_url":      {"type": "string",  "required": true},
+        "thumbnail_url": {"type": "string",  "required": false},
+        "description":   {"type": "string",  "required": false},
+        "status":        {"type": "string",  "required": true},
+        "is_required":   {"type": "boolean", "required": true},
+        "review_notes":  {"type": "string",  "required": false},
+        "created_at":    {"type": "string",  "required": true},
+        "reviewed_at":   {"type": "string",  "required": false}
+      }
+    },
+
+    "ChallengeResponse": {
+      "source": "pydantic",
+      "pydantic_class": "ChallengeResponse",
+      "backend_endpoint": "GET /challenges/{challenge_id}",
+      "ios_file": "SportsHub/APIModels.swift",
+      "ios_struct": "ChallengeResponse",
+      "notes": [
+        "Backend Pydantic schema has 9 fields. iOS struct decodes 5 additional optional fields (challenger_submitted_score, opponent_submitted_score, accepted_at, completed_at, winner_user_id) that some routers return as extra dict fields beyond the Pydantic model.",
+        "The 5 iOS-only extras decode as nil when absent — not a runtime failure.",
+        "KNOWN GAP: challenger_confirmed and opponent_confirmed are required backend fields not present in iOS ChallengeResponse. These should be added to show awaiting-confirmation UI state. Tracked as pre-existing gap."
+      ],
+      "known_mismatches": {
+        "challenger_submitted_score": {
+          "reason": "future-backed",
+          "note": "some routers return this as an extra dict field; will be standardised into the ChallengeResponse Pydantic schema"
+        },
+        "opponent_submitted_score": {
+          "reason": "future-backed",
+          "note": "same as challenger_submitted_score"
+        },
+        "accepted_at": {
+          "reason": "future-backed",
+          "note": "extra dict field from some routers; not yet in Pydantic schema"
+        },
+        "completed_at": {
+          "reason": "future-backed",
+          "note": "extra dict field from some routers; not yet in Pydantic schema"
+        },
+        "winner_user_id": {
+          "reason": "future-backed",
+          "note": "extra dict field from some routers; not yet in Pydantic schema"
+        },
+        "challenger_confirmed": {
+          "reason": "future-backed",
+          "note": "backend already sends this as a required field; iOS needs a CodingKey + awaiting-confirmation UI state"
+        },
+        "opponent_confirmed": {
+          "reason": "future-backed",
+          "note": "backend already sends this as a required field; iOS needs a CodingKey + awaiting-confirmation UI state"
+        }
+      },
+      "fields": {
+        "id":                   {"type": "string",  "required": true},
+        "sport":                {"type": "string",  "required": true},
+        "match_type":           {"type": "string",  "required": true},
+        "challenger_id":        {"type": "string",  "required": true},
+        "opponent_id":          {"type": "string",  "required": true},
+        "status":               {"type": "string",  "required": true},
+        "challenger_confirmed": {"type": "boolean", "required": true},
+        "opponent_confirmed":   {"type": "boolean", "required": true},
+        "created_at":           {"type": "string",  "required": true}
+      }
+    },
+
+    "TournamentResponse": {
+      "source": "pydantic",
+      "pydantic_class": "TournamentResponse",
+      "backend_endpoint": "GET /tournaments/{tournament_id}",
+      "ios_file": "PremiumModels.swift",
+      "ios_struct": "Tournament",
+      "notes": [
+        "Fixed 2026-04-18: iOS startsAt/endsAt/participantCount CodingKeys corrected to match backend start_date/end_date/current_participants.",
+        "iOS Tournament struct declares many fields absent from backend schema (tournament_type, ranked_type, team_size, min_elo, max_elo, current_round, is_public, is_school, is_regional, region, school_name, prizes). These decode as nil/0/[] since backend does not send them — iOS-side future feature stubs.",
+        "Backend sends creator_username, is_premium_only, location, is_online, entry_fee, prize_description — not decoded by iOS; tournament list UI does not display these fields."
+      ],
+      "known_mismatches": {
+        "creator_username": {
+          "reason": "future-backed",
+          "note": "backend sends; iOS will decode when creator attribution is shown in tournament detail UI"
+        },
+        "is_premium_only": {
+          "reason": "future-backed",
+          "note": "backend sends; iOS will decode when premium-only tournament badge is added"
+        },
+        "location": {
+          "reason": "future-backed",
+          "note": "backend sends; iOS will decode when venue/location display is added"
+        },
+        "is_online": {
+          "reason": "future-backed",
+          "note": "backend sends; iOS will decode when online vs in-person filter is added"
+        },
+        "entry_fee": {
+          "reason": "future-backed",
+          "note": "backend sends; iOS will decode when entry fee display and payment flow are added"
+        },
+        "prize_description": {
+          "reason": "future-backed",
+          "note": "backend sends; iOS will decode when prize detail section is added"
+        },
+        "tournament_type": {
+          "reason": "future-backed",
+          "note": "iOS stub (decodes as nil); backend will add this field when tournament type system ships"
+        },
+        "ranked_type": {
+          "reason": "future-backed",
+          "note": "iOS stub; backend will add ranked vs unranked distinction"
+        },
+        "team_size": {
+          "reason": "future-backed",
+          "note": "iOS stub; backend will add when team tournament support ships"
+        },
+        "min_elo": {
+          "reason": "future-backed",
+          "note": "iOS stub; backend will add ELO floor gating for tournament entry"
+        },
+        "max_elo": {
+          "reason": "future-backed",
+          "note": "iOS stub; backend will add ELO ceiling gating"
+        },
+        "current_round": {
+          "reason": "future-backed",
+          "note": "iOS stub; backend will add bracket round tracking"
+        },
+        "is_public": {
+          "reason": "future-backed",
+          "note": "iOS stub; backend will add public/private tournament toggle"
+        },
+        "is_school": {
+          "reason": "future-backed",
+          "note": "iOS stub; backend will add school league / intramural support"
+        },
+        "is_regional": {
+          "reason": "future-backed",
+          "note": "iOS stub; backend will add regional tournament designation"
+        },
+        "region": {
+          "reason": "future-backed",
+          "note": "iOS stub; backend will add region field"
+        },
+        "school_name": {
+          "reason": "future-backed",
+          "note": "iOS stub; backend will add school name for school leagues"
+        },
+        "prizes": {
+          "reason": "future-backed",
+          "note": "iOS stub (array); backend will add structured prize list"
+        }
+      },
+      "fields": {
+        "id":                   {"type": "string",  "required": true},
+        "creator_id":           {"type": "string",  "required": true},
+        "creator_username":     {"type": "string",  "required": true},
+        "name":                 {"type": "string",  "required": true},
+        "sport":                {"type": "string",  "required": true},
+        "description":          {"type": "string",  "required": false},
+        "format":               {"type": "string",  "required": true},
+        "status":               {"type": "string",  "required": true},
+        "max_participants":     {"type": "integer", "required": false},
+        "current_participants": {"type": "integer", "required": true},
+        "is_premium_only":      {"type": "boolean", "required": true},
+        "registration_opens":   {"type": "string",  "required": false},
+        "registration_closes":  {"type": "string",  "required": false},
+        "start_date":           {"type": "string",  "required": true},
+        "end_date":             {"type": "string",  "required": false},
+        "location":             {"type": "string",  "required": false},
+        "is_online":            {"type": "boolean", "required": true},
+        "entry_fee":            {"type": "integer", "required": true},
+        "prize_description":    {"type": "string",  "required": false},
+        "created_at":           {"type": "string",  "required": true},
+        "is_registered":        {"type": "boolean", "required": true}
+      }
+    },
+
+    "UserResponse": {
+      "source": "pydantic",
+      "pydantic_class": "UserResponse",
+      "backend_endpoint": "GET /users/me",
+      "ios_file": "SportsHub/SessionManager.swift",
+      "ios_struct": "User",
+      "notes": [
+        "IMPORTANT: iOS User struct has NO CodingKeys enum. Swift Codable synthesises JSON keys from property names directly, so camelCase properties look for camelCase JSON keys. Backend sends snake_case. This means displayName looks for key 'displayName', not 'display_name'.",
+        "iOS User struct decodes 8 properties; backend UserResponse has 13 fields. Only id/email/username/role match correctly (4 of 8 iOS properties).",
+        "bio is present in UserProfile (extends UserResponse) but not in UserResponse itself — may or may not be in the /users/me response depending on endpoint return type."
+      ],
+      "known_mismatches": {
+        "account_status": {
+          "reason": "future-backed",
+          "note": "backend sends; iOS will decode for account suspension / moderation warnings UI"
+        },
+        "age_verified": {
+          "reason": "future-backed",
+          "note": "backend sends; iOS will decode for COPPA gate and age verification badge"
+        },
+        "email_verified": {
+          "reason": "future-backed",
+          "note": "backend sends; iOS will decode to show email verification status badge"
+        },
+        "survey_completed": {
+          "reason": "future-backed",
+          "note": "backend sends; iOS will decode to skip onboarding survey for returning users"
+        },
+        "is_legacy_account": {
+          "reason": "future-backed",
+          "note": "backend sends; iOS will decode for legacy migration messaging"
+        },
+        "created_at": {
+          "reason": "future-backed",
+          "note": "backend sends; iOS will decode for member-since display in Profile"
+        },
+        "full_name": {
+          "reason": "future-backed",
+          "note": "backend sends; iOS will decode when real name is surfaced in profile UI"
+        },
+        "is_admin": {
+          "reason": "future-backed",
+          "note": "backend sends; iOS admin routing currently uses user.role via SessionManager.isAdmin"
+        },
+        "dateOfBirth": {
+          "reason": "client-only",
+          "note": "not in backend UserResponse; stored locally for age verification display / COPPA compliance UI"
+        },
+        "parentEmail": {
+          "reason": "client-only",
+          "note": "not in backend UserResponse; parent account info stored locally for COPPA compliance UI"
+        },
+        "bio": {
+          "reason": "future-backed",
+          "note": "present in UserProfile (extended schema); will be in /users/me once endpoint returns UserProfile instead of UserResponse"
+        }
+      },
+      "fields": {
+        "id":                {"type": "string",  "required": true},
+        "email":             {"type": "string",  "required": true},
+        "username":          {"type": "string",  "required": true},
+        "display_name":      {"type": "string",  "required": true},
+        "role":              {"type": "string",  "required": true},
+        "account_status":    {"type": "string",  "required": true},
+        "age_verified":      {"type": "boolean", "required": true},
+        "email_verified":    {"type": "boolean", "required": true},
+        "survey_completed":  {"type": "boolean", "required": true},
+        "is_legacy_account": {"type": "boolean", "required": true},
+        "created_at":        {"type": "string",  "required": true},
+        "full_name":         {"type": "string",  "required": false},
+        "is_admin":          {"type": "boolean", "required": true}
+      }
+    },
+
+    "EvidenceRequirementResponse": {
+      "source": "manual_dict",
+      "backend_endpoint": "GET /evidence/required/{challenge_id}",
+      "backend_file": "backend/routers/evidence.py",
+      "ios_file": "SportsHub/APIModels.swift",
+      "ios_struct": "EvidenceRequirementResponse",
+      "notes": [
+        "Backend returns a raw Python dict — no Pydantic model. Fields confirmed from check_evidence_required() in evidence.py."
+      ],
+      "known_mismatches": {},
+      "fields": {
+        "challenge_id":        {"type": "string",  "required": true},
+        "requirement":         {"type": "string",  "required": true},
+        "reason":              {"type": "string",  "required": true},
+        "is_disputed":         {"type": "boolean", "required": true},
+        "user_trust_tier":     {"type": "string",  "required": true},
+        "opponent_trust_tier": {"type": "string",  "required": true}
+      }
+    },
+
+    "ActivityItem": {
+      "source": "manual_dict",
+      "backend_endpoint": "GET /activity/feed",
+      "backend_file": "backend/routers/activity.py",
+      "ios_file": "SportsHub/APIModels.swift",
+      "ios_struct": "ActivityItem",
+      "notes": [
+        "STRUCTURAL MISMATCH — cross-checked 2026-04-19 against backend/routers/activity.py.",
+        "Backend sends a deeply-nested dict: { type, timestamp, challenge_id, sport, match_type, challenger: {id, username, display_name}, opponent: {id, username, display_name}, winner: {id, username, display_name}|null, rating_change: {challenger: int, opponent: int}|null }.",
+        "iOS ActivityItem expects flat scalar fields: user_id, username, opponent_username, winner_username, user_score, opponent_score, rating_change (Int?), created_at.",
+        "RESULT: only 'type', 'sport', and 'match_type' decode correctly. All other iOS fields are silent nil/empty. NotificationsView rows will show no usernames, no scores, no time — completely blank data.",
+        "Fix options: (A) flatten the backend dict to match iOS shape, or (B) redesign iOS ActivityItem to decode nested challenger/opponent/winner objects."
+      ],
+      "known_mismatches": {
+        "user_id": {
+          "reason": "deprecated",
+          "note": "iOS expects flat 'user_id' string; backend sends nested challenger.id — iOS field decodes as nil. Fix: add flat user_id to backend dict or redesign iOS struct."
+        },
+        "username": {
+          "reason": "deprecated",
+          "note": "iOS expects flat 'username' string; backend sends nested challenger.username — decodes as nil."
+        },
+        "opponent_username": {
+          "reason": "deprecated",
+          "note": "iOS expects flat 'opponent_username' string; backend sends nested opponent.username — decodes as nil."
+        },
+        "winner_username": {
+          "reason": "deprecated",
+          "note": "iOS expects flat 'winner_username' string; backend sends nested winner.username — decodes as nil."
+        },
+        "user_score": {
+          "reason": "deprecated",
+          "note": "iOS expects flat 'user_score' Int?; backend does not send any score field — always nil."
+        },
+        "opponent_score": {
+          "reason": "deprecated",
+          "note": "iOS expects flat 'opponent_score' Int?; backend does not send any score field — always nil."
+        },
+        "rating_change": {
+          "reason": "deprecated",
+          "note": "iOS expects 'rating_change' as Int? (single integer); backend sends {challenger: int, opponent: int} dict or null — type mismatch, iOS decodes as nil."
+        },
+        "created_at": {
+          "reason": "deprecated",
+          "note": "iOS expects key 'created_at'; backend sends key 'timestamp' — decodes as nil. All notification timestamps are blank."
+        },
+        "timestamp": {
+          "reason": "deprecated",
+          "note": "Backend sends 'timestamp'; iOS has no CodingKey for it. Should be renamed to 'created_at' on the backend."
+        },
+        "challenge_id": {
+          "reason": "future-backed",
+          "note": "Backend sends challenge_id; iOS has no field for it. Useful for deep-linking into match detail from notification tap."
+        },
+        "challenger": {
+          "reason": "deprecated",
+          "note": "Backend sends nested challenger object {id, username, display_name}; iOS has no struct for it. Flatten or add nested decodable."
+        },
+        "opponent": {
+          "reason": "deprecated",
+          "note": "Backend sends nested opponent object {id, username, display_name}; iOS has no struct for it."
+        },
+        "winner": {
+          "reason": "deprecated",
+          "note": "Backend sends nested winner object or null; iOS has no struct for it."
+        }
+      },
+      "fields": {
+        "type":        {"type": "string", "required": true},
+        "timestamp":   {"type": "string", "required": true,  "note": "iOS decodes as 'created_at' — key mismatch, always nil"},
+        "challenge_id":{"type": "string", "required": true},
+        "sport":       {"type": "string", "required": true},
+        "match_type":  {"type": "string", "required": false},
+        "challenger":  {"type": "object", "required": true,  "note": "nested {id, username, display_name}; iOS has no CodingKey"},
+        "opponent":    {"type": "object", "required": true,  "note": "nested {id, username, display_name}; iOS has no CodingKey"},
+        "winner":      {"type": "object", "required": false, "note": "nested {id, username, display_name} or null; iOS has no CodingKey"},
+        "rating_change":{"type": "object","required": false, "note": "{challenger: int, opponent: int} or null; iOS expects Int?"}
+      }
+    }
+  }
+}

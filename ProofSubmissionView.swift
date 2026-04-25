@@ -322,17 +322,41 @@ struct ProofSubmissionView: View {
     }
     
     // MARK: - Submit Proof
-    
+
     private func submitProof() async {
         isLoading = true
-        
-        // TODO: Upload photos and video to server
-        // TODO: Submit proof record via API
-        // For now, simulate network delay
-        try? await Task.sleep(nanoseconds: 2_000_000_000)
-        
-        isLoading = false
-        showSuccess = true
+        defer { isLoading = false }
+
+        do {
+            // Upload each photo: extract bytes → server upload → associate with challenge
+            for photo in capturedPhotos {
+                guard let imageData = photo.jpegData(compressionQuality: 0.8) else { continue }
+                let token = try await APIClient.shared.uploadEvidenceFile(data: imageData, mimeType: "image/jpeg")
+                _ = try await APIClient.shared.associateEvidence(
+                    challengeId: challengeId,
+                    uploadId: token.uploadId,
+                    evidenceType: "image",
+                    description: notes.isEmpty ? nil : notes
+                )
+            }
+
+            // Upload video if present: read bytes → server upload → associate
+            if let videoURL = videoURL {
+                let videoData = try Data(contentsOf: videoURL)
+                let token = try await APIClient.shared.uploadEvidenceFile(data: videoData, mimeType: "video/mp4")
+                _ = try await APIClient.shared.associateEvidence(
+                    challengeId: challengeId,
+                    uploadId: token.uploadId,
+                    evidenceType: "video",
+                    description: notes.isEmpty ? nil : notes
+                )
+            }
+
+            showSuccess = true
+        } catch {
+            errorMessage = error.localizedDescription
+            showError = true
+        }
     }
 }
 

@@ -20,6 +20,7 @@ struct PlayView: View {
     @State private var showResultSubmission = false
     @State private var selectedChallenge: ChallengeResponse?
     @State private var showDisputeDetail = false
+    @State private var challengeActionError: String?
 
     var body: some View {
         NavigationStack {
@@ -49,6 +50,14 @@ struct PlayView: View {
                                 .fontWeight(.bold)
                                 .foregroundStyle(Color.appTextPrimary)
                             Spacer()
+                        }
+
+                        if let actionError = challengeActionError {
+                            Text(actionError)
+                                .font(.caption)
+                                .foregroundStyle(Color.appError)
+                                .padding(.horizontal, Spacing.md)
+                                .padding(.vertical, Spacing.xs)
                         }
 
                         if isLoadingChallenges {
@@ -135,6 +144,9 @@ struct PlayView: View {
                 await loadSportProfile()
                 await loadActiveChallenges()
             }
+            .onReceive(NotificationCenter.default.publisher(for: .challengeListDidChange)) { _ in
+                Task { await loadActiveChallenges() }
+            }
         }
     }
     
@@ -157,17 +169,43 @@ struct PlayView: View {
     
     private func loadActiveChallenges() async {
         isLoadingChallenges = true
-        
+
         do {
             activeChallenges = try await APIClient.shared.getPendingChallenges()
             // Filter to current sport
             activeChallenges = activeChallenges.filter { $0.sport.lowercased() == selectedSport.rawValue.lowercased() }
+            // Schedule notifications for newly-received challenges
+            scheduleNotificationsForNewChallenges(activeChallenges)
         } catch {
-            print("Failed to load challenges: \(error)")
             activeChallenges = []
+            challengeActionError = "Couldn't load challenges. Pull to refresh."
         }
-        
+
         isLoadingChallenges = false
+    }
+
+    /// Schedule a local notification for each incoming challenge that hasn't been seen before.
+    private func scheduleNotificationsForNewChallenges(_ challenges: [ChallengeResponse]) {
+        let currentUserId = sessionManager.currentUser?.id.uuidString ?? ""
+        guard !currentUserId.isEmpty else { return }
+
+        let seenKey = "seen_challenge_ids"
+        let seen = Set(UserDefaults.standard.stringArray(forKey: seenKey) ?? [])
+
+        let incoming = challenges.filter { $0.status == "pending" && $0.opponentId == currentUserId }
+        let newOnes = incoming.filter { !seen.contains($0.id) }
+
+        for challenge in newOnes {
+            NotificationManager.shared.scheduleMatchNotification(
+                opponentName: "a player",
+                sport: challenge.sport.capitalized,
+                matchId: challenge.id
+            )
+        }
+
+        // Persist all current challenge IDs (incoming + outgoing) so we don't re-notify
+        let allIds = challenges.map(\.id)
+        UserDefaults.standard.set(allIds, forKey: seenKey)
     }
 
     private var yourRatingCard: some View {
@@ -354,7 +392,7 @@ struct PlayView: View {
                         Text("Team Play")
                             .font(.subheadline)
                             .fontWeight(.semibold)
-                        Text("Coming Soon")
+                        Text("3v3 Team Lobby")
                             .font(.caption2)
                             .opacity(0.8)
                     }
@@ -681,16 +719,22 @@ struct PlayView: View {
     }
     
     private func declineChallenge(_ challenge: ChallengeResponse) async {
-        // TODO: Add decline endpoint to API
-        await loadActiveChallenges()
+        challengeActionError = nil
+        do {
+            _ = try await APIClient.shared.declineChallenge(challengeId: challenge.id)
+            await loadActiveChallenges()
+        } catch {
+            challengeActionError = "Couldn't decline challenge. Please try again."
+        }
     }
     
     private func acceptChallenge(_ challenge: ChallengeResponse) async {
+        challengeActionError = nil
         do {
             _ = try await APIClient.shared.acceptChallenge(challengeId: challenge.id)
             await loadActiveChallenges()
         } catch {
-            print("Failed to accept challenge: \(error)")
+            challengeActionError = "Couldn't accept challenge. Please try again."
         }
     }
 }

@@ -28,30 +28,7 @@ extension APIClient {
     }
     
     // MARK: - Smartwatch Sync
-    
-    func connectSmartwatch(request: ConnectDeviceRequest) async throws -> SmartwatchConnection {
-        return try await post("/smartwatch/connect", body: request)
-    }
-    
-    func getSmartwatchConnection() async throws -> SmartwatchConnection {
-        return try await get("/smartwatch/connection")
-    }
-    
-    func disconnectSmartwatch() async throws -> MessageResponse {
-        return try await delete("/smartwatch/disconnect")
-    }
-    
-    func syncBiometricData(data: BiometricData) async throws -> BiometricData {
-        return try await post("/smartwatch/sync", body: data)
-    }
-    
-    func getRecentBiometricData(days: Int = 7) async throws -> [BiometricData] {
-        return try await get("/smartwatch/data/recent?days=\(days)")
-    }
-    
-    func getRecoveryStatus() async throws -> RecoveryStatus {
-        return try await get("/smartwatch/recovery-status")
-    }
+    // Canonical smartwatch methods are in APIClient.swift (with simulator/debug support)
     
     // MARK: - Tournaments
     

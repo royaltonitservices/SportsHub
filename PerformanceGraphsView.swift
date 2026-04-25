@@ -293,34 +293,57 @@ struct PerformanceGraphsView: View {
         isLoading = true
         defer { isLoading = false }
         
-        // Placeholder - implement API call
-        // Mock data for demonstration
-        ratingHistory = generateMockRatingData()
-        matchStats = generateMockMatchStats()
-    }
-    
-    private func generateMockRatingData() -> [RatingDataPoint] {
+        let currentUserId = SessionManager.shared.currentUser?.id.uuidString ?? ""
         let now = Date()
-        var data: [RatingDataPoint] = []
-        var rating = 1500
         
-        for i in (0..<30).reversed() {
-            let date = Calendar.current.date(byAdding: .day, value: -i, to: now)!
-            rating += Int.random(in: -20...30)
-            data.append(RatingDataPoint(date: date, rating: rating))
-        }
-        
-        return data
-    }
-    
-    private func generateMockMatchStats() -> [MatchStat] {
-        (0..<10).map { i in
-            MatchStat(
-                opponent: "Player \(i + 1)",
-                result: Bool.random() ? .win : .loss,
-                date: Calendar.current.date(byAdding: .day, value: -i, to: Date())!,
-                ratingChange: Int.random(in: -25...35)
+        do {
+            // Load current sport profile (real rating, games played)
+            let profile = try await APIClient.shared.getSportProfile(sport: sport.rawValue)
+            
+            // Load real completed match history from backend
+            let recentMatches = try await APIClient.shared.getRecentMatches(
+                sport: sport.rawValue.lowercased(),
+                limit: 20
             )
+            
+            // Build match stats from real data
+            let isoFormatter = ISO8601DateFormatter()
+            matchStats = recentMatches.prefix(10).compactMap { challenge in
+                let isWinner = challenge.winnerUserId == currentUserId
+                let matchDate: Date
+                if let completedAt = challenge.completedAt,
+                   let parsed = isoFormatter.date(from: completedAt) {
+                    matchDate = parsed
+                } else {
+                    return nil  // Skip matches with no completion date
+                }
+                return MatchStat(
+                    opponent: "Opponent",
+                    result: isWinner ? .win : .loss,
+                    date: matchDate,
+                    ratingChange: isWinner ? 15 : -10
+                )
+            }
+            
+            // Build estimated rating progression from real match outcomes.
+            // We don't store rating snapshots, so we walk backward from the current
+            // rating using standard Elo estimates (+15 win, -10 loss).
+            // This is an estimate, not exact history.
+            var estimatedRating = profile.rating
+            var history: [RatingDataPoint] = [RatingDataPoint(date: now, rating: estimatedRating)]
+            
+            for match in matchStats {
+                let ratingBefore = estimatedRating - (match.result == .win ? 15 : -10)
+                history.insert(RatingDataPoint(date: match.date, rating: ratingBefore), at: 0)
+                estimatedRating = ratingBefore
+            }
+            
+            ratingHistory = history
+            
+        } catch {
+            print("Failed to load performance data: \(error)")
+            ratingHistory = []
+            matchStats = []
         }
     }
 }

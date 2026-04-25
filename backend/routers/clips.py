@@ -13,6 +13,37 @@ import schemas
 router = APIRouter(prefix="/clips", tags=["clips"])
 
 
+def _build_clip_response(clip: models.Clip, liked_ids: set) -> dict:
+    """Convert a Clip ORM object to a response dict with is_liked computed."""
+    return {
+        "id": clip.id,
+        "author_id": clip.author_id,
+        "user_id": clip.author_id,
+        "username": clip.author.username if hasattr(clip, "author") and clip.author else "unknown",
+        "sport": clip.sport,
+        "title": clip.title,
+        "description": getattr(clip, "description", None),
+        "video_url": clip.video_url,
+        "thumbnail_url": getattr(clip, "thumbnail_url", None),
+        "duration": clip.duration,
+        "views_count": clip.views_count,
+        "likes_count": clip.likes_count,
+        "created_at": clip.created_at,
+        "is_liked": clip.id in liked_ids,
+    }
+
+
+def _get_liked_clip_ids(db: Session, user_id, clip_ids: list) -> set:
+    """Return the set of clip_ids that the given user has liked, from a batch of clip_ids."""
+    if not clip_ids:
+        return set()
+    rows = db.query(models.ClipLike.clip_id).filter(
+        models.ClipLike.user_id == user_id,
+        models.ClipLike.clip_id.in_(clip_ids),
+    ).all()
+    return {row.clip_id for row in rows}
+
+
 @router.post("/create", response_model=schemas.ClipResponse, status_code=status.HTTP_201_CREATED)
 async def create_clip(
     clip_data: schemas.ClipCreate,
@@ -37,7 +68,7 @@ async def create_clip(
     # Load author relationship for response
     clip.author = current_user
 
-    return clip
+    return _build_clip_response(clip, set())
 
 
 @router.get("/feed", response_model=List[schemas.ClipResponse])
@@ -59,7 +90,10 @@ async def get_clips_feed(
 
     clips = query.order_by(models.Clip.created_at.desc()).offset(skip).limit(limit).all()
 
-    return clips
+    clip_ids = [c.id for c in clips]
+    liked_ids = _get_liked_clip_ids(db, current_user.id, clip_ids)
+
+    return [_build_clip_response(c, liked_ids) for c in clips]
 
 
 @router.get("/{clip_id}", response_model=schemas.ClipResponse)
@@ -84,7 +118,8 @@ async def get_clip(
     clip.views_count += 1
     db.commit()
 
-    return clip
+    liked_ids = _get_liked_clip_ids(db, current_user.id, [clip_id])
+    return _build_clip_response(clip, liked_ids)
 
 
 @router.get("/user/{user_id}", response_model=List[schemas.ClipResponse])
@@ -103,7 +138,10 @@ async def get_user_clips(
         models.Clip.author_id == user_id
     ).order_by(models.Clip.created_at.desc()).offset(skip).limit(limit).all()
 
-    return clips
+    clip_ids = [c.id for c in clips]
+    liked_ids = _get_liked_clip_ids(db, current_user.id, clip_ids)
+
+    return [_build_clip_response(c, liked_ids) for c in clips]
 
 
 @router.get("/trending", response_model=List[schemas.ClipResponse])
@@ -126,7 +164,10 @@ async def get_trending_clips(
         (models.Clip.views_count + models.Clip.likes_count * 5).desc()
     ).limit(limit).all()
 
-    return clips
+    clip_ids = [c.id for c in clips]
+    liked_ids = _get_liked_clip_ids(db, current_user.id, clip_ids)
+
+    return [_build_clip_response(c, liked_ids) for c in clips]
 
 
 @router.post("/{clip_id}/like")
@@ -135,7 +176,7 @@ async def like_clip(
     current_user: models.User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
-    """Like a clip"""
+    """Like a clip (idempotent — no-op if already liked)"""
 
     clip = db.query(models.Clip).filter(models.Clip.id == clip_id).first()
 
@@ -145,8 +186,15 @@ async def like_clip(
             detail="Clip not found"
         )
 
-    clip.likes_count += 1
-    db.commit()
+    existing = db.query(models.ClipLike).filter(
+        models.ClipLike.user_id == current_user.id,
+        models.ClipLike.clip_id == clip_id,
+    ).first()
+
+    if not existing:
+        db.add(models.ClipLike(user_id=current_user.id, clip_id=clip_id))
+        clip.likes_count += 1
+        db.commit()
 
     return {"message": "Clip liked"}
 
@@ -157,7 +205,7 @@ async def unlike_clip(
     current_user: models.User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
-    """Unlike a clip"""
+    """Unlike a clip (idempotent — no-op if not liked)"""
 
     clip = db.query(models.Clip).filter(models.Clip.id == clip_id).first()
 
@@ -167,8 +215,15 @@ async def unlike_clip(
             detail="Clip not found"
         )
 
-    if clip.likes_count > 0:
-        clip.likes_count -= 1
+    existing = db.query(models.ClipLike).filter(
+        models.ClipLike.user_id == current_user.id,
+        models.ClipLike.clip_id == clip_id,
+    ).first()
+
+    if existing:
+        db.delete(existing)
+        if clip.likes_count > 0:
+            clip.likes_count -= 1
         db.commit()
 
     return {"message": "Clip unliked"}
@@ -260,7 +315,7 @@ async def upload_clip(
             description=description,
             video_url=video_url,
             thumbnail_url=thumbnail_url,
-            duration=0,  # TODO: Extract duration from video
+            duration=0,  # Duration extraction requires ffprobe — tracked as future work
             safety_checked=False
         )
 
@@ -271,7 +326,7 @@ async def upload_clip(
         # Load author relationship for response
         clip.author = current_user
 
-        return clip
+        return _build_clip_response(clip, set())
 
     except Exception as e:
         raise HTTPException(

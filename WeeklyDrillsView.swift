@@ -95,7 +95,7 @@ struct WeeklyDrillsView: View {
                     .fontWeight(.bold)
                     .foregroundStyle(Color.appTextPrimary)
                 
-                Text("Get fresh, AI-generated drills every week tailored to your skill level, weak points, and goals.")
+                Text("Get fresh, AI-generated drills every week based on your sport and skill level.")
                     .font(.body)
                     .foregroundStyle(Color.appTextSecondary)
                     .multilineTextAlignment(.center)
@@ -104,9 +104,9 @@ struct WeeklyDrillsView: View {
             
             VStack(alignment: .leading, spacing: Spacing.sm) {
                 premiumFeature(icon: "calendar.badge.clock", text: "New drills every Monday", color: .cyan)
-                premiumFeature(icon: "target", text: "Personalized to your weak points", color: .orange)
-                premiumFeature(icon: "brain.head.profile", text: "AI-tailored progression", color: .purple)
-                premiumFeature(icon: "chart.line.uptrend.xyaxis", text: "Based on your recent activity", color: .green)
+                premiumFeature(icon: "target", text: "Sport-specific drill selection", color: .orange)
+                premiumFeature(icon: "brain.head.profile", text: "Structured skill progression", color: .purple)
+                premiumFeature(icon: "chart.line.uptrend.xyaxis", text: "Calibrated to your sport and level", color: .green)
             }
             .padding(Spacing.md)
             .background(Color.appSurface)

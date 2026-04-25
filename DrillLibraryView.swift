@@ -15,6 +15,9 @@ struct DrillLibraryView: View {
     @State private var searchText = ""
     @State private var selectedCategory: TrainingCategory = .all
     @State private var selectedDifficulty: TrainingDifficulty = .all
+    @State private var apiDrills: [TrainingDrill] = []
+    @State private var isLoadingDrills = false
+    @State private var drillsErrorMessage: String? = nil
     
     var body: some View {
         NavigationStack {
@@ -23,18 +26,31 @@ struct DrillLibraryView: View {
                 filtersSection
                 
                 // Drills List
-                ScrollView {
-                    VStack(spacing: Spacing.md) {
-                        ForEach(filteredDrills) { drill in
-                            NavigationLink {
-                                DrillDetailView(drill: drill)
-                            } label: {
-                                DrillCard(drill: drill)
+                ZStack {
+                    if isLoadingDrills && apiDrills.isEmpty {
+                        ProgressView("Loading drills…")
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else {
+                        ScrollView {
+                            VStack(spacing: Spacing.md) {
+                                if let err = drillsErrorMessage {
+                                    Text(err)
+                                        .font(.caption)
+                                        .foregroundStyle(Color.appTextSecondary)
+                                        .padding()
+                                }
+                                ForEach(filteredDrills) { drill in
+                                    NavigationLink {
+                                        DrillDetailView(drill: drill)
+                                    } label: {
+                                        DrillCard(drill: drill)
+                                    }
+                                    .buttonStyle(PlainButtonStyle())
+                                }
                             }
-                            .buttonStyle(PlainButtonStyle())
+                            .padding(Spacing.md)
                         }
                     }
-                    .padding(Spacing.md)
                 }
             }
             .background(Color.appBackground)
@@ -47,7 +63,27 @@ struct DrillLibraryView: View {
                     }
                 }
             }
+            .task(id: sport) {
+                await loadDrillsFromAPI()
+            }
         }
+    }
+    
+    // MARK: - API Fetch
+    
+    private func loadDrillsFromAPI() async {
+        isLoadingDrills = true
+        drillsErrorMessage = nil
+        do {
+            let responses = try await APIClient.shared.getTrainingDrills(sport: sport.rawValue.lowercased())
+            apiDrills = responses.map { $0.toTrainingDrill(sport: sport) }
+        } catch {
+            // Fall back to local data silently; show error label only when local data is also empty
+            if TrainingDrill.drillsForSport(sport).isEmpty {
+                drillsErrorMessage = "Could not load drills. Please try again."
+            }
+        }
+        isLoadingDrills = false
     }
     
     // MARK: - Filters Section
@@ -127,7 +163,7 @@ struct DrillLibraryView: View {
     // MARK: - Filtered Drills
     
     private var filteredDrills: [TrainingDrill] {
-        var drills = TrainingDrill.drillsForSport(sport)
+        var drills = apiDrills.isEmpty ? TrainingDrill.drillsForSport(sport) : apiDrills
         
         // Apply category filter
         if selectedCategory != .all {
@@ -308,6 +344,115 @@ enum TrainingDifficulty: String, CaseIterable {
         case .advanced: return .red
         }
     }
+
+    /// Maps the drill difficulty level to the closest training effort level.
+    var effortLevel: EffortLevel {
+        switch self {
+        case .all, .beginner: return .light
+        case .intermediate: return .moderate
+        case .advanced: return .hard
+        }
+    }
+}
+
+// MARK: - API → TrainingDrill Mapping
+
+extension APIDrillResponse {
+    func toTrainingDrill(sport: Sport) -> TrainingDrill {
+        TrainingDrill(
+            name: name,
+            description: description,
+            category: TrainingCategory.from(apiCategory: category, sport: sport),
+            difficulty: TrainingDifficulty.from(apiDifficulty: difficulty),
+            duration: durationMinutes,
+            equipment: equipment,
+            instructions: instructions,
+            metrics: focusAreas,
+            tips: [],
+            sport: sport
+        )
+    }
+}
+
+extension TrainingCategory {
+    static func from(apiCategory: String, sport: Sport) -> TrainingCategory {
+        let lower = apiCategory.lowercased()
+        switch sport {
+        case .basketball:
+            switch lower {
+            case "shooting": return .basketballShooting
+            case "dribbling", "ball_handling": return .ballHandling
+            case "defense": return .basketballDefense
+            case "finishing": return .finishing
+            case "basketball_iq", "decision_making": return .basketballIQ
+            case "footwork": return .basketballFootwork
+            case "passing": return .basketballPassing
+            case "conditioning": return .basketballConditioning
+            case "one_on_one", "1v1": return .oneOnOneMoves
+            case "rebounding": return .rebounding
+            case "agility": return .agility
+            default: return .all
+            }
+        case .soccer:
+            switch lower {
+            case "dribbling": return .soccerDribbling
+            case "passing": return .soccerPassing
+            case "shooting": return .soccerShooting
+            case "first_touch": return .firstTouch
+            case "finishing": return .soccerFinishing
+            case "ball_control": return .ballControl
+            case "footwork": return .soccerFootwork
+            case "defense": return .soccerDefense
+            case "conditioning": return .soccerConditioning
+            case "weak_foot": return .weakFoot
+            case "position_specific": return .positionSpecific
+            default: return .all
+            }
+        case .tennis:
+            switch lower {
+            case "forehand": return .forehand
+            case "backhand": return .backhand
+            case "serve": return .serve
+            case "return", "return_of_serve": return .returnOfServe
+            case "footwork": return .tennisFootwork
+            case "volley": return .volley
+            case "consistency": return .consistency
+            case "movement": return .movement
+            case "conditioning": return .tennisConditioning
+            case "match_prep": return .matchPrep
+            case "accuracy": return .accuracy
+            case "reaction": return .tennisReaction
+            default: return .all
+            }
+        case .football:
+            switch lower {
+            case "passing", "qb_passing": return .footballPassing
+            case "catching": return .footballCatching
+            case "route_running": return .routeRunning
+            case "footwork": return .footballFootwork
+            case "speed_agility": return .speedAgility
+            case "throwing_mechanics": return .throwingMechanics
+            case "qb_drills": return .qbDrills
+            case "wr_drills": return .wrDrills
+            case "rb_drills": return .rbDrills
+            case "db_drills": return .dbDrills
+            case "conditioning": return .footballConditioning
+            case "reaction": return .reaction
+            default: return .all
+            }
+        }
+    }
+}
+
+extension TrainingDifficulty {
+    static func from(apiDifficulty: String) -> TrainingDifficulty {
+        switch apiDifficulty.lowercased() {
+        case "beginner": return .beginner
+        case "intermediate": return .intermediate
+        case "advanced": return .advanced
+        default: return .beginner
+        }
+    }
 }
 
 struct TrainingDrill: Identifiable {
@@ -322,9 +467,26 @@ struct TrainingDrill: Identifiable {
     let metrics: [String]
     let tips: [String]
     let sport: Sport
-    
+
+    /// Maps the first metric string to the closest MetricType for pre-populating the training session form.
+    /// Returns nil when no confident match exists so the picker stays blank rather than showing a wrong value.
+    var primaryMetricType: MetricType? {
+        guard let first = metrics.first else { return nil }
+        let lower = first.lowercased()
+        if lower.contains("make") || lower.contains("shot") || lower.contains("point") { return .makes }
+        if lower.contains("rep") { return .reps }
+        if lower.contains("time") || lower.contains("sec") || lower.contains("min") { return .time }
+        if lower.contains("distance") || lower.contains("meter") || lower.contains("yard") { return .distance }
+        if lower.contains("set") { return .sets }
+        if lower.contains("attempt") { return .attempts }
+        if lower.contains("accuracy") || lower.contains("%") { return .accuracy }
+        if lower.contains("weight") || lower.contains("lb") || lower.contains("kg") { return .weight }
+        return nil
+    }
+
     // Sport-specific drill libraries
     static func drillsForSport(_ sport: Sport) -> [TrainingDrill] {
+
         switch sport {
         case .basketball:
             return basketballDrills

@@ -81,6 +81,7 @@ struct AuthenticationView: View {
                                     .stroke(Color.gray.opacity(0.3), lineWidth: 1)
                             )
                         }
+                        .capabilityGated(.googleSignIn)
                         
                         // Divider
                         HStack {

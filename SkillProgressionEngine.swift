@@ -334,8 +334,10 @@ class SkillProgressionEngine: ObservableObject {
         if let encoded = try? JSONEncoder().encode(entries) {
             UserDefaults.standard.set(encoded, forKey: storageKey)
         }
+        // Fire-and-forget background sync — never blocks the UI
+        Task { await syncAllProfilesToBackend() }
     }
-    
+
     private func loadProfiles() {
         if let data = UserDefaults.standard.data(forKey: storageKey),
            let entries = try? JSONDecoder().decode([ProfileEntry].self, from: data) {
@@ -346,6 +348,84 @@ class SkillProgressionEngine: ObservableObject {
                 }
             }
             profiles = loadedProfiles
+        }
+        // Merge in backend data after local load (non-blocking)
+        Task { await mergeProfilesFromBackend() }
+    }
+
+    // MARK: - Backend Sync
+
+    /// Push all local profiles to the backend (fire-and-forget, errors are silent).
+    private func syncAllProfilesToBackend() async {
+        for (sport, profile) in profiles {
+            await syncProfileToBackend(sport: sport, profile: profile)
+        }
+    }
+
+    private func syncProfileToBackend(sport: Sport, profile: SkillProfile) async {
+        let skillDicts: [[String: Any]] = profile.skills.map { skill in
+            let formatter = ISO8601DateFormatter()
+            return [
+                "category": skill.category.rawValue,
+                "score": skill.score,
+                "trend": skill.trend.rawValue,
+                "last_updated": formatter.string(from: skill.lastUpdated),
+                "data_points": skill.dataPoints
+            ]
+        }
+        do {
+            let _: SkillSnapshotResponse = try await APIClient.shared.syncSkillSnapshot(
+                sport: sport.rawValue,
+                skills: skillDicts
+            )
+        } catch {
+            // Silent — local data is the source of truth; backend is best-effort
+        }
+    }
+
+    /// Pull backend profiles and merge them into local state (backend wins on score if newer).
+    private func mergeProfilesFromBackend() async {
+        for sport in Sport.allCases {
+            do {
+                guard let snapshot = try await APIClient.shared.getSkillSnapshot(sport: sport.rawValue) else { continue }
+                mergeSnapshot(snapshot, for: sport)
+            } catch {
+                // Backend unavailable — keep local data
+            }
+        }
+    }
+
+    private func mergeSnapshot(_ snapshot: SkillSnapshotResponse, for sport: Sport) {
+        var profile = profiles[sport] ?? SkillProfile(sport: sport)
+        let formatter = ISO8601DateFormatter()
+
+        for payload in snapshot.skills {
+            guard let category = SkillCategory(rawValue: payload.category) else { continue }
+            // Only overwrite if backend data is newer (or local has no record yet)
+            let backendDate = payload.lastUpdated.flatMap { formatter.date(from: $0) }
+            if let idx = profile.skills.firstIndex(where: { $0.category == category }) {
+                let localDate = profile.skills[idx].lastUpdated
+                if let bd = backendDate, bd > localDate {
+                    profile.skills[idx].score = payload.score
+                    profile.skills[idx].trend = SkillTrend(rawValue: payload.trend) ?? .stable
+                    profile.skills[idx].lastUpdated = bd
+                    profile.skills[idx].dataPoints = payload.dataPoints
+                }
+            } else {
+                var score = SkillScore(category: category)
+                score.score = payload.score
+                score.trend = SkillTrend(rawValue: payload.trend) ?? .stable
+                score.lastUpdated = backendDate ?? Date()
+                score.dataPoints = payload.dataPoints
+                profile.skills.append(score)
+            }
+        }
+        profile.updateAnalysis()
+        profiles[sport] = profile
+        // Persist merged result locally (without triggering another sync to avoid loop)
+        let entries = profiles.map { ProfileEntry(sportName: $0.key.rawValue, profile: $0.value) }
+        if let encoded = try? JSONEncoder().encode(entries) {
+            UserDefaults.standard.set(encoded, forKey: storageKey)
         }
     }
     

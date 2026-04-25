@@ -131,6 +131,7 @@ class User(Base):
     display_name = Column(String(100))
     date_of_birth = Column(DateTime, nullable=False)
     avatar_seed = Column(String(100))
+    avatar_url = Column(String(500))  # URL to uploaded profile picture
     bio = Column(Text)
     pronouns = Column(String(50))
     role = Column(SQLEnum(UserRole), default=UserRole.USER)
@@ -138,6 +139,22 @@ class User(Base):
     age_verified = Column(Boolean, default=False)
     email_verified = Column(Boolean, default=False)
     verification_token = Column(String(100))
+    # 6-digit code verification for mobile (secure hash stored, not the raw code)
+    verification_code_hash = Column(String(64))
+    verification_code_expires_at = Column(DateTime(timezone=True))
+    verification_code_attempts = Column(Integer, default=0)
+    verification_last_sent_at = Column(DateTime(timezone=True))
+    # Single-use enforcement: True after successful verify → prevents code replay attacks
+    verification_code_used = Column(Boolean, default=False)
+    # Password reset: same 6-digit code mechanism as email verification
+    reset_code_hash = Column(String(64))
+    reset_code_expires_at = Column(DateTime(timezone=True))
+    reset_code_used = Column(Boolean, default=False)
+    # Onboarding survey tracking
+    survey_completed = Column(Boolean, default=False)
+    onboarding_version = Column(Integer, default=0)
+    # Migration flag: legacy accounts skip re-verification and survey requirements
+    is_legacy_account = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     last_login = Column(DateTime(timezone=True))
 
@@ -145,6 +162,7 @@ class User(Base):
     sport_profiles = relationship("SportProfile", back_populates="user", cascade="all, delete-orphan")
     friendships_sent = relationship("Friendship", foreign_keys="Friendship.user_a_id", back_populates="user_a")
     friendships_received = relationship("Friendship", foreign_keys="Friendship.user_b_id", back_populates="user_b")
+    onboarding_survey = relationship("OnboardingSurvey", back_populates="user", uselist=False, cascade="all, delete-orphan")
     # subscription = relationship("Subscription", back_populates="user", uselist=False, cascade="all, delete-orphan")  # Defined in models_premium.py
 
 
@@ -420,6 +438,21 @@ class MatchEvidence(Base):
     reviewed_at = Column(DateTime(timezone=True))
 
 
+class UploadRecord(Base):
+    """Server-issued upload proof — created when a file is received and persisted by the backend.
+    Clients reference upload_id rather than supplying their own URLs."""
+    __tablename__ = "upload_records"
+
+    id = Column(UUID(), primary_key=True, default=uuid_pkg.uuid4)
+    owner_id = Column(UUID(), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    storage_path = Column(String(500), nullable=False)    # Filesystem path relative to uploads root
+    canonical_url = Column(String(500), nullable=False)   # Server-generated CDN URL
+    mime_type = Column(String(100), nullable=False)
+    original_filename = Column(String(255))
+    size_bytes = Column(Integer, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
 class BlockedUser(Base):
     __tablename__ = "blocked_users"
 
@@ -622,4 +655,187 @@ class CoachContext(Base):
     __table_args__ = (
         Index('idx_coach_context_user_sport', 'user_id', 'sport'),
     )
+
+
+# Training System — real session persistence and custom workout storage
+
+
+class TrainingSession(Base):
+    """
+    Persisted training session.  One session = one trip to the gym/court.
+    Contains 1-N drills via TrainingSessionDrill relationship.
+    Used by: TrainView history, AI Coach context, progress graphs.
+    """
+    __tablename__ = "training_sessions"
+
+    id = Column(UUID(), primary_key=True, default=uuid_pkg.uuid4)
+    user_id = Column(UUID(), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    sport = Column(SQLEnum(Sport), nullable=False)
+
+    total_duration = Column(Integer, nullable=False)   # total minutes across all drills
+    notes = Column(Text, nullable=True)
+    effort_rating = Column(Float, nullable=True)       # 1.0–5.0, avg across drills
+
+    # AI Coach analysis result (stored after analyzeTrainingSession call)
+    ai_performance_rating = Column(Float, nullable=True)    # 0.0–10.0
+    ai_insights = Column(JSON, nullable=True)               # list[str]
+    ai_areas_to_improve = Column(JSON, nullable=True)       # list[str]
+    ai_next_session_recs = Column(JSON, nullable=True)      # list[str]
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    drills = relationship(
+        "TrainingSessionDrill",
+        back_populates="session",
+        cascade="all, delete-orphan",
+        order_by="TrainingSessionDrill.drill_order"
+    )
+
+    __table_args__ = (
+        Index("idx_training_sessions_user_sport", "user_id", "sport"),
+        Index("idx_training_sessions_user_created", "user_id", "created_at"),
+    )
+
+
+class TrainingSessionDrill(Base):
+    """One drill entry within a TrainingSession."""
+    __tablename__ = "training_session_drills"
+
+    id = Column(UUID(), primary_key=True, default=uuid_pkg.uuid4)
+    session_id = Column(UUID(), ForeignKey("training_sessions.id", ondelete="CASCADE"), nullable=False)
+
+    drill_name = Column(String(200), nullable=False)
+    drill_order = Column(Integer, default=0)           # position within session
+    duration = Column(Integer, nullable=False)          # minutes
+    effort = Column(String(50), nullable=True)          # light / moderate / hard / maximal
+    metric_type = Column(String(100), nullable=True)    # e.g. "makes_out_of_10"
+    metric_value = Column(String(100), nullable=True)   # e.g. "7"
+    notes = Column(String(500), nullable=True)
+
+    session = relationship("TrainingSession", back_populates="drills")
+
+
+class SavedWorkout(Base):
+    """
+    User-defined workout plan saved for reuse.
+    drills_json stores an ordered list of drill objects so the plan
+    can be replayed or sent to AI Coach for analysis.
+    """
+    __tablename__ = "saved_workouts"
+
+    id = Column(UUID(), primary_key=True, default=uuid_pkg.uuid4)
+    user_id = Column(UUID(), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    sport = Column(SQLEnum(Sport), nullable=False)
+
+    name = Column(String(200), nullable=False)
+    description = Column(Text, nullable=True)
+    estimated_duration = Column(Integer, nullable=True)   # minutes
+    difficulty = Column(String(50), nullable=True)         # beginner / intermediate / advanced
+    focus_areas = Column(JSON, default=list)               # e.g. ["shooting", "conditioning"]
+
+    # Ordered array of { name, duration, effort, metric_type, metric_value, notes }
+    drills_json = Column(JSON, nullable=False, default=list)
+
+    times_used = Column(Integer, default=0)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    __table_args__ = (
+        Index("idx_saved_workouts_user_sport", "user_id", "sport"),
+    )
+
+
+class OnboardingSurvey(Base):
+    """
+    Sport-specific onboarding survey submitted during signup.
+    Feeds directly into AI Coach context for personalized coaching from day one.
+    One survey per user (updated in-place when re-submitted).
+    """
+    __tablename__ = "onboarding_surveys"
+
+    id = Column(UUID(), primary_key=True, default=uuid_pkg.uuid4)
+    user_id = Column(UUID(), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True)
+
+    # Primary sport selected during onboarding
+    main_sport = Column(SQLEnum(Sport), nullable=False)
+
+    # Skill ratings: {"shooting": 7, "dribbling": 5, ...} — keys are sport-specific
+    skill_ratings = Column(JSON, default=dict)
+
+    # Self-identified strengths: ["speed", "court_vision", ...]
+    strengths = Column(JSON, default=list)
+
+    # Self-identified weaknesses: ["finishing", "defense", ...]
+    weaknesses = Column(JSON, default=list)
+
+    # Athlete's training goals: ["make varsity", "improve athleticism", ...]
+    # Added Phase 13 — nullable so existing rows without the column are backward-compatible
+    goals = Column(JSON, default=list, nullable=True)
+
+    # Survey schema version (for future migrations)
+    onboarding_version = Column(Integer, default=1)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    user = relationship("User", back_populates="onboarding_survey")
+
+
+# Per-user like tracking (enables idempotent like/unlike and is_liked per request)
+
+class PostLike(Base):
+    """Tracks which users have liked which posts. Enables idempotent like/unlike and is_liked."""
+    __tablename__ = "post_likes"
+
+    user_id = Column(UUID(), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    post_id = Column(UUID(), ForeignKey("posts.id", ondelete="CASCADE"), primary_key=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class ClipLike(Base):
+    """Tracks which users have liked which clips. Enables idempotent like/unlike and is_liked."""
+    __tablename__ = "clip_likes"
+
+    user_id = Column(UUID(), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    clip_id = Column(UUID(), ForeignKey("clips.id", ondelete="CASCADE"), primary_key=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+# AI Coach conversation history (premium — enables cross-device continuity)
+
+class CoachConversationMessage(Base):
+    """
+    Persisted AI Coach conversation messages.
+    Premium feature — enables cross-device continuity and richer session context.
+    Messages are keyed by (user_id, sport) so each sport has its own thread.
+    """
+    __tablename__ = "coach_conversation_messages"
+
+    id = Column(UUID(), primary_key=True, default=uuid_pkg.uuid4)
+    user_id = Column(UUID(), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    sport = Column(SQLEnum(Sport), nullable=False)
+
+    role = Column(String(20), nullable=False)   # "user" or "assistant"
+    content = Column(Text, nullable=False)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        Index("idx_coach_msg_user_sport_time", "user_id", "sport", "created_at"),
+    )
+
+
+# Skill Progression Snapshots — persistent cross-device skill tracking
+
+class SkillSnapshot(Base):
+    """
+    Stores the current skill scores for a user+sport pair as a JSON blob.
+    Upserted on every save from SkillProgressionEngine, enabling cross-device sync.
+    """
+    __tablename__ = "skill_snapshots"
+
+    user_id = Column(UUID(), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    sport = Column(SQLEnum(Sport), primary_key=True)
+    skills_json = Column(JSON, nullable=False, default=list)  # list of SkillScore dicts
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 

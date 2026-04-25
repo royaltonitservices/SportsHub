@@ -22,6 +22,15 @@ class SessionManager: ObservableObject {
     @Published private(set) var isAdmin = false
     @Published private(set) var isLoading = false
 
+    // New-user onboarding flow states
+    /// Non-nil when the current session has a pending email verification.
+    /// Contains the masked email to display in EmailVerificationView.
+    @Published private(set) var pendingVerificationEmail: String? = nil
+    /// True when the user is authenticated but has not yet completed the onboarding survey.
+    @Published private(set) var requiresSurvey = false
+    /// Set when a background bio-sync to the backend fails; cleared after user dismisses alert.
+    @Published var bioSyncError: String? = nil
+
     // MARK: - Private State
 
     private let apiClient = APIClient.shared
@@ -42,6 +51,10 @@ class SessionManager: ObservableObject {
 
     /// Attempt to restore session from saved token
     /// Called automatically on init
+    ///
+    /// IMPORTANT: Only clears the token on confirmed auth rejection (401).
+    /// Network errors preserve the saved token and cached user so the session
+    /// survives temporary backend outages.
     private func restoreSession() async {
         guard let token = KeychainHelper.get(key: keychainKey) else {
             // No saved token - start in logged-out state
@@ -54,11 +67,40 @@ class SessionManager: ObservableObject {
 
         do {
             let userResponse: UserResponse = try await apiClient.getCurrentUser()
-            // Success - restore session
+            // Success - restore session from live server data
             setAuthenticatedState(from: userResponse, token: token)
+        } catch let error as APIError {
+            switch error {
+            case .unauthorized, .forbidden:
+                // Token is definitively invalid — clear it
+                await clearSessionCompletely()
+            default:
+                // Network error, timeout, server down, etc.
+                // Keep the token and try to restore from cached user data
+                restoreFromCache(token: token)
+            }
         } catch {
-            // Token invalid or network failure - clear everything
-            await clearSessionCompletely()
+            // Unknown error — still preserve the token, restore from cache
+            restoreFromCache(token: token)
+        }
+    }
+    
+    /// Restore session from cached UserDefaults data when the server is unreachable.
+    /// This keeps the user logged in with stale-but-valid data until connectivity returns.
+    private func restoreFromCache(token: String) {
+        apiClient.setAuthToken(token)
+        
+        if let userData = UserDefaults.standard.data(forKey: cachedUserKey),
+           let cachedUser = try? JSONDecoder().decode(User.self, from: userData) {
+            self.currentUser = cachedUser
+            self.isAuthenticated = true
+            self.isAdmin = cachedUser.role == .admin
+            
+            // Ensure account-level Premium entitlement is recognized from cache
+            StoreManager.shared.setAuthenticatedUser(email: cachedUser.email)
+        } else {
+            // No cached user AND server unreachable — can't restore
+            clearSessionState()
         }
     }
 
@@ -92,12 +134,13 @@ class SessionManager: ObservableObject {
                 showAuthFlow = false
 
             } catch let error as APIError {
-                // Cleanup on failure
-                await clearSessionCompletely()
+                // Don't destroy existing session state on login failure.
+                // Login is an attempt to create a NEW session — if it fails,
+                // just clear the partial in-flight token (not the whole session).
+                apiClient.setAuthToken(nil)
                 throw mapAPIError(error)
             } catch {
-                // Cleanup on failure
-                await clearSessionCompletely()
+                apiClient.setAuthToken(nil)
                 throw mapGenericError(error)
             }
         }
@@ -108,7 +151,7 @@ class SessionManager: ObservableObject {
 
     // MARK: - Sign Up
 
-    func signUp(email: String, username: String, password: String, dateOfBirth: Date) async throws {
+    func signUp(email: String, username: String, password: String, dateOfBirth: Date, parentEmail: String? = nil) async throws {
         // Cancel any stale previous auth task before starting a new one
         authTask?.cancel()
         authTask = nil
@@ -117,6 +160,13 @@ class SessionManager: ObservableObject {
         let age = Calendar.current.dateComponents([.year], from: dateOfBirth, to: Date()).year ?? 0
         guard age >= 13 else {
             throw AuthError.underAge
+        }
+        
+        // Under-18 users must provide a parent email
+        if age < 18 {
+            guard let parentEmail, !parentEmail.isEmpty else {
+                throw AuthError.serverError("A parent or guardian email is required for users under 18.")
+            }
         }
 
         authTask = Task {
@@ -134,7 +184,8 @@ class SessionManager: ObservableObject {
                     username: username,
                     password: password,
                     displayName: username, // Use username as initial display name
-                    dateOfBirth: dateString
+                    dateOfBirth: dateString,
+                    parentEmail: parentEmail
                 )
 
                 _ = try await apiClient.signup(request: request)
@@ -144,15 +195,14 @@ class SessionManager: ObservableObject {
                 try await login(email: email, password: password)
 
             } catch let error as APIError {
-                // Cleanup on failure
-                await clearSessionCompletely()
+                // Don't destroy state — signup failure shouldn't wipe anything
+                apiClient.setAuthToken(nil)
                 throw mapAPIError(error, isSignup: true)
             } catch let error as AuthError {
                 // Re-throw auth errors (like from auto-login)
                 throw error
             } catch {
-                // Cleanup on failure
-                await clearSessionCompletely()
+                apiClient.setAuthToken(nil)
                 throw mapGenericError(error)
             }
         }
@@ -194,7 +244,14 @@ class SessionManager: ObservableObject {
             UserDefaults.standard.set(encoded, forKey: cachedUserKey)
         }
         
-        // TODO: Send to backend API
+        // Sync to backend (best-effort).  Failure is surfaced via bioSyncError.
+        Task {
+            do {
+                try await APIClient.shared.updateBio(bio: bio ?? "")
+            } catch {
+                bioSyncError = "Bio saved locally. Backend sync failed — changes may not appear on other devices."
+            }
+        }
     }
     
     /// Update the current user's username
@@ -225,8 +282,8 @@ class SessionManager: ObservableObject {
 
     // MARK: - State Management (Private)
 
-    /// Set fully authenticated state
-    /// ONLY call this when auth is fully successful
+    /// Set fully authenticated state.
+    /// ONLY call this when auth is fully successful.
     private func setAuthenticatedState(from response: UserResponse, token: String) {
         apiClient.setAuthToken(token)
 
@@ -235,7 +292,7 @@ class SessionManager: ObservableObject {
             id: UUID(uuidString: response.id) ?? UUID(),
             email: response.email,
             username: response.username,
-            displayName: response.fullName,
+            displayName: response.displayName,
             role: isAdminUser ? .admin : .user
         )
 
@@ -244,16 +301,69 @@ class SessionManager: ObservableObject {
         self.isAuthenticated = true
         self.isAdmin = isAdminUser
 
+        // Determine onboarding flow state.
+        // Legacy accounts bypass both verification and survey.
+        let isLegacy = response.isLegacyAccount
+        let emailVerified = response.emailVerified
+        let surveyDone = response.surveyCompleted
+
+        if !isLegacy && !emailVerified {
+            self.pendingVerificationEmail = maskedEmail(response.email)
+            self.requiresSurvey = false
+        } else if !isLegacy && !surveyDone {
+            self.pendingVerificationEmail = nil
+            self.requiresSurvey = true
+        } else {
+            self.pendingVerificationEmail = nil
+            self.requiresSurvey = false
+        }
+
         // Persist user to UserDefaults
         if let encoded = try? JSONEncoder().encode(user) {
             UserDefaults.standard.set(encoded, forKey: cachedUserKey)
         }
-        
+
+        // Recognize account-level Premium entitlement by email
+        StoreManager.shared.setAuthenticatedUser(email: response.email)
+
         // Sync Premium subscription status from backend
-        // This ensures backend-granted Premium (e.g., admin accounts) is recognized
         Task {
             await StoreManager.shared.syncBackendSubscription()
         }
+    }
+
+    // MARK: - Verification + Survey Handlers
+
+    /// Called by EmailVerificationView on successful code verification.
+    /// Stores the fresh JWT and re-fetches user to determine next step.
+    func handleVerificationSuccess(token: String) async {
+        KeychainHelper.save(key: keychainKey, value: token)
+        apiClient.setAuthToken(token)
+        do {
+            let userResponse: UserResponse = try await apiClient.getCurrentUser()
+            setAuthenticatedState(from: userResponse, token: token)
+        } catch {
+            // Best-effort: proceed to survey even if re-fetch fails
+            self.pendingVerificationEmail = nil
+            self.requiresSurvey = true
+        }
+    }
+
+    /// Called by OnboardingSurveyView when the survey is submitted successfully.
+    func handleSurveyCompletion() {
+        self.requiresSurvey = false
+    }
+
+    // MARK: - Internal Helpers
+
+    private func maskedEmail(_ email: String) -> String {
+        let parts = email.split(separator: "@")
+        guard parts.count == 2 else { return email }
+        let name = String(parts[0])
+        let domain = String(parts[1])
+        let visible = name.prefix(2)
+        let masked = visible + String(repeating: "*", count: max(0, name.count - 2))
+        return "\(masked)@\(domain)"
     }
 
     /// Clear session state (unauthenticated but don't clear persistence)
@@ -261,6 +371,8 @@ class SessionManager: ObservableObject {
         self.currentUser = nil
         self.isAuthenticated = false
         self.isAdmin = false
+        self.pendingVerificationEmail = nil
+        self.requiresSurvey = false
         apiClient.setAuthToken(nil)
     }
 
@@ -270,10 +382,15 @@ class SessionManager: ObservableObject {
         UserDefaults.standard.removeObject(forKey: cachedUserKey)
         apiClient.setAuthToken(nil)
 
+        // Clear account-level Premium entitlement
+        StoreManager.shared.clearAccountEntitlement()
+
         await MainActor.run {
             self.currentUser = nil
             self.isAuthenticated = false
             self.isAdmin = false
+            self.pendingVerificationEmail = nil
+            self.requiresSurvey = false
         }
     }
 
@@ -399,6 +516,19 @@ struct User: Identifiable, Codable, Equatable {
     var displayName: String
     let role: UserRole
     var bio: String?
+    var dateOfBirth: Date?
+    var parentEmail: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case email
+        case username
+        case displayName = "display_name"
+        case role
+        case bio
+        case dateOfBirth
+        case parentEmail
+    }
 }
 
 enum UserRole: String, Codable {

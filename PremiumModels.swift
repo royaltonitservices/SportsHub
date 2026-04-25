@@ -120,129 +120,8 @@ struct GoalsSurveyRequest: Codable {
 }
 
 // MARK: - Wearable Sync
-
-enum WearableProvider: String, Codable, CaseIterable {
-    case appleWatch = "apple_watch"
-    case wearOS = "wear_os"
-    case fitbit = "fitbit"
-    case garmin = "garmin"
-    case whoop = "whoop"
-    case oura = "oura"
-    
-    var displayName: String {
-        switch self {
-        case .appleWatch: return "Apple Watch"
-        case .wearOS: return "Wear OS"
-        case .fitbit: return "Fitbit"
-        case .garmin: return "Garmin"
-        case .whoop: return "WHOOP"
-        case .oura: return "Oura Ring"
-        }
-    }
-    
-    var icon: String {
-        switch self {
-        case .appleWatch: return "applewatch"
-        case .wearOS: return "watchface.watch"
-        case .fitbit: return "figure.run.circle"
-        case .garmin: return "location.circle.fill"
-        case .whoop: return "waveform.path.ecg"
-        case .oura: return "circle.hexagongrid.circle.fill"
-        }
-    }
-    
-    var isCurrentlySupported: Bool {
-        // Only Apple Watch/HealthKit is implemented currently
-        return self == .appleWatch
-    }
-}
-
-struct SmartwatchConnection: Codable, Identifiable {
-    let id: String
-    let deviceType: String
-    let deviceName: String?
-    let isConnected: Bool
-    let lastSync: String?
-    let createdAt: String
-    
-    var provider: WearableProvider? {
-        WearableProvider(rawValue: deviceType)
-    }
-    
-    enum CodingKeys: String, CodingKey {
-        case id
-        case deviceType = "device_type"
-        case deviceName = "device_name"
-        case isConnected = "is_connected"
-        case lastSync = "last_sync"
-        case createdAt = "created_at"
-    }
-}
-
-struct ConnectDeviceRequest: Codable {
-    let deviceType: String
-    let deviceName: String?
-    let deviceId: String?
-    let accessToken: String?
-    let refreshToken: String?
-    
-    enum CodingKeys: String, CodingKey {
-        case deviceType = "device_type"
-        case deviceName = "device_name"
-        case deviceId = "device_id"
-        case accessToken = "access_token"
-        case refreshToken = "refresh_token"
-    }
-}
-
-struct BiometricData: Codable, Identifiable {
-    let id: String
-    let date: String
-    let restingHeartRate: Int?
-    let avgHeartRate: Int?
-    let maxHeartRate: Int?
-    let heartRateVariability: Int?
-    let sleepDuration: Int?
-    let deepSleep: Int?
-    let remSleep: Int?
-    let lightSleep: Int?
-    let sleepQualityScore: Double?
-    let steps: Int?
-    let activeCalories: Int?
-    let totalCalories: Int?
-    let exerciseMinutes: Int?
-    let recoveryScore: Double?
-    let trainingStrain: Double?
-    let dayStrain: Double?
-    let readinessScore: Double?
-    let fatigueLevel: String?
-    let performancePrediction: Double?
-    let createdAt: String
-    
-    enum CodingKeys: String, CodingKey {
-        case id, date
-        case restingHeartRate = "resting_heart_rate"
-        case avgHeartRate = "avg_heart_rate"
-        case maxHeartRate = "max_heart_rate"
-        case heartRateVariability = "heart_rate_variability"
-        case sleepDuration = "sleep_duration"
-        case deepSleep = "deep_sleep"
-        case remSleep = "rem_sleep"
-        case lightSleep = "light_sleep"
-        case sleepQualityScore = "sleep_quality_score"
-        case steps
-        case activeCalories = "active_calories"
-        case totalCalories = "total_calories"
-        case exerciseMinutes = "exercise_minutes"
-        case recoveryScore = "recovery_score"
-        case trainingStrain = "training_strain"
-        case dayStrain = "day_strain"
-        case readinessScore = "readiness_score"
-        case fatigueLevel = "fatigue_level"
-        case performancePrediction = "performance_prediction"
-        case createdAt = "created_at"
-    }
-}
+// Canonical type definitions are in APIClient.swift
+// BiometricDataRequest is unique to premium flows
 
 struct BiometricDataRequest: Codable {
     let date: String
@@ -282,26 +161,6 @@ struct BiometricDataRequest: Codable {
     }
 }
 
-struct RecoveryStatus: Codable {
-    let recoveryScore: Double?
-    let readinessScore: Double?
-    let fatigueLevel: String
-    let sleepQuality: Double?
-    let hrvStatus: String
-    let recommendation: String
-    let lastUpdated: String?
-    
-    enum CodingKeys: String, CodingKey {
-        case recoveryScore = "recovery_score"
-        case readinessScore = "readiness_score"
-        case fatigueLevel = "fatigue_level"
-        case sleepQuality = "sleep_quality"
-        case hrvStatus = "hrv_status"
-        case recommendation
-        case lastUpdated = "last_updated"
-    }
-}
-
 // MARK: - Tournaments
 
 struct Tournament: Codable, Identifiable {
@@ -331,7 +190,10 @@ struct Tournament: Codable, Identifiable {
     let schoolName: String?
     let prizes: [String: String]
     let createdAt: String
-    
+    /// Per-user registration status. Optional for backward compatibility with responses
+    /// that predate the is_registered batch query addition.
+    var isRegistered: Bool?
+
     enum CodingKeys: String, CodingKey {
         case id
         case creatorId = "creator_id"
@@ -345,11 +207,11 @@ struct Tournament: Codable, Identifiable {
         case maxElo = "max_elo"
         case registrationOpens = "registration_opens"
         case registrationCloses = "registration_closes"
-        case startsAt = "starts_at"
-        case endsAt = "ends_at"
+        case startsAt = "start_date"
+        case endsAt = "end_date"
         case status
         case currentRound = "current_round"
-        case participantCount = "participant_count"
+        case participantCount = "current_participants"
         case isPublic = "is_public"
         case isSchool = "is_school"
         case isRegional = "is_regional"
@@ -357,6 +219,7 @@ struct Tournament: Codable, Identifiable {
         case schoolName = "school_name"
         case prizes
         case createdAt = "created_at"
+        case isRegistered = "is_registered"
     }
 }
 

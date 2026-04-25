@@ -26,6 +26,12 @@ struct WorkoutBuilderView: View {
                         }
                     }
                 }
+
+                Section {
+                    Label(StorageStrategy.localOnly.disclosureLabel, systemImage: "iphone")
+                        .font(.caption)
+                        .foregroundStyle(Color.appTextSecondary)
+                }
                 
                 Section {
                     ForEach(Array(drills.enumerated()), id: \.element.id) { index, drill in
@@ -91,6 +97,11 @@ struct WorkoutBuilderView: View {
                     drills.append(drill)
                 }
             }
+            .sheet(isPresented: $showWorkoutSession) {
+                if let workout = savedWorkout {
+                    WorkoutSessionView(workout: workout)
+                }
+            }
         }
     }
     
@@ -107,25 +118,58 @@ struct WorkoutBuilderView: View {
         drills.move(fromOffsets: source, toOffset: destination)
     }
     
+    @State private var showWorkoutSession = false
+    @State private var savedWorkout: SavedWorkout?
+    
     private func saveWorkout() {
-        // Placeholder - implement save to local storage or API
+        // Encode and persist full workout to UserDefaults
+        let workout = SavedWorkout(
+            name: workoutName,
+            sport: selectedSport,
+            drills: drills,
+            createdAt: Date()
+        )
+        var existing: [SavedWorkout] = []
+        if let data = UserDefaults.standard.data(forKey: "saved_workouts_v2"),
+           let decoded = try? JSONDecoder().decode([SavedWorkout].self, from: data) {
+            existing = decoded
+        }
+        existing.append(workout)
+        if let encoded = try? JSONEncoder().encode(existing) {
+            UserDefaults.standard.set(encoded, forKey: "saved_workouts_v2")
+        }
         dismiss()
     }
     
     private func startWorkout() {
-        // Placeholder - navigate to workout session
-        dismiss()
+        savedWorkout = SavedWorkout(
+            name: workoutName,
+            sport: selectedSport,
+            drills: drills,
+            createdAt: Date()
+        )
+        showWorkoutSession = true
     }
 }
 
-struct WorkoutDrill: Identifiable {
-    let id = UUID()
+struct WorkoutDrill: Identifiable, Codable {
+    let id: UUID
     var name: String
     var description: String
     var durationMinutes: Int
     var sets: Int
     var reps: Int?
     var restSeconds: Int
+    
+    init(name: String, description: String, durationMinutes: Int, sets: Int, reps: Int? = nil, restSeconds: Int) {
+        self.id = UUID()
+        self.name = name
+        self.description = description
+        self.durationMinutes = durationMinutes
+        self.sets = sets
+        self.reps = reps
+        self.restSeconds = restSeconds
+    }
 }
 
 struct DrillRow: View {
@@ -311,6 +355,7 @@ struct WorkoutSessionView: View {
     @State private var isResting = false
     @State private var currentSet = 1
     @State private var timer: Timer?
+    @State private var startTime = Date()
     
     var body: some View {
         NavigationStack {
@@ -416,6 +461,7 @@ struct WorkoutSessionView: View {
             }
             .navigationBarHidden(true)
             .onAppear {
+                startTime = Date()
                 if currentDrillIndex < workout.drills.count {
                     timeRemaining = workout.drills[currentDrillIndex].durationMinutes * 60
                 }
@@ -498,16 +544,47 @@ struct WorkoutSessionView: View {
     
     private func finishWorkout() {
         timer?.invalidate()
+        logCompletedSession()
         dismiss()
+    }
+    
+    private func logCompletedSession() {
+        let durationMinutes = Int(Date().timeIntervalSince(startTime) / 60)
+        let drillNames = workout.drills.map { $0.name }
+        let sessionData: [String: Any] = [
+            "workout_name": workout.name,
+            "drills_completed": drillNames,
+            "duration_minutes": max(durationMinutes, 1),
+            "notes": "Completed \(currentDrillIndex + 1) of \(workout.drills.count) drills"
+        ]
+        Task {
+            do {
+                let _ = try await APIClient.shared.analyzeTrainingSession(
+                    sport: workout.sport,
+                    sessionData: sessionData
+                )
+            } catch {
+                // Best-effort — session still counts locally even if backend is unreachable
+                print("Training session log failed: \(error)")
+            }
+        }
     }
 }
 
-struct SavedWorkout: Identifiable {
-    let id = UUID()
+struct SavedWorkout: Identifiable, Codable {
+    let id: UUID
     let name: String
     let sport: Sport
     let drills: [WorkoutDrill]
     let createdAt: Date
+    
+    init(name: String, sport: Sport, drills: [WorkoutDrill], createdAt: Date) {
+        self.id = UUID()
+        self.name = name
+        self.sport = sport
+        self.drills = drills
+        self.createdAt = createdAt
+    }
 }
 
 #Preview {

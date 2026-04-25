@@ -18,6 +18,7 @@ struct LoginView: View {
     @State private var errorMessage: String?
     @State private var showPassword = false
     @State private var emailError: String?
+    @State private var showForgotPassword = false
     
     enum Field {
         case email, password
@@ -95,6 +96,11 @@ struct LoginView: View {
                                     .fontWeight(.semibold)
                                     .foregroundStyle(Color.appTextPrimary)
                                 Spacer()
+                                Button("Forgot password?") {
+                                    showForgotPassword = true
+                                }
+                                .font(.subheadline)
+                                .foregroundStyle(Color.appPrimary)
                             }
                             
                             HStack(spacing: 0) {
@@ -193,6 +199,9 @@ struct LoginView: View {
             .scrollDismissesKeyboard(.interactively)
         }
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $showForgotPassword) {
+            ForgotPasswordView()
+        }
         .onAppear {
             // Auto-focus email field on appear
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {

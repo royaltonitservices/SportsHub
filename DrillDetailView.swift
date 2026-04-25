@@ -203,7 +203,26 @@ struct DrillDetailView: View {
         .navigationTitle("Drill Details")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showStartSession) {
-            TrainingSessionView(sport: drill.sport, prefilledDrillName: drill.name)
+            // Pass name, duration, effort level, and top coaching notes so the
+            // training session form starts pre-populated with real drill context.
+            let instructionSummary: String = {
+                var parts: [String] = []
+                if !drill.tips.isEmpty {
+                    parts.append(contentsOf: drill.tips.prefix(2))
+                }
+                if !drill.instructions.isEmpty && parts.count < 3 {
+                    parts.append(drill.instructions[0])
+                }
+                return parts.joined(separator: " | ")
+            }()
+            TrainingSessionView(
+                sport: drill.sport,
+                prefilledDrillName: drill.name,
+                prefilledDuration: drill.duration,
+                prefilledDrillNotes: instructionSummary.isEmpty ? nil : instructionSummary,
+                prefilledEffort: drill.difficulty.effortLevel,
+                prefilledMetricType: drill.primaryMetricType
+            )
         }
     }
 }

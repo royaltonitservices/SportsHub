@@ -16,7 +16,7 @@ struct MainTabView: View {
             Group {
                 switch selectedTab {
                 case 0:
-                    HomeView()
+                    HomeView(selectedTab: $selectedTab)
                 case 1:
                     PlayView()
                 case 2:
@@ -28,7 +28,7 @@ struct MainTabView: View {
                 case 5:
                     ProfileView()
                 default:
-                    HomeView()
+                    HomeView(selectedTab: $selectedTab)
                 }
             }
             

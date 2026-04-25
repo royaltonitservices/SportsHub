@@ -7,7 +7,7 @@ import json
 from datetime import datetime
 
 from database import get_db
-from dependencies import get_current_active_user
+from auth import decode_access_token
 import models
 
 router = APIRouter(prefix="/ws", tags=["websocket"])
@@ -90,11 +90,22 @@ async def websocket_endpoint(
     - notification: Push notification
     """
 
-    # Authenticate user from token
-    # TODO: Implement proper JWT validation for WebSocket
-    # For now, accept connection without validation (development only)
+    # Authenticate user from JWT token passed as ?token= query parameter
+    payload = decode_access_token(token)
+    if not payload or "sub" not in payload:
+        await websocket.close(code=4001, reason="Invalid or expired token")
+        return
 
-    user_id = "anonymous"  # Replace with actual user ID from token
+    user_id = payload["sub"]
+
+    # Verify user exists in DB
+    db_user = db.query(models.User).filter(
+        models.User.id == user_id,
+        models.User.account_status == models.AccountStatus.ACTIVE
+    ).first()
+    if not db_user:
+        await websocket.close(code=4001, reason="User not found or inactive")
+        return
 
     await manager.connect(websocket, user_id)
 

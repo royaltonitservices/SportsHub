@@ -2,13 +2,16 @@
 // Premium Feature - Browse, create, and manage tournaments
 
 import SwiftUI
+import Combine
 
 struct TournamentView: View {
+    @StateObject private var storeManager = StoreManager.shared
     @State private var tournaments: [Tournament] = []
     @State private var selectedSport: String = "basketball"
     @State private var selectedFilter: TournamentFilter = .upcoming
     @State private var isLoading = false
     @State private var showCreateSheet = false
+    @State private var showPremiumSheet = false
     @State private var showError = false
     @State private var errorMessage = ""
     
@@ -52,16 +55,35 @@ struct TournamentView: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(action: {
-                        showCreateSheet = true
+                        if storeManager.isPremium || storeManager.isLoading {
+                            showCreateSheet = true
+                        } else {
+                            showPremiumSheet = true
+                        }
                     }) {
-                        Image(systemName: "plus.circle.fill")
-                            .font(.title3)
-                            .foregroundStyle(.blue)
+                        HStack(spacing: 4) {
+                            Image(systemName: "plus.circle.fill")
+                                .font(.title3)
+                                .foregroundStyle(.blue)
+                            if !storeManager.isPremium && !storeManager.isLoading {
+                                Text("PREMIUM")
+                                    .font(.caption2)
+                                    .fontWeight(.bold)
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 4)
+                                    .padding(.vertical, 2)
+                                    .background(Color.appPrimary)
+                                    .cornerRadius(4)
+                            }
+                        }
                     }
                 }
             }
             .sheet(isPresented: $showCreateSheet) {
                 CreateTournamentView(sport: selectedSport)
+            }
+            .sheet(isPresented: $showPremiumSheet) {
+                PremiumSubscriptionView()
             }
             .task {
                 await loadTournaments()
@@ -331,38 +353,88 @@ struct SportChip: View {
     }
 }
 
+// MARK: - Tournament Detail ViewModel
+
+/// Owns all server-truth state for TournamentDetailView.
+/// isRegistered is seeded from tournament.isRegistered at init, so the first
+/// render reflects server truth without waiting for any async call.
+@MainActor
+final class TournamentDetailViewModel: ObservableObject {
+    let tournament: Tournament
+
+    @Published var isRegistered: Bool
+    @Published var bracket: TournamentBracket?
+    @Published var standings: [TournamentParticipant] = []
+    @Published var isActionLoading = false
+    @Published var showError = false
+    @Published var errorMessage = ""
+
+    init(tournament: Tournament) {
+        self.tournament = tournament
+        // Seed from model — no onAppear needed, no first-frame drift.
+        self.isRegistered = tournament.isRegistered ?? false
+    }
+
+    func loadBracket() async {
+        do {
+            bracket = try await APIClient.shared.getTournamentBracket(tournamentId: tournament.id)
+        } catch {
+            // Bracket not generated yet
+        }
+    }
+
+    func loadStandings() async {
+        do {
+            standings = try await APIClient.shared.getTournamentStandings(tournamentId: tournament.id)
+        } catch {
+            // No standings yet
+        }
+    }
+
+    func register() async {
+        isActionLoading = true
+        defer { isActionLoading = false }
+        do {
+            _ = try await APIClient.shared.registerForTournament(tournamentId: tournament.id)
+            isRegistered = true
+            await loadStandings()
+        } catch {
+            errorMessage = "We couldn't register you for this tournament. Please try again."
+            showError = true
+        }
+    }
+}
+
 // MARK: - Tournament Detail View
 
 struct TournamentDetailView: View {
-    let tournament: Tournament
-    @State private var isRegistered = false
-    @State private var bracket: TournamentBracket?
-    @State private var standings: [TournamentParticipant] = []
-    @State private var isLoading = false
-    @State private var showError = false
-    @State private var errorMessage = ""
-    
+    @StateObject private var viewModel: TournamentDetailViewModel
+
+    init(tournament: Tournament) {
+        _viewModel = StateObject(wrappedValue: TournamentDetailViewModel(tournament: tournament))
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Spacing.xl) {
                 // Header
                 tournamentHeader
-                
+
                 // Actions
                 actionButtons
-                
+
                 // Tabs
                 TabView {
                     // Info Tab
                     infoTab
                         .tag(0)
-                    
+
                     // Bracket Tab
-                    if let bracket = bracket {
+                    if let bracket = viewModel.bracket {
                         BracketView(bracket: bracket)
                             .tag(1)
                     }
-                    
+
                     // Standings Tab
                     standingsTab
                         .tag(2)
@@ -372,60 +444,58 @@ struct TournamentDetailView: View {
             }
             .padding()
         }
-        .navigationTitle(tournament.name)
+        .navigationTitle(viewModel.tournament.name)
         .navigationBarTitleDisplayMode(.inline)
         .task {
-            await loadBracket()
-            await loadStandings()
+            await viewModel.loadBracket()
+            await viewModel.loadStandings()
         }
-        .alert("Error", isPresented: $showError) {
+        .alert("Error", isPresented: $viewModel.showError) {
             Button("OK") { }
         } message: {
-            Text(errorMessage)
+            Text(viewModel.errorMessage)
         }
     }
-    
+
     // MARK: - Header
-    
+
     private var tournamentHeader: some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
             HStack {
-                Image(systemName: sportIcon(tournament.sport))
+                Image(systemName: sportIcon(viewModel.tournament.sport))
                     .font(.system(size: 40))
                     .foregroundStyle(.blue)
-                
+
                 VStack(alignment: .leading) {
-                    Text(tournament.sport.capitalized)
+                    Text(viewModel.tournament.sport.capitalized)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
-                    
-                    Text(tournament.format.replacingOccurrences(of: "_", with: " ").capitalized)
+
+                    Text(viewModel.tournament.format.replacingOccurrences(of: "_", with: " ").capitalized)
                         .font(.headline)
                 }
-                
+
                 Spacer()
             }
-            
-            if let description = tournament.description {
+
+            if let description = viewModel.tournament.description {
                 Text(description)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
         }
     }
-    
+
     // MARK: - Action Buttons
-    
+
     private var actionButtons: some View {
         HStack(spacing: Spacing.md) {
-            if tournament.status == "registration_open" && !isRegistered {
+            if viewModel.tournament.status == "registration_open" && !viewModel.isRegistered {
                 Button(action: {
-                    Task {
-                        await register()
-                    }
+                    Task { await viewModel.register() }
                 }) {
                     HStack {
-                        if isLoading {
+                        if viewModel.isActionLoading {
                             ProgressView()
                                 .tint(.white)
                         } else {
@@ -440,8 +510,8 @@ struct TournamentDetailView: View {
                     .background(Color.blue)
                     .cornerRadius(12)
                 }
-                .disabled(isLoading)
-            } else if isRegistered {
+                .disabled(viewModel.isActionLoading)
+            } else if viewModel.isRegistered {
                 Text("Registered ✓")
                     .font(.headline)
                     .foregroundStyle(.green)
@@ -452,24 +522,24 @@ struct TournamentDetailView: View {
             }
         }
     }
-    
+
     // MARK: - Info Tab
-    
+
     private var infoTab: some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
             Text("Tournament Details")
                 .font(.headline)
-            
-            detailRow(icon: "person.3.fill", label: "Participants", value: "\(tournament.participantCount) / \(tournament.maxParticipants)")
-            detailRow(icon: "calendar", label: "Starts", value: formatDate(tournament.startsAt))
-            detailRow(icon: "trophy.fill", label: "Format", value: tournament.format.replacingOccurrences(of: "_", with: " ").capitalized)
-            detailRow(icon: "number", label: "Current Round", value: "\(tournament.currentRound)")
-            
-            if let minElo = tournament.minElo {
+
+            detailRow(icon: "person.3.fill", label: "Participants", value: "\(viewModel.tournament.participantCount) / \(viewModel.tournament.maxParticipants)")
+            detailRow(icon: "calendar", label: "Starts", value: formatDate(viewModel.tournament.startsAt))
+            detailRow(icon: "trophy.fill", label: "Format", value: viewModel.tournament.format.replacingOccurrences(of: "_", with: " ").capitalized)
+            detailRow(icon: "number", label: "Current Round", value: "\(viewModel.tournament.currentRound)")
+
+            if let minElo = viewModel.tournament.minElo {
                 detailRow(icon: "chart.line.uptrend.xyaxis", label: "Min ELO", value: "\(minElo)")
             }
-            
-            if let maxElo = tournament.maxElo {
+
+            if let maxElo = viewModel.tournament.maxElo {
                 detailRow(icon: "chart.line.uptrend.xyaxis", label: "Max ELO", value: "\(maxElo)")
             }
         }
@@ -477,39 +547,39 @@ struct TournamentDetailView: View {
         .background(Color(.systemBackground))
         .cornerRadius(12)
     }
-    
+
     private func detailRow(icon: String, label: String, value: String) -> some View {
         HStack {
             Image(systemName: icon)
                 .foregroundStyle(.blue)
                 .frame(width: 24)
-            
+
             Text(label)
                 .font(.subheadline)
-            
+
             Spacer()
-            
+
             Text(value)
                 .font(.subheadline)
                 .fontWeight(.semibold)
         }
     }
-    
+
     // MARK: - Standings Tab
-    
+
     private var standingsTab: some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
             Text("Standings")
                 .font(.headline)
-            
-            if standings.isEmpty {
+
+            if viewModel.standings.isEmpty {
                 Text("No participants yet")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding()
             } else {
-                ForEach(Array(standings.enumerated()), id: \.element.id) { index, participant in
+                ForEach(Array(viewModel.standings.enumerated()), id: \.element.id) { index, participant in
                     standingRow(rank: index + 1, participant: participant)
                 }
             }
@@ -518,24 +588,24 @@ struct TournamentDetailView: View {
         .background(Color(.systemBackground))
         .cornerRadius(12)
     }
-    
+
     private func standingRow(rank: Int, participant: TournamentParticipant) -> some View {
         HStack {
             Text("#\(rank)")
                 .font(.headline)
                 .foregroundStyle(rank <= 3 ? .orange : .secondary)
                 .frame(width: 40)
-            
+
             Text(participant.username ?? participant.teamName ?? "Unknown")
                 .font(.subheadline)
-            
+
             Spacer()
-            
+
             VStack(alignment: .trailing, spacing: 2) {
                 Text("\(participant.wins)-\(participant.losses)")
                     .font(.caption)
                     .fontWeight(.semibold)
-                
+
                 if let seed = participant.seed {
                     Text("Seed: \(seed)")
                         .font(.system(size: 10))
@@ -545,39 +615,7 @@ struct TournamentDetailView: View {
         }
         .padding(.vertical, Spacing.xs)
     }
-    
-    // MARK: - Data Functions
-    
-    private func loadBracket() async {
-        do {
-            bracket = try await APIClient.shared.getTournamentBracket(tournamentId: tournament.id)
-        } catch {
-            // Bracket not generated yet
-        }
-    }
-    
-    private func loadStandings() async {
-        do {
-            standings = try await APIClient.shared.getTournamentStandings(tournamentId: tournament.id)
-        } catch {
-            // No standings yet
-        }
-    }
-    
-    private func register() async {
-        isLoading = true
-        defer { isLoading = false }
-        
-        do {
-            _ = try await APIClient.shared.registerForTournament(tournamentId: tournament.id)
-            isRegistered = true
-            await loadStandings()
-        } catch {
-            errorMessage = "We couldn't register you for this tournament. Please try again."
-            showError = true
-        }
-    }
-    
+
     private func sportIcon(_ sport: String) -> String {
         switch sport.lowercased() {
         case "basketball": return "basketball.fill"
@@ -587,13 +625,12 @@ struct TournamentDetailView: View {
         default: return "sportscourt.fill"
         }
     }
-    
+
     private func formatDate(_ dateString: String) -> String {
         let formatter = ISO8601DateFormatter()
         guard let date = formatter.date(from: dateString) else {
             return dateString
         }
-        
         let displayFormatter = DateFormatter()
         displayFormatter.dateStyle = .medium
         displayFormatter.timeStyle = .short
