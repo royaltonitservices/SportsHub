@@ -432,6 +432,21 @@ class APIClient {
         }
     }
     
+    /// Lightweight backend availability check with a 3-second timeout.
+    /// Used by SessionManager to set backendAvailable state.
+    /// Not debug-only — runs in production.
+    func isBackendReachable() async -> Bool {
+        guard let url = URL(string: APIConfig.baseURL + "/health") else { return false }
+        var req = URLRequest(url: url, timeoutInterval: 3)
+        req.httpMethod = "GET"
+        do {
+            let (_, response) = try await URLSession.shared.data(for: req)
+            return (response as? HTTPURLResponse)?.statusCode == 200
+        } catch {
+            return false
+        }
+    }
+
     // MARK: - Convenience Methods
     func get<T: Decodable>(_ endpoint: String, requiresAuth: Bool = true) async throws -> T {
         try await request(endpoint, method: .GET, requiresAuth: requiresAuth)

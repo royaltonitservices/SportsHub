@@ -134,7 +134,7 @@ struct SmartwatchSyncView: View {
                 .font(.title2)
                 .fontWeight(.bold)
             
-            Text("Sync health and activity data for AI-powered recovery insights and performance predictions")
+            Text("Sync health and activity data for AI-powered recovery insights")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)

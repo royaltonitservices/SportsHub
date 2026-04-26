@@ -25,24 +25,28 @@ struct LeaderboardView: View {
 
                     // Leaderboard Entries
                     VStack(spacing: Spacing.sm) {
-                        if isLoading {
+                        if !sessionManager.backendAvailable && leaderboardData.isEmpty {
+                            backendOfflineView
+                        } else if isLoading {
                             ProgressView()
                                 .padding(Spacing.xl)
-                        } else if let errorMessage = errorMessage {
+                        } else if errorMessage != nil {
                             VStack(spacing: Spacing.md) {
-                                Image(systemName: "exclamationmark.triangle")
-                                    .font(.largeTitle)
-                                    .foregroundStyle(Color.appError)
-                                Text(errorMessage)
+                                Image(systemName: "wifi.slash")
+                                    .font(.system(size: 36))
+                                    .foregroundStyle(Color.appTextSecondary.opacity(0.4))
+                                Text("Rankings Unavailable")
+                                    .font(.headline)
+                                    .foregroundStyle(Color.appTextPrimary)
+                                Text("Couldn't reach the leaderboard. Check your connection and try again.")
                                     .font(.subheadline)
                                     .foregroundStyle(Color.appTextSecondary)
                                     .multilineTextAlignment(.center)
-                                Button("Retry") {
-                                    Task {
-                                        await loadLeaderboard()
-                                    }
+                                Button("Try Again") {
+                                    Task { await loadLeaderboard() }
                                 }
-                                .buttonStyle(.borderedProminent)
+                                .font(.caption)
+                                .foregroundStyle(Color.appPrimary.opacity(0.8))
                             }
                             .padding(Spacing.xl)
                         } else if leaderboardData.isEmpty {
@@ -87,16 +91,44 @@ struct LeaderboardView: View {
         }
     }
     
+    private var backendOfflineView: some View {
+        VStack(spacing: Spacing.md) {
+            Image(systemName: "wifi.slash")
+                .font(.system(size: 44))
+                .foregroundStyle(Color.appTextSecondary.opacity(0.35))
+
+            VStack(spacing: Spacing.xs) {
+                Text("Rankings Unavailable")
+                    .font(.headline)
+                    .foregroundStyle(Color.appTextPrimary)
+                Text("The leaderboard requires a server connection. Rankings update in real time from your match results.")
+                    .font(.subheadline)
+                    .foregroundStyle(Color.appTextSecondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, Spacing.lg)
+            }
+
+            Button("Try Anyway") { Task { await loadLeaderboard() } }
+                .font(.caption)
+                .foregroundStyle(Color.appPrimary)
+        }
+        .padding(Spacing.xl)
+    }
+
     private func loadLeaderboard() async {
+        guard sessionManager.backendAvailable else {
+            isLoading = false
+            return
+        }
         isLoading = true
         errorMessage = nil
-        
+
         do {
             leaderboardData = try await APIClient.shared.getLeaderboard(sport: sport.apiValue)
         } catch {
             errorMessage = "We couldn't load the leaderboard. Check your connection and try again."
         }
-        
+
         isLoading = false
     }
 

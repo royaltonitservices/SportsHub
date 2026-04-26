@@ -11,7 +11,7 @@ struct SettingsView: View {
     @EnvironmentObject var sessionManager: SessionManager
     @AppStorage("isDarkMode") private var isDarkMode = true
     @AppStorage("notificationsEnabled") private var notificationsEnabled = true
-    @AppStorage("soundEnabled") private var soundEnabled = true
+
     @State private var showEditUsername = false
     @State private var showEditDisplayName = false
     @State private var showTrainingProfile = false
@@ -38,24 +38,13 @@ struct SettingsView: View {
                                 .foregroundColor(.appPrimary)
                             Text("In-App Alerts")
                         }
-                        Text("Local alerts only — push notifications not available")
+                        Text("Controls in-app alerts · local delivery only, no push")
                             .font(.caption)
                             .foregroundColor(Color.appTextSecondary)
                     }
                 }
 
-                Toggle(isOn: $soundEnabled) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        HStack {
-                            Image(systemName: "speaker.wave.2.fill")
-                                .foregroundColor(.appPrimary)
-                            Text("Sound Effects")
-                        }
-                        Text("Preference saved — audio not yet wired")
-                            .font(.caption)
-                            .foregroundColor(Color.appTextSecondary)
-                    }
-                }
+
             }
 
             Section("Health & Fitness") {
@@ -966,6 +955,10 @@ struct TrainingProfileSettingsView: View {
     // MARK: - Save
 
     private func saveProfile() {
+        guard SessionManager.shared.backendAvailable else {
+            errorMessage = "Server offline — profile changes can't be saved right now."
+            return
+        }
         isSaving     = true
         errorMessage = nil
         saveSuccess  = false

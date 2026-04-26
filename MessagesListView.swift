@@ -17,7 +17,9 @@ struct MessagesListView: View {
     var body: some View {
         NavigationView {
             VStack(spacing: 0) {
-                if isLoading {
+                if !sessionManager.backendAvailable && conversations.isEmpty {
+                    backendOfflineView
+                } else if isLoading {
                     ProgressView("Loading conversations...")
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if let error = errorMessage {
@@ -92,6 +94,31 @@ struct MessagesListView: View {
         .listStyle(.plain)
     }
 
+    // MARK: - Offline State
+    private var backendOfflineView: some View {
+        VStack(spacing: Spacing.md) {
+            Image(systemName: "wifi.slash")
+                .font(.system(size: 44))
+                .foregroundStyle(Color.secondary.opacity(0.4))
+
+            VStack(spacing: Spacing.xs) {
+                Text("Messages Unavailable")
+                    .font(.headline)
+                Text("Direct messages require a server connection. Messages are friend-to-friend and stored server-side.")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, Spacing.lg)
+            }
+
+            Button("Try Anyway") { loadConversations() }
+                .font(.caption)
+                .foregroundStyle(.blue)
+        }
+        .padding()
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
     // MARK: - Data Loading
     private func loadConversations() {
         Task {
@@ -100,6 +127,10 @@ struct MessagesListView: View {
     }
 
     private func loadData() async {
+        guard sessionManager.backendAvailable else {
+            isLoading = false
+            return
+        }
         isLoading = true
         errorMessage = nil
 

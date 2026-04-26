@@ -21,8 +21,8 @@ struct NotificationsView: View {
                 if isLoading {
                     ProgressView()
                         .tint(.appPrimary)
-                } else if let error = errorMessage {
-                    errorState(message: error)
+                } else if errorMessage != nil || (!SessionManager.shared.backendAvailable && notifications.isEmpty) {
+                    offlineState
                 } else if notifications.isEmpty {
                     emptyState
                 } else {
@@ -72,24 +72,37 @@ struct NotificationsView: View {
         }
     }
 
-    private func errorState(message: String) -> some View {
+    private var offlineState: some View {
         VStack(spacing: Spacing.md) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 48))
-                .foregroundColor(.appError)
+            Image(systemName: "bell.fill")
+                .font(.system(size: 56))
+                .foregroundStyle(Color.appTextSecondary.opacity(0.25))
 
-            Text("Couldn't load notifications")
+            Text("No Activity Yet")
                 .font(.headline)
+                .foregroundStyle(Color.appTextPrimary)
+
+            Text("Your match results, challenge updates, and friend activity will appear here.")
+                .font(.subheadline)
+                .foregroundStyle(Color.appTextSecondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, Spacing.xl)
 
             Button("Retry") {
                 Task { await loadNotifications() }
             }
-            .buttonStyle(.borderedProminent)
-            .tint(.appPrimary)
+            .font(.subheadline)
+            .foregroundStyle(Color.appPrimary)
+            .padding(.top, Spacing.xs)
         }
+        .padding(Spacing.xl)
     }
 
     private func loadNotifications() async {
+        guard SessionManager.shared.backendAvailable else {
+            isLoading = false
+            return
+        }
         isLoading = true
         errorMessage = nil
         defer { isLoading = false }

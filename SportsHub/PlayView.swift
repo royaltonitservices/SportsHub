@@ -60,7 +60,10 @@ struct PlayView: View {
                                 .padding(.vertical, Spacing.xs)
                         }
 
-                        if isLoadingChallenges {
+                        if !sessionManager.backendAvailable && activeChallenges.isEmpty {
+                            // Offline — banner communicates why; don't show action CTAs that will fail
+                            challengesOfflineView
+                        } else if isLoadingChallenges {
                             ProgressView()
                                 .padding(Spacing.xl)
                         } else if activeChallenges.isEmpty {
@@ -90,23 +93,32 @@ struct PlayView: View {
                             }
                         }
 
-                        VStack(spacing: Spacing.md) {
-                            Image(systemName: "medal.fill")
-                                .font(.system(size: 64))
-                                .foregroundStyle(Color.appTextSecondary.opacity(0.3))
+                        Button(action: { showLeaderboard = true }) {
+                            HStack(spacing: Spacing.md) {
+                                Image(systemName: "chart.bar.fill")
+                                    .font(.title2)
+                                    .foregroundStyle(Color.appPrimary)
 
-                            Text("No rankings yet")
-                                .font(.headline)
-                                .foregroundStyle(Color.appTextSecondary)
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("View Rankings")
+                                        .font(.subheadline)
+                                        .fontWeight(.semibold)
+                                        .foregroundStyle(Color.appTextPrimary)
+                                    Text("Top 100 players in \(selectedSport.rawValue)")
+                                        .font(.caption)
+                                        .foregroundStyle(Color.appTextSecondary)
+                                }
 
-                            Text("Start competing to appear on the leaderboard")
-                                .font(.subheadline)
-                                .foregroundStyle(Color.appTextSecondary.opacity(0.8))
-                                .multilineTextAlignment(.center)
+                                Spacer()
+
+                                Image(systemName: "chevron.right")
+                                    .font(.caption)
+                                    .foregroundStyle(Color.appTextSecondary)
+                            }
+                            .padding(Spacing.md)
+                            .cardBackground()
                         }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, Spacing.xl)
-                        .cardBackground()
+                        .buttonStyle(.plain)
                     }
                 }
                 .padding(Spacing.md)
@@ -151,6 +163,10 @@ struct PlayView: View {
     }
     
     private func loadSportProfile() async {
+        guard sessionManager.backendAvailable else {
+            isLoadingProfile = false
+            return
+        }
         isLoadingProfile = true
         
         do {
@@ -168,6 +184,12 @@ struct PlayView: View {
     }
     
     private func loadActiveChallenges() async {
+        guard sessionManager.backendAvailable else {
+            isLoadingChallenges = false
+            activeChallenges = []
+            // Don't set an error — banner already communicates server is offline
+            return
+        }
         isLoadingChallenges = true
 
         do {
@@ -197,7 +219,7 @@ struct PlayView: View {
 
         for challenge in newOnes {
             NotificationManager.shared.scheduleMatchNotification(
-                opponentName: "a player",
+                opponentName: "Someone",
                 sport: challenge.sport.capitalized,
                 matchId: challenge.id
             )
@@ -410,6 +432,25 @@ struct PlayView: View {
         }
     }
     
+    private var challengesOfflineView: some View {
+        VStack(spacing: Spacing.sm) {
+            Image(systemName: "wifi.slash")
+                .font(.system(size: 32))
+                .foregroundStyle(Color.appTextSecondary.opacity(0.4))
+            Text("Matches Unavailable")
+                .font(.subheadline)
+                .fontWeight(.medium)
+                .foregroundStyle(Color.appTextSecondary)
+            Text("Check your connection to see active challenges")
+                .font(.caption)
+                .foregroundStyle(Color.appTextSecondary.opacity(0.7))
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, Spacing.xl)
+        .cardBackground()
+    }
+
     private var noChallengesActionCard: some View {
         VStack(spacing: Spacing.lg) {
             VStack(spacing: Spacing.sm) {

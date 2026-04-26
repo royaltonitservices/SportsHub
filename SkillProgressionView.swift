@@ -61,7 +61,7 @@ struct SkillProgressionView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Skill Analysis")
                         .font(.headline)
-                    Text(StorageStrategy.hybrid.disclosureLabel)
+                    Text(StorageStrategy.localOnly.disclosureLabel)
                         .font(.caption)
                         .foregroundStyle(Color.appTextSecondary)
                 }

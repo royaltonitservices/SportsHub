@@ -12,6 +12,7 @@ struct SportsHubApp: App {
     @StateObject private var sessionManager = SessionManager.shared
     @AppStorage("isDarkMode") private var isDarkMode = true
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
         WindowGroup {
@@ -42,13 +43,21 @@ struct SportsHubApp: App {
             }
             .preferredColorScheme(isDarkMode ? .dark : .light)
             .task {
-                // Startup connectivity check — logs clearly if backend is unreachable
+                // Backend availability check — gates offline UI across the app
+                await sessionManager.checkBackendHealth()
+                // Debug-only connectivity logging
                 await APIClient.shared.checkConnectivity()
                 #if DEBUG
                 CoherenceValidator.runLaunchChecks()
                 FeatureManifest.printReport()
                 AIConsistencyValidator.runIfEnabled()
                 #endif
+            }
+            .onChange(of: scenePhase) { _, newPhase in
+                if newPhase == .active {
+                    // Re-check on foreground — throttled to once per 3 min inside the method
+                    Task { await sessionManager.checkBackendHealth() }
+                }
             }
         }
     }

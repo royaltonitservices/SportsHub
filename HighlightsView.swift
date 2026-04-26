@@ -359,6 +359,10 @@ struct CreateHighlightView: View {
 
     private func shareHighlight() async {
         guard let imageData = selectedImageData else { return }
+        guard SessionManager.shared.backendAvailable else {
+            errorMessage = "Can't upload while server is offline. Check your connection and try again."
+            return
+        }
         isUploading = true
         errorMessage = nil
         defer { isUploading = false }

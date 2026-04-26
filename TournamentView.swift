@@ -165,11 +165,24 @@ struct TournamentView: View {
                 .foregroundStyle(.secondary)
             
             Button(action: {
-                showCreateSheet = true
+                if storeManager.isPremium || storeManager.isLoading {
+                    showCreateSheet = true
+                } else {
+                    showPremiumSheet = true
+                }
             }) {
                 HStack {
                     Image(systemName: "plus.circle.fill")
                     Text("Create Tournament")
+                    if !storeManager.isPremium && !storeManager.isLoading {
+                        Text("PREMIUM")
+                            .font(.caption2)
+                            .fontWeight(.bold)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 2)
+                            .background(Color.white.opacity(0.25))
+                            .cornerRadius(4)
+                    }
                 }
                 .font(.headline)
                 .foregroundStyle(.white)

@@ -48,8 +48,14 @@ class NotificationManager: ObservableObject {
     }
     
     // MARK: - Schedule Notifications
+
+    /// Checks the user's in-app notification preference (SettingsView toggle).
+    private var areNotificationsEnabled: Bool {
+        UserDefaults.standard.object(forKey: "notificationsEnabled") as? Bool ?? true
+    }
     
     func scheduleMatchNotification(opponentName: String, sport: String, matchId: String) {
+        guard areNotificationsEnabled else { return }
         let content = UNMutableNotificationContent()
         content.title = "New Match Challenge!"
         content.body = "\(opponentName) has challenged you to a \(sport) match"
@@ -74,11 +80,19 @@ class NotificationManager: ObservableObject {
     }
     
     func scheduleResultNotification(opponentName: String, won: Bool, ratingChange: Int) {
+        guard areNotificationsEnabled else { return }
         let content = UNMutableNotificationContent()
         content.title = won ? "Victory!" : "Match Complete"
-        content.body = won
-            ? "You defeated \(opponentName)! Rating: +\(ratingChange)"
-            : "You lost to \(opponentName). Rating: \(ratingChange)"
+        let ratingText = ratingChange >= 0 ? "+\(ratingChange)" : "\(ratingChange)"
+        if opponentName.isEmpty {
+            content.body = won
+                ? "You won the match! Rating: \(ratingText)"
+                : "Match submitted. Rating: \(ratingText)"
+        } else {
+            content.body = won
+                ? "You defeated \(opponentName)! Rating: \(ratingText)"
+                : "You lost to \(opponentName). Rating: \(ratingText)"
+        }
         content.sound = .default
         content.badge = 1
         content.categoryIdentifier = "MATCH_RESULT"
@@ -98,6 +112,7 @@ class NotificationManager: ObservableObject {
     }
     
     func scheduleFriendRequestNotification(fromUser: String, friendshipId: String) {
+        guard areNotificationsEnabled else { return }
         let content = UNMutableNotificationContent()
         content.title = "New Friend Request"
         content.body = "\(fromUser) wants to connect with you"

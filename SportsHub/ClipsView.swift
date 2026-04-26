@@ -46,7 +46,9 @@ struct ClipsView: View {
                             .disabled(isLoadingClips)
                         }
 
-                        if isLoadingClips {
+                        if !sessionManager.backendAvailable && clips.isEmpty {
+                            backendOfflineView
+                        } else if isLoadingClips {
                             ProgressView()
                                 .padding(Spacing.xl)
                         } else if let error = errorMessage {
@@ -140,7 +142,35 @@ struct ClipsView: View {
         .cardBackground()
     }
     
+    private var backendOfflineView: some View {
+        VStack(spacing: Spacing.md) {
+            Image(systemName: "wifi.slash")
+                .font(.system(size: 44))
+                .foregroundStyle(Color.appTextSecondary.opacity(0.35))
+
+            VStack(spacing: Spacing.xs) {
+                Text("Clips Unavailable")
+                    .font(.headline)
+                    .foregroundStyle(Color.appTextPrimary)
+                Text("Clips require a server connection. Start the backend server to browse and upload clips.")
+                    .font(.subheadline)
+                    .foregroundStyle(Color.appTextSecondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, Spacing.lg)
+            }
+
+            Button("Try Anyway") { Task { await loadClips() } }
+                .font(.caption)
+                .foregroundStyle(Color.appPrimary)
+        }
+        .padding(Spacing.xl)
+    }
+
     private func loadClips() async {
+        guard sessionManager.backendAvailable else {
+            isLoadingClips = false
+            return
+        }
         isLoadingClips = true
         errorMessage = nil
         

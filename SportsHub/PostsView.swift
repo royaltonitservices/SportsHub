@@ -46,7 +46,9 @@ struct PostsView: View {
                             .disabled(isLoadingPosts)
                         }
 
-                        if isLoadingPosts {
+                        if !sessionManager.backendAvailable && posts.isEmpty {
+                            backendOfflineView(feature: "Posts")
+                        } else if isLoadingPosts {
                             ProgressView()
                                 .padding(Spacing.xl)
                         } else if let error = errorMessage {
@@ -168,7 +170,35 @@ struct PostsView: View {
         .cardBackground()
     }
     
+    private func backendOfflineView(feature: String) -> some View {
+        VStack(spacing: Spacing.md) {
+            Image(systemName: "wifi.slash")
+                .font(.system(size: 44))
+                .foregroundStyle(Color.appTextSecondary.opacity(0.35))
+
+            VStack(spacing: Spacing.xs) {
+                Text("\(feature) Unavailable")
+                    .font(.headline)
+                    .foregroundStyle(Color.appTextPrimary)
+                Text("Requires a server connection. Start the backend server to load \(feature.lowercased()).")
+                    .font(.subheadline)
+                    .foregroundStyle(Color.appTextSecondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, Spacing.lg)
+            }
+
+            Button("Try Anyway") { Task { await loadPosts() } }
+                .font(.caption)
+                .foregroundStyle(Color.appPrimary)
+        }
+        .padding(Spacing.xl)
+    }
+
     private func loadPosts() async {
+        guard sessionManager.backendAvailable else {
+            isLoadingPosts = false
+            return
+        }
         isLoadingPosts = true
         errorMessage = nil
         
@@ -467,7 +497,10 @@ struct CreatePostView: View {
     private func createPost() async {
         let trimmedText = postText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedText.isEmpty else { return }
-        
+        guard SessionManager.shared.backendAvailable else {
+            errorMessage = "Can't post while server is offline. Check your connection and try again."
+            return
+        }
         isPosting = true
         errorMessage = nil
         

@@ -31,6 +31,11 @@ class SessionManager: ObservableObject {
     /// Set when a background bio-sync to the backend fails; cleared after user dismisses alert.
     @Published var bioSyncError: String? = nil
 
+    /// Whether the backend server is currently reachable.
+    /// Starts optimistic (true) to avoid flashing an offline banner before the first health check.
+    /// Updated by checkBackendHealth() — called on launch, session restore, and foreground.
+    @Published private(set) var backendAvailable: Bool = true
+
     // MARK: - Private State
 
     private let apiClient = APIClient.shared
@@ -39,6 +44,10 @@ class SessionManager: ObservableObject {
 
     // Prevent duplicate concurrent auth operations
     private var authTask: Task<Void, Error>?
+
+    // Backend health check throttle — avoids hammering /health on every foreground event
+    private var lastHealthCheck: Date?
+    private let healthCheckCooldown: TimeInterval = 3 * 60  // 3 minutes
 
     private init() {
         // Attempt session restoration on init
@@ -101,6 +110,22 @@ class SessionManager: ObservableObject {
         } else {
             // No cached user AND server unreachable — can't restore
             clearSessionState()
+        }
+    }
+
+    // MARK: - Backend Health Check
+
+    /// Check if the backend server is reachable and update backendAvailable.
+    /// Throttled to once per 3 minutes for foreground events; always runs on first call.
+    func checkBackendHealth() async {
+        if let last = lastHealthCheck,
+           Date().timeIntervalSince(last) < healthCheckCooldown {
+            return
+        }
+        lastHealthCheck = Date()
+        let reachable = await APIClient.shared.isBackendReachable()
+        if reachable != backendAvailable {
+            backendAvailable = reachable
         }
     }
 

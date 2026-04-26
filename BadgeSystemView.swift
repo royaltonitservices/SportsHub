@@ -56,9 +56,13 @@ struct BadgeSystemView: View {
                             .fontWeight(.bold)
                             .foregroundStyle(Color.appPrimary)
                         
-                        Text("Badges Unlocked")
+                        Text("Earned")
                             .font(.caption)
                             .foregroundStyle(Color.appTextSecondary)
+
+                        Text("Synced from your match history")
+                            .font(.caption2)
+                            .foregroundStyle(Color.appTextSecondary.opacity(0.7))
                     }
                     
                     Spacer()

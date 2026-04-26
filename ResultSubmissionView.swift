@@ -337,6 +337,15 @@ struct ResultSubmissionView: View {
                 scoreData: scoreData
             )
             
+            // Fire result notification before dismissing
+            let currentUserId = SessionManager.shared.currentUser?.id.uuidString ?? ""
+            let currentUserWon = !currentUserId.isEmpty && selectedWinner == currentUserId
+            NotificationManager.shared.scheduleResultNotification(
+                opponentName: "",
+                won: currentUserWon,
+                ratingChange: currentUserWon ? 15 : -10
+            )
+            
             await onSubmit()
             dismiss()
         } catch {

@@ -252,7 +252,11 @@ struct VideoUploadView: View {
     
     private func uploadVideo() {
         guard let videoURL = videoURL else { return }
-        
+        guard sessionManager.backendAvailable else {
+            errorMessage = "Can't upload while server is offline. Check your connection and try again."
+            showError = true
+            return
+        }
         isUploading = true
         uploadProgress = 0.0
         

@@ -79,6 +79,8 @@ struct HomeView: View {
         .onChange(of: selectedSport) {
             // Re-filter cached data; no extra network call needed
             applyActivityFilter()
+            // Keep AI Coach sport context in sync with home sport selector
+            AICoachManager.shared.currentSport = selectedSport.rawValue
         }
     }
 
@@ -237,13 +239,13 @@ struct HomeView: View {
 
     private var feedSection: some View {
         VStack(spacing: Spacing.md) {
-            // Recommended Actions (static — always shown)
+            // Quick Actions (static sport-aware shortcuts)
             VStack(alignment: .leading, spacing: Spacing.md) {
                 HStack {
-                    Image(systemName: "sparkles")
+                    Image(systemName: "bolt.fill")
                         .font(.title3)
                         .foregroundStyle(Color.appPrimary)
-                    Text("Recommended for You")
+                    Text("Quick Actions")
                         .font(.headline)
                         .foregroundStyle(Color.appTextPrimary)
                     Spacer()
@@ -269,7 +271,7 @@ struct HomeView: View {
                     RecommendedActionCard(
                         icon: "brain.head.profile",
                         title: "Ask AI Coach",
-                        subtitle: "Get personalized tips",
+                        subtitle: "Chat with your sport coach",
                         color: .purple,
                         action: {
                             withAnimation { AICoachManager.shared.isExpanded = true }
@@ -346,19 +348,20 @@ struct HomeView: View {
 
         case .failed:
             VStack(spacing: Spacing.sm) {
-                Image(systemName: "exclamationmark.triangle")
-                    .font(.system(size: 36))
-                    .foregroundStyle(Color.appError.opacity(0.7))
+                Image(systemName: "wifi.slash")
+                    .font(.system(size: 32))
+                    .foregroundStyle(Color.appTextSecondary.opacity(0.45))
 
-                Text("Couldn't load activity")
+                Text("Activity unavailable")
                     .font(.subheadline)
+                    .fontWeight(.medium)
                     .foregroundStyle(Color.appTextSecondary)
 
-                Button("Retry") {
+                Button("Try Again") {
                     Task { await loadActivityFeed() }
                 }
-                .font(.subheadline)
-                .foregroundStyle(Color.appPrimary)
+                .font(.caption)
+                .foregroundStyle(Color.appPrimary.opacity(0.8))
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, Spacing.lg)
@@ -368,6 +371,11 @@ struct HomeView: View {
     // MARK: - Activity Feed Load
 
     private func loadActivityFeed() async {
+        guard sessionManager.backendAvailable else {
+            // Banner already communicates server is offline — stay in idle (empty) to avoid alarming error state
+            transition(to: .loaded([]), cameFromCache: true)
+            return
+        }
         transition(to: .loading)
         do {
             let items = try await APIClient.shared.getActivityFeed(limit: 50)

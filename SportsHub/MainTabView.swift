@@ -8,10 +8,17 @@
 import SwiftUI
 
 struct MainTabView: View {
+    @EnvironmentObject var sessionManager: SessionManager
     @State private var selectedTab = 0
-    
+    @State private var bannerDismissed = false
+
     var body: some View {
         VStack(spacing: 0) {
+            // Server-offline banner — shown once when backend is unavailable
+            if !sessionManager.backendAvailable && !bannerDismissed {
+                serverOfflineBanner
+            }
+
             // Content Area
             Group {
                 switch selectedTab {
@@ -31,7 +38,7 @@ struct MainTabView: View {
                     HomeView(selectedTab: $selectedTab)
                 }
             }
-            
+
             // Custom Tab Bar
             CustomTabBar(selectedTab: $selectedTab)
         }
@@ -40,6 +47,37 @@ struct MainTabView: View {
             AICoachFloatingView()
                 .zIndex(999)
         )
+        .onChange(of: sessionManager.backendAvailable) { _, isAvailable in
+            // Reset dismiss state when server goes offline again
+            if !isAvailable { bannerDismissed = false }
+        }
+    }
+
+    private var serverOfflineBanner: some View {
+        HStack(spacing: Spacing.sm) {
+            Image(systemName: "wifi.slash")
+                .font(.caption)
+                .foregroundStyle(.white.opacity(0.9))
+
+            Text("Server offline — social and competitive features paused")
+                .font(.caption)
+                .foregroundStyle(.white)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+
+            Spacer()
+
+            Button(action: { bannerDismissed = true }) {
+                Image(systemName: "xmark")
+                    .font(.caption2)
+                    .foregroundStyle(.white.opacity(0.8))
+            }
+        }
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, 8)
+        .background(Color(red: 0.25, green: 0.35, blue: 0.55))  // muted blue — not alarming
+        .transition(.move(edge: .top).combined(with: .opacity))
+        .animation(.easeInOut(duration: 0.3), value: sessionManager.backendAvailable)
     }
 }
 

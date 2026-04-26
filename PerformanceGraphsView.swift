@@ -14,6 +14,7 @@ struct PerformanceGraphsView: View {
     @State private var matchStats: [MatchStat] = []
     @State private var selectedTimeRange: TimeRange = .month
     @State private var isLoading = false
+    @State private var loadFailed = false
     
     var body: some View {
         ScrollView {
@@ -26,7 +27,43 @@ struct PerformanceGraphsView: View {
                 }
                 .pickerStyle(.segmented)
                 .padding(.horizontal, Spacing.md)
-                
+
+                // Period-level info card: data exists globally but nothing in selected window
+                if !matchStats.isEmpty && filteredMatchStats.isEmpty && !isLoading && !loadFailed {
+                    HStack(spacing: Spacing.sm) {
+                        Image(systemName: "calendar.badge.clock")
+                            .foregroundStyle(Color.appPrimary)
+                        Text("No matches in this period — try a wider time range.")
+                            .font(.caption)
+                            .foregroundStyle(Color.appTextSecondary)
+                        Spacer()
+                    }
+                    .padding(Spacing.sm)
+                    .background(Color.appPrimary.opacity(0.08))
+                    .clipShape(RoundedRectangle(cornerRadius: CornerRadius.sm))
+                    .padding(.horizontal, Spacing.md)
+                }
+
+                // No matches at all
+                if matchStats.isEmpty && !isLoading && !loadFailed {
+                    VStack(spacing: Spacing.md) {
+                        Image(systemName: "chart.line.uptrend.xyaxis")
+                            .font(.system(size: 40))
+                            .foregroundStyle(Color.appTextSecondary.opacity(0.4))
+                        Text("No match history yet")
+                            .font(.headline)
+                            .foregroundStyle(Color.appTextSecondary)
+                        Text("Play some games to see your performance stats appear here.")
+                            .font(.caption)
+                            .foregroundStyle(Color.appTextSecondary.opacity(0.8))
+                            .multilineTextAlignment(.center)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, Spacing.xl)
+                    .cardBackground()
+                    .padding(.horizontal, Spacing.md)
+                }
+
                 // Rating over time
                 ratingChart
                 
@@ -41,30 +78,79 @@ struct PerformanceGraphsView: View {
             }
             .padding(.bottom, Spacing.xl)
         }
+        .overlay(alignment: .top) {
+            if isLoading {
+                HStack(spacing: Spacing.sm) {
+                    ProgressView()
+                        .tint(.white)
+                        .scaleEffect(0.8)
+                    Text("Loading your stats…")
+                        .font(.caption)
+                        .foregroundStyle(.white)
+                    Spacer()
+                }
+                .padding(Spacing.sm)
+                .background(Color.appPrimary.opacity(0.85))
+                .transition(.move(edge: .top).combined(with: .opacity))
+            } else if loadFailed {
+                HStack(spacing: Spacing.sm) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.white)
+                    Text("Couldn't load data.")
+                        .font(.caption)
+                        .foregroundStyle(.white)
+                    Spacer()
+                    Button("Retry") {
+                        Task {
+                            loadFailed = false
+                            await loadData()
+                        }
+                    }
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, Spacing.sm)
+                    .padding(.vertical, 4)
+                    .background(Color.white.opacity(0.25))
+                    .clipShape(Capsule())
+                }
+                .padding(Spacing.sm)
+                .background(Color.appError)
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+        .animation(.easeInOut(duration: 0.3), value: isLoading)
+        .animation(.easeInOut(duration: 0.3), value: loadFailed)
         .navigationTitle("Performance Analytics")
         .navigationBarTitleDisplayMode(.large)
         .task {
             await loadData()
         }
         .refreshable {
+            loadFailed = false
             await loadData()
         }
     }
     
     private var ratingChart: some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
-            Text("Rating Progression")
-                .font(.headline)
-                .foregroundColor(.appTextPrimary)
-                .padding(.horizontal, Spacing.md)
-            
-            if ratingHistory.isEmpty {
-                Text("No rating data available")
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Rating Progression (Estimated)")
+                    .font(.headline)
+                    .foregroundColor(.appTextPrimary)
+                Text("Based on standard Elo estimates · not a stored snapshot")
+                    .font(.caption)
+                    .foregroundColor(.appTextSecondary)
+            }
+            .padding(.horizontal, Spacing.md)
+
+            if filteredRatingHistory.count <= 1 {
+                Text(ratingHistory.count <= 1 ? "No matches yet" : "No matches in this period")
                     .foregroundColor(.appSecondary)
                     .frame(maxWidth: .infinity, alignment: .center)
-                    .frame(height: 200)
+                    .frame(height: 120)
             } else {
-                Chart(ratingHistory) { dataPoint in
+                Chart(filteredRatingHistory) { dataPoint in
                     LineMark(
                         x: .value("Date", dataPoint.date),
                         y: .value("Rating", dataPoint.rating)
@@ -108,11 +194,11 @@ struct PerformanceGraphsView: View {
                 .foregroundColor(.appTextPrimary)
                 .padding(.horizontal, Spacing.md)
             
-            if matchStats.isEmpty {
-                Text("No match data available")
+            if filteredMatchStats.isEmpty {
+                Text(matchStats.isEmpty ? "No matches yet" : "No matches in this period")
                     .foregroundColor(.appSecondary)
                     .frame(maxWidth: .infinity, alignment: .center)
-                    .frame(height: 200)
+                    .frame(height: 150)
             } else {
                 HStack(spacing: Spacing.xl) {
                     // Pie chart using Charts
@@ -168,8 +254,8 @@ struct PerformanceGraphsView: View {
                 .foregroundColor(.appTextPrimary)
                 .padding(.horizontal, Spacing.md)
             
-            if matchStats.isEmpty {
-                Text("No performance data available")
+            if filteredMatchStats.isEmpty {
+                Text(matchStats.isEmpty ? "No matches yet" : "No matches in this period")
                     .foregroundColor(.appSecondary)
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.vertical, Spacing.md)
@@ -197,13 +283,13 @@ struct PerformanceGraphsView: View {
                 .foregroundColor(.appTextPrimary)
                 .padding(.horizontal, Spacing.md)
             
-            if matchStats.isEmpty {
-                Text("No recent matches")
+            if filteredMatchStats.isEmpty {
+                Text(matchStats.isEmpty ? "No matches yet" : "No matches in this period")
                     .foregroundColor(.appSecondary)
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.vertical, Spacing.md)
             } else {
-                ForEach(matchStats.prefix(5)) { match in
+                ForEach(filteredMatchStats.prefix(5)) { match in
                     RecentMatchRow(match: match)
                 }
             }
@@ -216,12 +302,12 @@ struct PerformanceGraphsView: View {
     
     // Computed properties
     private var minRating: Int {
-        let minValue = ratingHistory.map(\.rating).min() ?? 1500
+        let minValue = filteredRatingHistory.map(\.rating).min() ?? 1500
         return max(minValue - 100, 0)
     }
     
     private var maxRating: Int {
-        let maxValue = ratingHistory.map(\.rating).max() ?? 1500
+        let maxValue = filteredRatingHistory.map(\.rating).max() ?? 1500
         return maxValue + 100
     }
     
@@ -233,10 +319,33 @@ struct PerformanceGraphsView: View {
         case .year: return 30
         }
     }
+
+    private func cutoffDate(for range: TimeRange) -> Date {
+        let calendar = Calendar.current
+        let now = Date()
+        switch range {
+        case .week: return calendar.date(byAdding: .weekOfYear, value: -1, to: now) ?? now
+        case .month: return calendar.date(byAdding: .month, value: -1, to: now) ?? now
+        case .threeMonths: return calendar.date(byAdding: .month, value: -3, to: now) ?? now
+        case .year: return calendar.date(byAdding: .year, value: -1, to: now) ?? now
+        }
+    }
+
+    /// Rating history filtered to the selected time range.
+    private var filteredRatingHistory: [RatingDataPoint] {
+        let cutoff = cutoffDate(for: selectedTimeRange)
+        return ratingHistory.filter { $0.date >= cutoff }
+    }
+
+    /// Match stats filtered to the selected time range.
+    private var filteredMatchStats: [MatchStat] {
+        let cutoff = cutoffDate(for: selectedTimeRange)
+        return matchStats.filter { $0.date >= cutoff }
+    }
     
     private var winLossPieData: [PieChartData] {
-        let wins = matchStats.filter { $0.result == .win }.count
-        let losses = matchStats.filter { $0.result == .loss }.count
+        let wins = filteredMatchStats.filter { $0.result == .win }.count
+        let losses = filteredMatchStats.filter { $0.result == .loss }.count
         let total = wins + losses
         
         guard total > 0 else { return [] }
@@ -248,18 +357,18 @@ struct PerformanceGraphsView: View {
     }
     
     private var totalMatches: Int {
-        matchStats.count
+        filteredMatchStats.count
     }
     
     private var winRate: Double {
-        guard !matchStats.isEmpty else { return 0 }
-        let wins = matchStats.filter { $0.result == .win }.count
-        return Double(wins) / Double(matchStats.count) * 100
+        guard !filteredMatchStats.isEmpty else { return 0 }
+        let wins = filteredMatchStats.filter { $0.result == .win }.count
+        return Double(wins) / Double(filteredMatchStats.count) * 100
     }
     
     private var averageRatingChangeText: String {
-        guard !matchStats.isEmpty else { return "+0" }
-        let avg = matchStats.map { $0.ratingChange }.reduce(0, +) / matchStats.count
+        guard !filteredMatchStats.isEmpty else { return "+0" }
+        let avg = filteredMatchStats.map { $0.ratingChange }.reduce(0, +) / filteredMatchStats.count
         return avg >= 0 ? "+\(avg)" : "\(avg)"
     }
     
@@ -267,7 +376,7 @@ struct PerformanceGraphsView: View {
         var currentStreak = 0
         var maxStreak = 0
         
-        for match in matchStats.reversed() {
+        for match in filteredMatchStats.reversed() {
             if match.result == .win {
                 currentStreak += 1
                 maxStreak = max(maxStreak, currentStreak)
@@ -280,7 +389,7 @@ struct PerformanceGraphsView: View {
     }
     
     private var currentForm: String {
-        let recent = matchStats.prefix(5)
+        let recent = filteredMatchStats.prefix(5)
         let wins = recent.filter { $0.result == .win }.count
         
         if wins >= 4 { return "🔥 Hot" }
@@ -344,6 +453,7 @@ struct PerformanceGraphsView: View {
             print("Failed to load performance data: \(error)")
             ratingHistory = []
             matchStats = []
+            loadFailed = true
         }
     }
 }
@@ -414,7 +524,7 @@ struct RecentMatchRow: View {
                     .fontWeight(.semibold)
                     .foregroundColor(.appTextPrimary)
                 
-                Text("vs \(match.opponent)")
+                Text(match.opponent.isEmpty || match.opponent == "Opponent" ? "Ranked Match" : "vs \(match.opponent)")
                     .font(.caption)
                     .foregroundColor(.appSecondary)
             }

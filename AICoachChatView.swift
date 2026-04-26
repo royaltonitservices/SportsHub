@@ -1648,6 +1648,9 @@ struct PrePipelineClassifier {
             "route running", "catching", "blocking", "pass rush", "release technique",
             "first touch", "finishing", "crossing", "heading",
             "left hand dribble", "weak hand", "off hand", "non-dominant",
+            // Limb / side constraint signals — athletes naturally say "left hand", "right foot" etc.
+            "left hand", "right hand", "left foot", "right foot",
+            "weak side", "weaker hand", "weaker foot",
             "agility training", "explosiveness", "plyometric", "acceleration training",
             "strength training", "endurance training", "cardio training",
             "vertical jump", "athleticism", "court vision", "coverage read"
@@ -1663,7 +1666,12 @@ struct PrePipelineClassifier {
             "what drills", "what exercises", "what should i do",
             "what should i train", "how should i train",
             "what should i work", "what should i focus",
-            "plan a session", "plan my training", "plan for training"
+            "plan a session", "plan my training", "plan for training",
+            // Constraint / requirement phrasing — athletes often state focus as a need:
+            // "I require left hand work", "I need to work on my serve", "I struggle with crossing"
+            "i require", "need to work on", "i need help with", "need help with",
+            "focus on my", "i struggle with", "struggle with my",
+            "working on my", "i want to focus"
         ]
         if intentPatterns.contains(where: { low.contains($0) }) { return true }
 

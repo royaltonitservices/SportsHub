@@ -119,10 +119,10 @@ struct TrainView: View {
                             
                             HStack(spacing: Spacing.md) {
                                 VStack {
-                                    Image(systemName: "brain.head.profile")
+                                    Image(systemName: "chart.xyaxis.line")
                                         .font(.title2)
                                         .foregroundStyle(Color.appPrimary)
-                                    Text("AI Analysis")
+                                    Text("Skill Tracking")
                                         .font(.caption)
                                         .foregroundStyle(Color.appSecondary)
                                 }
@@ -191,6 +191,8 @@ struct TrainView: View {
                 TrainingSessionView(sport: selectedSport, prefilledDrillName: quickDrillName, prefilledDuration: quickDrillDuration > 0 ? quickDrillDuration : nil)
             }
             .task(id: selectedSport) {
+                // Keep AI Coach sport context in sync with train sport selector
+                AICoachManager.shared.currentSport = selectedSport.rawValue
                 await loadRecentSessions()
                 loadSavedWorkouts()
             }

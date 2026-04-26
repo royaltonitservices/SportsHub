@@ -28,7 +28,7 @@ struct ChallengeCreationView: View {
         NavigationStack {
             Form {
                 // Challenge mode
-                Section("Challenge Type") {
+                Section {
                     Picker("Type", selection: $challengeType) {
                         ForEach(ChallengeType.allCases, id: \.self) { type in
                             HStack {
@@ -52,6 +52,14 @@ struct ChallengeCreationView: View {
                             }
                         }
                     }
+                } header: {
+                    Text("Challenge Type")
+                } footer: {
+                    Text(challengeType == .individual
+                         ? "Solo: the AI generates a personalised training challenge just for you."
+                         : "Group: sends a ranked or unranked match invite to selected friends.")
+                        .font(.caption)
+                        .foregroundStyle(Color.appTextSecondary)
                 }
 
                 // Metric — only meaningful for solo (AI uses it to pick challenge category)
@@ -121,6 +129,11 @@ struct ChallengeCreationView: View {
     // MARK: - Submit
 
     private func createChallenge() async {
+        guard SessionManager.shared.backendAvailable else {
+            errorMessage = "Challenges require a server connection. Check your connection and try again."
+            showError = true
+            return
+        }
         isLoading = true
         defer { isLoading = false }
 
@@ -145,7 +158,7 @@ struct ChallengeCreationView: View {
             }
             showSuccess = true
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = "Couldn't create the challenge. Check your connection and try again."
             showError = true
         }
     }
