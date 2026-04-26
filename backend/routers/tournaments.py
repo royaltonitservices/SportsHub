@@ -119,7 +119,7 @@ async def discover_tournaments(
     if status_filter:
         query = query.filter(models_premium.Tournament.status == status_filter)
 
-    tournaments = query.order_by(models_premium.Tournament.start_date.asc()).offset(skip).limit(limit).all()
+    tournaments = query.order_by(models_premium.Tournament.starts_at.asc()).offset(skip).limit(limit).all()
 
     tournament_ids = [t.id for t in tournaments]
     registered_ids = _get_registered_tournament_ids(db, current_user.id, tournament_ids)

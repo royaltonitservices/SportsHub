@@ -645,7 +645,7 @@ extension APIClient {
 // MARK: - Leaderboard API
 extension APIClient {
     func getLeaderboard(sport: String, limit: Int = 100) async throws -> [LeaderboardEntry] {
-        try await get("/sports/leaderboard/\(sport)?limit=\(limit)")
+        try await get("/matchmaking/leaderboard/\(sport)?limit=\(limit)")
     }
 }
 
@@ -656,7 +656,7 @@ extension APIClient {
     }
     
     func getPendingChallenges() async throws -> [ChallengeResponse] {
-        try await get("/challenges/pending")
+        try await get("/challenges/my-challenges")
     }
     
     func acceptChallenge(challengeId: String) async throws -> ChallengeResponse {

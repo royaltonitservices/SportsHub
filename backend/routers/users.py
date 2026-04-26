@@ -269,8 +269,22 @@ async def get_trust_score(
     current_user: models.User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
-    """Get current user's trust score and tier"""
-    score = float(current_user.trust_score or 100.0)
+    """Get current user's trust score and tier — aggregated from sport profiles."""
+    profiles = db.query(models.SportProfile).filter(
+        models.SportProfile.user_id == current_user.id
+    ).all()
+
+    if profiles:
+        score = float(sum(p.trust_score or 100.0 for p in profiles) / len(profiles))
+        total_matches = sum(p.games_played or 0 for p in profiles)
+        disputes_won = sum(p.disputes_won or 0 for p in profiles)
+        disputes_lost = sum(p.disputes_lost or 0 for p in profiles)
+    else:
+        score = 100.0
+        total_matches = 0
+        disputes_won = 0
+        disputes_lost = 0
+
     if score >= 90:
         tier = "trusted"
     elif score >= 60:
@@ -283,9 +297,9 @@ async def get_trust_score(
     return {
         "trust_score": score,
         "trust_tier": tier,
-        "matches_played": current_user.matches_played or 0,
-        "disputes_won": current_user.disputes_won or 0,
-        "disputes_lost": current_user.disputes_lost or 0
+        "matches_played": total_matches,
+        "disputes_won": disputes_won,
+        "disputes_lost": disputes_lost
     }
 
 

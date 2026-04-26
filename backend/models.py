@@ -361,6 +361,8 @@ class Post(Base):
     comments_count = Column(Integer, default=0)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
+    author = relationship("User", foreign_keys=[author_id], lazy="joined")
+
 
 class Clip(Base):
     __tablename__ = "clips"
@@ -378,6 +380,8 @@ class Clip(Base):
     likes_count = Column(Integer, default=0)
     safety_checked = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    author = relationship("User", foreign_keys=[author_id], lazy="joined")
 
 
 class ModerationFlag(Base):

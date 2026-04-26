@@ -80,7 +80,7 @@ async def get_ranked_leaderboard(
     profiles = db.query(models.SportProfile).filter(
         models.SportProfile.sport == sport_enum,
         models.SportProfile.is_provisional == False
-    ).order_by(desc(models.SportProfile.elo_rating)).offset(offset).limit(limit).all()
+    ).order_by(desc(models.SportProfile.rating)).offset(offset).limit(limit).all()
 
     leaderboard = []
     for rank, profile in enumerate(profiles, start=offset + 1):
@@ -114,7 +114,7 @@ async def get_ranked_leaderboard(
             rank=rank,
             user_id=str(user.id),
             username=user.username,
-            elo_rating=profile.elo_rating,
+            elo_rating=profile.rating,
             wins=wins,
             losses=losses,
             win_rate=round(win_rate, 1),
@@ -148,14 +148,14 @@ async def get_my_ranked_position(
     higher_ranked = db.query(models.SportProfile).filter(
         models.SportProfile.sport == sport_enum,
         models.SportProfile.is_provisional == False,
-        models.SportProfile.elo_rating > profile.elo_rating
+        models.SportProfile.rating > profile.rating
     ).count()
 
     rank = higher_ranked + 1
 
     return {
         "rank": rank,
-        "elo_rating": profile.elo_rating,
+        "elo_rating": profile.rating,
         "sport": sport
     }
 
