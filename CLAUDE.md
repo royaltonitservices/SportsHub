@@ -11,6 +11,37 @@
 
 ---
 
+## Latest Checkpoint — Backend-Up E2E Validation Frozen
+
+- **Status:** Backend-Up End-to-End Validation is complete and frozen.
+- **Branch pushed:** `current-state-stabilization-checkpoint`
+- **Latest pushed commit:** `c7f8adc`
+- **Tag pushed:** `backend-up-e2e-validation-complete`
+- **Working tree:** Verified clean at freeze.
+- **Migration script:** `backend/migrate_schema_v2.py`
+- **Migration script verified locally with:**
+  - `python -m py_compile backend/migrate_schema_v2.py`
+  - `cd backend && python migrate_schema_v2.py --dry-run`
+- **Dry run confirmed all 8 schema-v2 columns already exist and were skipped safely:**
+  - `challenges.accepted_at`
+  - `challenges.challenger_submitted_score`
+  - `challenges.opponent_submitted_score`
+  - `challenges.challenger_submitted_at`
+  - `challenges.opponent_submitted_at`
+  - `clips.description`
+  - `clips.thumbnail_url`
+  - `onboarding_surveys.goals`
+
+**Guidance:**
+- Do not reopen Backend-Up E2E Validation.
+- Do not start another broad audit.
+- Future work should be narrow, evidence-driven, and based on real usage or explicit infrastructure priorities.
+- For any existing SQLite DB from before this checkpoint, run:
+  `cd backend && python migrate_schema_v2.py`
+- Fresh DBs are safe — `Base.metadata.create_all()` reflects the current `models.py` schema automatically.
+
+---
+
 ## How to Use This File
 
 **Read this file first** at the start of every session.
