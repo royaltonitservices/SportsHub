@@ -913,7 +913,7 @@ extension APIClient {
 // MARK: - Clips API
 extension APIClient {
     func getClips(sport: String? = nil, limit: Int = 50) async throws -> [ClipResponse] {
-        var endpoint = "/clips/?limit=\(limit)"
+        var endpoint = "/clips/feed?limit=\(limit)"
         if let sport = sport {
             endpoint += "&sport=\(sport)"
         }

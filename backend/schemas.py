@@ -177,8 +177,8 @@ class ChallengeResponse(BaseModel):
     challenger_id: UUID
     opponent_id: UUID
     status: models.ChallengeStatus
-    challenger_confirmed: bool
-    opponent_confirmed: bool
+    challenger_confirmed: Optional[bool] = False
+    opponent_confirmed: Optional[bool] = False
     created_at: datetime
 
     class Config:
@@ -271,7 +271,7 @@ class ClipResponse(BaseModel):
     description: Optional[str] = None
     video_url: Optional[str] = None
     thumbnail_url: Optional[str] = None
-    duration: int
+    duration: Optional[int] = None
     views_count: int
     likes_count: int
     created_at: datetime
