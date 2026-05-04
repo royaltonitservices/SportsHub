@@ -3,21 +3,23 @@
 ## Metadata
 
 - **Purpose:** Living source of truth for Claude sessions working on SportsHub
-- **Last Updated:** 2026-04-16 (session 6 — 100% completion pass)
-- **Checkpoint Branch:** `checkpoint/state-of-union-2026-03-21`
-- **Checkpoint Commit:** `6263607` (multiple sessions of fixes applied on top, not yet committed)
-- **Checkpoint Note:** Session 2026-04-16 (sixth pass — 100% target): HomeView action cards wired (Train→tab2, Play→tab1, AI Coach→AICoachManager.shared.isExpanded). DrillLibraryView now fetches from GET /training/drills with APIDrillResponse→TrainingDrill mapping + local fallback. Password reset: backend POST /auth/forgot-password + /auth/reset-password (6-digit code, salted hash, idempotent); iOS ForgotPasswordView (2-step flow); LoginView "Forgot password?" button. SkillProgressionEngine backend sync: SkillSnapshot model + PUT/GET /skill-progression/{sport} router; iOS engine syncs on saveProfiles() (fire-and-forget) + merges from backend on load (backend wins if newer). Error handling: GroupChatsView createGroup shows alert on failure; sendMessage shows error banner + restores text. Apple Sign-In: oauth.py rewritten with real JWKS verification (PyJWT + httpx); correct User model field names; Google Sign-In wires to tokeninfo when GOOGLE_OAUTH_CLIENT_ID is set. WebSocket JWT: real decode_access_token() validation; closes with code 4001 on bad/expired token; verifies user exists and is ACTIVE.
+- **Last Updated:** 2026-05-03 (four-sport productization + seed expansion)
+- **Checkpoint Branch:** `current-state-stabilization-checkpoint`
+- **Checkpoint Commit:** `4b9d92b`
+- **Tag:** `four-sport-validation-complete`
+- **Checkpoint Note:** Session 2026-05-03: Four-sport productization complete. seed_dev_data.py expanded to 15 sections with 30 new rows (Football/Soccer/Tennis users, profiles, friendships, completed+active challenges, posts, clips). Fixed iOS sport casing bug — all APIClient sport parameters now use .apiValue (lowercase) instead of .rawValue ("Basketball"). Fixed HotMapsView.swift findOpponents call. Added injury keyword safety check to _fallback_coach_response() in ai_orchestrator.py (fires before generic greeting when GPT unavailable). Backend validated across all 4 sports: leaderboard (4 entries basketball, 2 each F/S/T), sport profiles (200 all sports), recent-matches (1+ per sport), posts (2-5 per sport), clips (1-2 per sport), challenges (4 active + 5 completed). AI Coach safety: 4/4 injury tests return tone=concerned.
 - **Overall Completion:** ~100% (all identified gaps closed)
 
 ---
 
-## Latest Checkpoint — Backend-Up E2E Validation Frozen
+## Latest Checkpoint — Four-Sport Validation Complete
 
-- **Status:** Backend-Up End-to-End Validation is complete and frozen.
+- **Status:** Four-Sport Productization & Validation is complete and frozen.
 - **Branch pushed:** `current-state-stabilization-checkpoint`
-- **Latest pushed commit:** `c7f8adc`
-- **Tag pushed:** `backend-up-e2e-validation-complete`
-- **Working tree:** Verified clean at freeze.
+- **Latest pushed commit:** `4b9d92b`
+- **Tag pushed:** `four-sport-validation-complete`
+- **Working tree:** Clean at freeze.
+- **Seed script:** `backend/seed_dev_data.py` — run `python3 seed_dev_data.py` to populate; idempotent (--reset to wipe and re-seed)
 - **Migration script:** `backend/migrate_schema_v2.py`
 - **Migration script verified locally with:**
   - `python -m py_compile backend/migrate_schema_v2.py`
@@ -460,6 +462,13 @@ Both compile into the same target. The split is organic, not architectural.
 - ~~AICoachLevelView division-by-zero crash~~ — fixed guard for `insightsReceived == 0`
 - ~~ProfileView hardcoded 0/0/1500 stats~~ — replaced with real `getSportProfile()` call
 
+### Fixed (2026-05-03 — Four-sport productization)
+
+- ~~iOS sport casing bug~~ — all APIClient.swift backend-bound sport params changed from .rawValue ("Basketball") to .apiValue ("basketball"); `getSportProfile` path fixed from `/sports/profile/` → `/sports/profiles/` with auto-lowercasing; affects AI Coach, training, leaderboard, and matchmaking endpoints
+- ~~HotMapsView findOpponents uses .rawValue~~ — changed to .apiValue; .rawValue would send "Basketball" and get 400 from backend
+- ~~AI Coach injury safety bypassed in fallback~~ — `_fallback_coach_response()` now checks `_INJURY_KEYWORDS` before generic greeting; injury messages return tone=concerned + stop-activity guidance even when GPT unavailable; 4/4 sport injury tests pass
+- ~~seed_dev_data.py basketball-only~~ — expanded to 15 sections with Football/Soccer/Tennis users, profiles, friendships, completed challenges, active challenges, posts, clips; all seeded with stable UUIDs for idempotent rerun; test user gets non-basketball profiles for leaderboard visibility
+
 ### Fixed (2026-04-16 session 5 — TODO stubs, notification system, is_liked, history)
 
 - ~~is_liked always False for posts~~ — PostLike junction table added; like/unlike idempotent; feed/get/user endpoints compute per-user is_liked via batch query
@@ -742,9 +751,9 @@ If the session is for a checkpoint refresh:
 
 Future validation phases are multi-sport by default unless the phase prompt explicitly limits scope to a single sport.
 
-### Basketball exception
+### Basketball exception (resolved as of 2026-05-03)
 
-Basketball may be used as the primary deep-validation lane when seeded data is required, because `backend/seed_dev_data.py` is Basketball-focused. This is acceptable for initial stabilization but does not constitute multi-sport validation.
+Basketball was previously the primary deep-validation lane because `backend/seed_dev_data.py` was Basketball-only. As of 2026-05-03, the seed script covers all four sports (users, profiles, friendships, completed+active challenges, posts, clips per sport). The basketball exception no longer applies — `python3 seed_dev_data.py` populates all four sports. Tag: `four-sport-validation-complete`.
 
 ### Required language
 
