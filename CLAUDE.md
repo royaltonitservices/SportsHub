@@ -731,3 +731,53 @@ If the session is for coding work:
 If the session is for a checkpoint refresh:
 - Say: **"Read the codebase and refresh CLAUDE.md for the current checkpoint"**
 - Claude should follow the Update Protocol above
+
+---
+
+## 16. Multi-Sport Validation Rule
+
+*Added 2026-05-04 — applies to all future validation phases.*
+
+### Default assumption
+
+Future validation phases are multi-sport by default unless the phase prompt explicitly limits scope to a single sport.
+
+### Basketball exception
+
+Basketball may be used as the primary deep-validation lane when seeded data is required, because `backend/seed_dev_data.py` is Basketball-focused. This is acceptable for initial stabilization but does not constitute multi-sport validation.
+
+### Required language
+
+If only Basketball is tested, phase reports must say **"validated for Basketball"** rather than "validated" or "fixed for all sports." Broad claims like "works," "validated," "fixed," or "complete" must not be applied across all sports unless multi-sport coverage was actually checked.
+
+### Minimum multi-sport smoke coverage
+
+For any feature that is sport-parameterized, validation should include at least a smoke check across all four supported sports (Basketball, Football, Soccer, Tennis) where practical. Features where this applies include:
+
+- Sport-profile loading
+- Training drills and drill library
+- AI Coach sport context
+- Leaderboard
+- Challenges and matchmaking
+- Performance graphs
+- Skill progression
+- Any sport-specific copy, routing, or conditional logic
+
+### Fix discipline
+
+Do not make broad multi-sport code changes speculatively. Only fix a sport-specific issue if it is reproduced against a running backend or clearly implied by shared code paths.
+
+### Per-phase reporting requirement
+
+Every future phase report must explicitly state:
+
+| Field | Value |
+|-------|-------|
+| Sports tested deeply | e.g. Basketball |
+| Sports smoke-tested | e.g. Soccer (endpoint only) |
+| Sports not tested | e.g. Football, Tennis |
+| Conclusions scope | Basketball-only / multi-sport |
+
+### Retroactive checkpoint language
+
+Do not rewrite completed checkpoint language retroactively unless it is clearly misleading. Prior seeded validation (tag: `seeded-backend-validation-complete`) was Basketball-focused and should be understood as such.
