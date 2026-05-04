@@ -1561,6 +1561,26 @@ FOLLOWUP: ONE natural follow-up question that moves the conversation forward. Ma
                 "follow_up_questions": ["What feels most challenging for you?"]
             }
 
+        # Injury / pain — safety-critical path; must fire before generic greeting fallback
+        # Uses the same keyword list as the GPT safety injection (_INJURY_KEYWORDS) so this
+        # path is safe even when OpenAI is unavailable.
+        if any(kw in msg_lower for kw in _INJURY_KEYWORDS):
+            return {
+                "response": (
+                    "That sounds uncomfortable — please stop any activity that causes pain.\n\n"
+                    "Here's what I'd suggest:\n"
+                    "• Rest the affected area and avoid movements that reproduce the pain\n"
+                    "• Apply ice (15–20 min) to reduce swelling if there is any\n"
+                    "• For mild soreness: light mobility work and stretching are usually fine\n\n"
+                    "If the pain is sharp, persistent, or gets worse with any movement, please consult "
+                    "a sports medicine professional or physiotherapist before returning to training. "
+                    "I'm a coaching tool, not a medical resource — your safety comes first."
+                ),
+                "suggested_actions": ["Rest today", "Schedule a check-up if pain persists"],
+                "tone": "concerned",
+                "follow_up_questions": ["How long have you been feeling this?"]
+            }
+
         # Recovery/tiredness
         if any(word in msg_lower for word in ['tired', 'sore', 'rest', 'recovery', 'fatigue']):
             recovery_score = context.get('recovery_score')

@@ -626,11 +626,11 @@ extension APIClient {
 // MARK: - Sports API
 extension APIClient {
     func getSportProfile(sport: String) async throws -> SportProfileResponse {
-        try await get("/sports/profile/\(sport)")
+        try await get("/sports/profiles/\(sport.lowercased())")
     }
-    
+
     func createSportProfile(sport: String) async throws -> SportProfileResponse {
-        try await post("/sports/profile", body: ["sport": sport])
+        try await post("/sports/profiles", body: ["sport": sport.lowercased()])
     }
 }
 
@@ -1163,7 +1163,7 @@ extension APIClient {
         }
         #endif
         
-        let request = CoachMessageRequest(message: message, sport: sport.rawValue, context: context, conversationHistory: conversationHistory)
+        let request = CoachMessageRequest(message: message, sport: sport.apiValue, context: context, conversationHistory: conversationHistory)
         
         // Log request details
         if let requestData = try? JSONEncoder().encode(request),
@@ -1674,31 +1674,31 @@ extension APIClient {
 
     /// Get proactive AI Coach check-in
     func getProactiveCheckin(sport: Sport) async throws -> ProactiveCheckinResponse {
-        try await get("/ai/coach/checkin?sport=\(sport.rawValue)")
+        try await get("/ai/coach/checkin?sport=\(sport.apiValue)")
     }
-    
+
     /// Clear conversation history
     func clearCoachConversation(sport: Sport) async throws -> MessageResponse {
-        try await delete("/ai/coach/history?sport=\(sport.rawValue)")
+        try await delete("/ai/coach/history?sport=\(sport.apiValue)")
     }
-    
+
     /// Generate AI-powered drill (available to all users)
     func generateDrill(sport: Sport, focusSkill: String? = nil, difficulty: String? = nil, duration: Int = 20) async throws -> DrillResponse {
-        var request = DrillGenerationRequest(sport: sport.rawValue, duration_minutes: duration)
+        var request = DrillGenerationRequest(sport: sport.apiValue, duration_minutes: duration)
         request.focus_skill = focusSkill
         request.difficulty = difficulty
         return try await post("/ai/coach/drill/generate", body: request)
     }
-    
+
     /// Generate AI-powered challenge (available to all users)
     func generateChallenge(sport: Sport, challengeType: String = "skill") async throws -> AIChallengeResponse {
-        let request = AIChallengeGenerationRequest(sport: sport.rawValue, challenge_type: challengeType)
+        let request = AIChallengeGenerationRequest(sport: sport.apiValue, challenge_type: challengeType)
         return try await post("/ai/coach/challenge/generate", body: request)
     }
-    
+
     /// Analyze training session (Premium)
     func analyzeTrainingSession(sport: Sport, sessionData: [String: Any]) async throws -> TrainingAnalysisResponse {
-        let request = TrainingAnalysisRequest(sport: sport.rawValue, session_data: sessionData)
+        let request = TrainingAnalysisRequest(sport: sport.apiValue, session_data: sessionData)
         return try await post("/ai/coach/analyze", body: request)
     }
     
@@ -1756,7 +1756,7 @@ extension APIClient {
             )
         }
         let body = Body(
-            sport: sport.rawValue,
+            sport: sport.apiValue,
             drills: drillPayloads,
             notes: notes?.isEmpty == true ? nil : notes,
             ai_performance_rating: aiAnalysis?.performanceRating,
@@ -1770,7 +1770,7 @@ extension APIClient {
     /// Fetch training session history for the current user.
     func getTrainingHistory(sport: Sport? = nil, limit: Int = 20) async throws -> [TrainingSessionResponse] {
         var endpoint = "/training/sessions?limit=\(limit)"
-        if let s = sport { endpoint += "&sport=\(s.rawValue)" }
+        if let s = sport { endpoint += "&sport=\(s.apiValue)" }
         return try await get(endpoint)
     }
 
@@ -1789,14 +1789,14 @@ extension APIClient {
             if !d.metricValue.isEmpty { dict["metric_value"] = d.metricValue }
             return dict
         }
-        let body = Body(sport: sport.rawValue, name: name, description: description, drills: drillDicts)
+        let body = Body(sport: sport.apiValue, name: name, description: description, drills: drillDicts)
         return try await post("/training/workouts", body: body)
     }
 
     /// Fetch user's saved workout plans.
     func getSavedWorkouts(sport: Sport? = nil) async throws -> [SavedWorkoutResponse] {
         var endpoint = "/training/workouts"
-        if let s = sport { endpoint += "?sport=\(s.rawValue)" }
+        if let s = sport { endpoint += "?sport=\(s.apiValue)" }
         return try await get(endpoint)
     }
 
