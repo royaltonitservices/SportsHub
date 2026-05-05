@@ -3,22 +3,23 @@
 ## Metadata
 
 - **Purpose:** Living source of truth for Claude sessions working on SportsHub
-- **Last Updated:** 2026-05-03 (four-sport productization + seed expansion)
+- **Last Updated:** 2026-05-05 (sport equality audit)
 - **Checkpoint Branch:** `current-state-stabilization-checkpoint`
-- **Checkpoint Commit:** `4b9d92b`
-- **Tag:** `four-sport-validation-complete`
-- **Checkpoint Note:** Session 2026-05-03: Four-sport productization complete. seed_dev_data.py expanded to 15 sections with 30 new rows (Football/Soccer/Tennis users, profiles, friendships, completed+active challenges, posts, clips). Fixed iOS sport casing bug — all APIClient sport parameters now use .apiValue (lowercase) instead of .rawValue ("Basketball"). Fixed HotMapsView.swift findOpponents call. Added injury keyword safety check to _fallback_coach_response() in ai_orchestrator.py (fires before generic greeting when GPT unavailable). Backend validated across all 4 sports: leaderboard (4 entries basketball, 2 each F/S/T), sport profiles (200 all sports), recent-matches (1+ per sport), posts (2-5 per sport), clips (1-2 per sport), challenges (4 active + 5 completed). AI Coach safety: 4/4 injury tests return tone=concerned.
+- **Checkpoint Commit:** `4b9d92b` (four-sport productization); sport-equality-audit fix pending commit
+- **Tag:** `four-sport-validation-complete` (previous); `sport-equality-audit-complete` (pending)
+- **Checkpoint Note:** Session 2026-05-05: Sport Equality Audit complete across Basketball/Football/Soccer/Tennis. Verdict: Mostly equal, minor polish gaps. One critical safety fix applied — injury check in `_fallback_coach_response()` was after workout/practice keyword check; promoted to first position so "ankle during practice"-style messages route to safety response instead of workout plan. All 4/4 spec safety tests pass. No Basketball terminology leaks into F/S/T content. F/S/T fallback AI Coach returns sport-correct skill lists (Basic quality); Basketball/Tennis return drill-specific responses (Strong). GPT-backed equality unvalidated (key absent). Two deferred fallback quality gaps: soccer "first touch" and football "routes" extraction.
 - **Overall Completion:** ~100% (all identified gaps closed)
 
 ---
 
-## Latest Checkpoint — Four-Sport Validation Complete
+## Latest Checkpoint — Sport Equality Audit Complete
 
-- **Status:** Four-Sport Productization & Validation is complete and frozen.
-- **Branch pushed:** `current-state-stabilization-checkpoint`
-- **Latest pushed commit:** `4b9d92b`
-- **Tag pushed:** `four-sport-validation-complete`
-- **Working tree:** Clean at freeze.
+- **Status:** Sport Equality Audit complete. Verdict: Mostly equal, minor polish gaps.
+- **Branch:** `current-state-stabilization-checkpoint`
+- **Latest commit:** sport-equality-audit safety fix (pending)
+- **Tag:** `sport-equality-audit-complete` (pending)
+- **Prior checkpoint:** `four-sport-validation-complete` at commit `4b9d92b`
+- **Working tree:** 1 file changed (backend/ai_orchestrator.py — safety fix)
 - **Seed script:** `backend/seed_dev_data.py` — run `python3 seed_dev_data.py` to populate; idempotent (--reset to wipe and re-seed)
 - **Migration script:** `backend/migrate_schema_v2.py`
 - **Migration script verified locally with:**
@@ -450,6 +451,8 @@ Both compile into the same target. The split is organic, not architectural.
 
 3. **DrillLibraryView hardcoded** — ~2000 lines of drill definitions inline, not from API
 4. **Video playback untested end-to-end** — StaticFiles mount + AVPlayer error handling fixed; needs verification with real uploaded videos
+5. **Soccer "first touch" unreachable in fallback AI Coach** — `_get_sport_skills(SOCCER)` lists ["Dribbling", "Passing", "Shooting", "Defense"] but not "first touch"; drill exists in `_get_skill_drills` but extraction returns None; fallback lists soccer skills instead of specific drills (GPT mode not affected)
+6. **Football "routes" extraction mismatch** — "help me run sharper routes" doesn't match "route running" in `_extract_skill`; same fallback behavior as soccer gap above
 
 ### Fixed (2026-04-08)
 
@@ -461,6 +464,10 @@ Both compile into the same target. The split is organic, not architectural.
 - ~~Performance graphs use mock data~~ — replaced with real data via `getRecentMatches()`
 - ~~AICoachLevelView division-by-zero crash~~ — fixed guard for `insightsReceived == 0`
 - ~~ProfileView hardcoded 0/0/1500 stats~~ — replaced with real `getSportProfile()` call
+
+### Fixed (2026-05-05 — Sport equality audit)
+
+- ~~Injury check order bug in `_fallback_coach_response()`~~ — injury check was after workout/practice/drill keywords; "I twisted my ankle during practice" returned a workout plan (tone=motivating) instead of a safety warning (tone=concerned). Injury check now promoted to first position — fires before all keyword paths. Duplicate second injury block removed. All 4/4 spec safety tests pass.
 
 ### Fixed (2026-05-03 — Four-sport productization)
 

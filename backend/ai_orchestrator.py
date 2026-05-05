@@ -1490,6 +1490,26 @@ FOLLOWUP: ONE natural follow-up question that moves the conversation forward. Ma
         """Intelligent template-based coaching when OpenAI unavailable"""
         msg_lower = user_message.lower()
 
+        # SAFETY-CRITICAL: Injury check must be FIRST — before workout/practice/drill keywords.
+        # "I twisted my ankle during practice" contains "practice" which would otherwise
+        # trigger the workout path and return a training plan instead of a safety warning.
+        if any(kw in msg_lower for kw in _INJURY_KEYWORDS):
+            return {
+                "response": (
+                    "That sounds uncomfortable — please stop any activity that causes pain.\n\n"
+                    "Here's what I'd suggest:\n"
+                    "• Rest the affected area and avoid movements that reproduce the pain\n"
+                    "• Apply ice (15–20 min) to reduce swelling if there is any\n"
+                    "• For mild soreness: light mobility work and stretching are usually fine\n\n"
+                    "If the pain is sharp, persistent, or gets worse with any movement, please consult "
+                    "a sports medicine professional or physiotherapist before returning to training. "
+                    "I'm a coaching tool, not a medical resource — your safety comes first."
+                ),
+                "suggested_actions": ["Rest today", "Schedule a check-up if pain persists"],
+                "tone": "concerned",
+                "follow_up_questions": ["How long have you been feeling this?"]
+            }
+
         # Schedule / multi-day plan request (check BEFORE single-workout check)
         schedule_keywords = ['schedule', 'weekly', 'week plan', 'training plan',
                              'program', 'days a week', 'multi-day', 'day 1', 'day 2',
@@ -1559,26 +1579,6 @@ FOLLOWUP: ONE natural follow-up question that moves the conversation forward. Ma
                 "suggested_actions": ["View training drills", "Set a goal"],
                 "tone": "supportive",
                 "follow_up_questions": ["What feels most challenging for you?"]
-            }
-
-        # Injury / pain — safety-critical path; must fire before generic greeting fallback
-        # Uses the same keyword list as the GPT safety injection (_INJURY_KEYWORDS) so this
-        # path is safe even when OpenAI is unavailable.
-        if any(kw in msg_lower for kw in _INJURY_KEYWORDS):
-            return {
-                "response": (
-                    "That sounds uncomfortable — please stop any activity that causes pain.\n\n"
-                    "Here's what I'd suggest:\n"
-                    "• Rest the affected area and avoid movements that reproduce the pain\n"
-                    "• Apply ice (15–20 min) to reduce swelling if there is any\n"
-                    "• For mild soreness: light mobility work and stretching are usually fine\n\n"
-                    "If the pain is sharp, persistent, or gets worse with any movement, please consult "
-                    "a sports medicine professional or physiotherapist before returning to training. "
-                    "I'm a coaching tool, not a medical resource — your safety comes first."
-                ),
-                "suggested_actions": ["Rest today", "Schedule a check-up if pain persists"],
-                "tone": "concerned",
-                "follow_up_questions": ["How long have you been feeling this?"]
             }
 
         # Recovery/tiredness
