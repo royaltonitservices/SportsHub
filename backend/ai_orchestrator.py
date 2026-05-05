@@ -1543,7 +1543,7 @@ FOLLOWUP: ONE natural follow-up question that moves the conversation forward. Ma
             }
 
         # Improvement/weakness focus
-        if any(word in msg_lower for word in ['improve', 'better', 'weak', 'struggle', 'help with']):
+        if any(word in msg_lower for word in ['improve', 'better', 'weak', 'struggle', 'help with', 'help me']):
             weak_point = self._extract_skill(msg_lower, sport)
             if weak_point:
                 drills = self._get_skill_drills(sport, weak_point)
