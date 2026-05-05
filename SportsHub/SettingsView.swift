@@ -969,7 +969,7 @@ struct TrainingProfileSettingsView: View {
         let ratedPayload = skillRatings.filter { ratedSkills.contains($0.key) }
 
         let request = OnboardingSurveyRequest(
-            mainSport: selectedSport.rawValue,
+            mainSport: selectedSport.apiValue,
             skillRatings: ratedPayload,
             strengths: Array(selectedStrengths),
             weaknesses: Array(selectedWeaknesses),

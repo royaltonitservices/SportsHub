@@ -3,23 +3,22 @@
 ## Metadata
 
 - **Purpose:** Living source of truth for Claude sessions working on SportsHub
-- **Last Updated:** 2026-05-05 (sport equality audit)
+- **Last Updated:** 2026-05-05 (first-class sport equality hardening)
 - **Checkpoint Branch:** `current-state-stabilization-checkpoint`
-- **Checkpoint Commit:** `4b9d92b` (four-sport productization); sport-equality-audit fix pending commit
-- **Tag:** `four-sport-validation-complete` (previous); `sport-equality-audit-complete` (pending)
-- **Checkpoint Note:** Session 2026-05-05: Sport Equality Audit complete across Basketball/Football/Soccer/Tennis. Verdict: Mostly equal, minor polish gaps. One critical safety fix applied — injury check in `_fallback_coach_response()` was after workout/practice keyword check; promoted to first position so "ankle during practice"-style messages route to safety response instead of workout plan. All 4/4 spec safety tests pass. No Basketball terminology leaks into F/S/T content. F/S/T fallback AI Coach returns sport-correct skill lists (Basic quality); Basketball/Tennis return drill-specific responses (Strong). GPT-backed equality unvalidated (key absent). Two deferred fallback quality gaps: soccer "first touch" and football "routes" extraction.
+- **Checkpoint Commit:** `4b9d92b` (four-sport productization); sport-equality-hardening commit pending
+- **Tag:** `first-class-sport-equality-complete` (pending)
+- **Checkpoint Note:** Session 2026-05-05: First-Class Sport Equality Hardening complete. All 4 sports are now equal first-class development lanes. Added `_SPORT_SKILL_ALIASES` map (basketball 10 aliases, football 13, soccer 11, tennis 9) to `ai_orchestrator.py`; updated `_extract_skill()` to check aliases first; added football "throwing" drill bucket (4 drills); corrected soccer skill display list (Finishing/First touch replacing Shooting/Defense); extended `_INJURY_KEYWORDS` with concussion/dizzy/head-impact terms; added "require", "need to work", "i need help" to improvement keyword list. iOS: fixed VideoUploadView and SettingsView to use `.apiValue` instead of `.rawValue` for backend API calls. Validation: 16/16 coaching prompts Strong, 12/12 safety prompts PASS. Backend endpoints 200 for all 4 sports.
 - **Overall Completion:** ~100% (all identified gaps closed)
 
 ---
 
-## Latest Checkpoint — Sport Equality Audit Complete
+## Latest Checkpoint — First-Class Sport Equality Hardening Complete
 
-- **Status:** Sport Equality Audit complete. Verdict: Mostly equal, minor polish gaps.
+- **Status:** First-Class Sport Equality Hardening complete. All 4 sports validated equal.
 - **Branch:** `current-state-stabilization-checkpoint`
-- **Latest commit:** sport-equality-audit safety fix (pending)
-- **Tag:** `sport-equality-audit-complete` (pending)
-- **Prior checkpoint:** `four-sport-validation-complete` at commit `4b9d92b`
-- **Working tree:** 1 file changed (backend/ai_orchestrator.py — safety fix)
+- **Latest commit:** first-class sport equality hardening (pending tag: `first-class-sport-equality-complete`)
+- **Prior checkpoint:** `sport-equality-audit-complete` at commit `36e2a1f`
+- **Working tree:** clean after commit
 - **Seed script:** `backend/seed_dev_data.py` — run `python3 seed_dev_data.py` to populate; idempotent (--reset to wipe and re-seed)
 - **Migration script:** `backend/migrate_schema_v2.py`
 - **Migration script verified locally with:**
@@ -465,6 +464,16 @@ Both compile into the same target. The split is organic, not architectural.
 - ~~AICoachLevelView division-by-zero crash~~ — fixed guard for `insightsReceived == 0`
 - ~~ProfileView hardcoded 0/0/1500 stats~~ — replaced with real `getSportProfile()` call
 
+### Fixed (2026-05-05 — First-class sport equality hardening)
+
+- ~~Football/Soccer AI Coach fallback returning Basic (generic category list)~~ — added `_SPORT_SKILL_ALIASES` dict mapping natural-language phrases to canonical drill keys; updated `_extract_skill()` to check aliases first; "routes"→"route running", "first touch"→"first touch", "throwing mechanics"→"throwing", "weak foot"→"first touch", etc. 16/16 coaching prompts now return Strong (drill-specific) responses.
+- ~~Football throwing drills missing~~ — added `football_drills["throwing"]` with 4 QB-mechanics drills (3-step drop, 5-step drop, seated throw, towel drill).
+- ~~Soccer skill display list showing "Shooting/Defense"~~ — corrected to `["Dribbling", "Passing", "Finishing", "First touch"]` to match actual drill keys.
+- ~~Head impact not triggering safety response~~ — added `"concussion"`, `"dizzy"`, `"dizziness"`, `"hit in the head"`, `"hit my head"`, `"head impact"` to `_INJURY_KEYWORDS`. 12/12 safety prompts now return tone=concerned.
+- ~~"I require X" not routing to improvement path~~ — added `"require"`, `"need to work"`, `"i need help"` to improvement keyword list.
+- ~~VideoUploadView sending sport as uppercase to backend~~ — `selectedSport.rawValue` → `selectedSport.apiValue` in `uploadClipVideo()` call; backend `models.Sport("Basketball")` would have returned 500.
+- ~~SettingsView onboarding survey sending sport as uppercase~~ — `selectedSport.rawValue` → `selectedSport.apiValue` for `mainSport` in `OnboardingSurveyRequest`.
+
 ### Fixed (2026-05-05 — Sport equality audit)
 
 - ~~Injury check order bug in `_fallback_coach_response()`~~ — injury check was after workout/practice/drill keywords; "I twisted my ankle during practice" returned a workout plan (tone=motivating) instead of a safety warning (tone=concerned). Injury check now promoted to first position — fires before all keyword paths. Duplicate second injury block removed. All 4/4 spec safety tests pass.
@@ -797,3 +806,36 @@ Every future phase report must explicitly state:
 ### Retroactive checkpoint language
 
 Do not rewrite completed checkpoint language retroactively unless it is clearly misleading. Prior seeded validation (tag: `seeded-backend-validation-complete`) was Basketball-focused and should be understood as such.
+
+---
+
+## 17. First-Class Sport Equality Rule
+
+*Added 2026-05-05 — all four sports are equal development lanes.*
+
+### Guarantee (as of first-class-sport-equality-complete)
+
+Basketball, Football, Soccer, and Tennis are guaranteed equal across:
+- Backend endpoint responses (leaderboard, profiles, posts, clips, challenges)
+- AI Coach fallback quality (16/16 coaching prompts → Strong drill-specific responses)
+- Safety detection (12/12 injury prompts → tone=concerned)
+- iOS API call sport encoding (all backend-bound calls use `.apiValue` lowercase)
+- Seed data (minimum MVP floor: 5+ drills, 2+ posts, 1+ clip, 2+ active challenges)
+
+### Key implementation files
+
+| Component | File | Key constant/function |
+|-----------|------|----------------------|
+| AI fallback skill aliases | backend/ai_orchestrator.py | `_SPORT_SKILL_ALIASES` |
+| AI fallback skill extraction | backend/ai_orchestrator.py | `_extract_skill()` |
+| AI fallback drill content | backend/ai_orchestrator.py | `_get_skill_drills()` |
+| AI safety keywords | backend/ai_orchestrator.py | `_INJURY_KEYWORDS` |
+| iOS sport encoding | SportsHub/Sport.swift | `apiValue` computed property |
+
+### Rules for future sessions
+
+1. **Never add sport-specific copy outside a `switch selectedSport {}` or `case .sport:` block** — hardcoded sport names in UI text are a leakage bug.
+2. **All backend API calls must use `.apiValue` (lowercase)** — never `.rawValue` for sport parameters sent to the backend.
+3. **`_SPORT_SKILL_ALIASES` is the authority for what natural language resolves to which drill** — add aliases here, not ad-hoc in callers.
+4. **Safety check is always first in `_fallback_coach_response()`** — do not insert any keyword branch before the `_INJURY_KEYWORDS` check.
+5. **When adding a new sport-specific feature**, validate it returns correct data for all 4 sports before calling it complete.

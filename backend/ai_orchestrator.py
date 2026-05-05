@@ -66,6 +66,47 @@ SPORT_CONSTRAINTS = {
     ),
 }
 
+# Sport-specific skill keyword aliases → canonical drill key in _get_skill_drills().
+# Checked by _extract_skill() before direct skill name matching so common natural-language
+# phrasings resolve to the correct drill bucket even when the message doesn't match exactly.
+# Ordered longest-first within each sport to prevent partial matches (e.g., "throwing
+# mechanics" matches before "throw").
+_SPORT_SKILL_ALIASES: dict = {
+    "basketball": [
+        ("left hand",  "ball handling"), ("weak hand",   "ball handling"),
+        ("right hand", "ball handling"), ("off hand",    "ball handling"),
+        ("handles",    "ball handling"), ("dribble",     "ball handling"),
+        ("layup",      "finishing"),     ("layups",      "finishing"),
+        ("finish",     "finishing"),     ("shoot",       "shooting"),
+    ],
+    "football": [
+        ("throwing mechanics", "throwing"), ("throwing accuracy", "throwing"),
+        ("route running",      "route running"),
+        ("routes",   "route running"), ("route",  "route running"),
+        ("throw",    "throwing"),
+        ("catching", "catching"),      ("catch",  "catching"),
+        ("agility",  "speed"),         ("explosive", "speed"), ("faster", "speed"),
+        ("footwork", "footwork"),      ("conditioning", "conditioning"),
+        ("endurance","conditioning"),
+    ],
+    "soccer": [
+        ("first touch",    "first touch"), ("weak foot",    "first touch"),
+        ("weaker foot",    "first touch"), ("off foot",     "first touch"),
+        ("shooting accuracy", "finishing"),("shooting",     "finishing"),
+        ("shoot",          "finishing"),   ("finish",       "finishing"),
+        ("dribble",        "dribbling"),   ("passing",      "passing"),
+        ("pass",           "passing"),
+    ],
+    "tennis": [
+        ("serve toss",   "serve"),  ("second serve", "serve"),
+        ("first serve",  "serve"),  ("toss",         "serve"),
+        ("backhand",     "backhand"),
+        ("forehand",     "forehand"),
+        ("footwork",     "footwork"), ("movement",   "footwork"),
+        ("volley",       "volley"),  ("net",         "volley"),
+    ],
+}
+
 # Injury keywords for backend safety detection
 _INJURY_KEYWORDS = [
     "hurt", "hurts", "pain", "painful", "sore", "soreness",
@@ -78,6 +119,8 @@ _INJURY_KEYWORDS = [
     "plantar", "tendon", "ligament", "tendinitis",
     "tweak", "tweaked", "popped", "snap", "snapped",
     "can't run", "can't play", "limping",
+    "concussion", "dizzy", "dizziness",
+    "hit in the head", "hit my head", "head impact",
 ]
 
 
@@ -1563,7 +1606,7 @@ FOLLOWUP: ONE natural follow-up question that moves the conversation forward. Ma
             }
 
         # Improvement/weakness focus
-        if any(word in msg_lower for word in ['improve', 'better', 'weak', 'struggle', 'help with', 'help me']):
+        if any(word in msg_lower for word in ['improve', 'better', 'weak', 'struggle', 'help with', 'help me', 'require', 'need to work', 'i need help']):
             weak_point = self._extract_skill(msg_lower, sport)
             if weak_point:
                 drills = self._get_skill_drills(sport, weak_point)
@@ -1750,16 +1793,21 @@ FOLLOWUP: ONE natural follow-up question that moves the conversation forward. Ma
         """Get main skills for a sport"""
         skills = {
             models.Sport.BASKETBALL: ["Shooting", "Ball handling", "Defense", "Passing"],
-            models.Sport.SOCCER: ["Dribbling", "Passing", "Shooting", "Defense"],
+            models.Sport.SOCCER: ["Dribbling", "Passing", "Finishing", "First touch"],
             models.Sport.TENNIS: ["Serve", "Forehand", "Backhand", "Footwork"],
             models.Sport.FOOTBALL: ["Throwing", "Catching", "Route running", "Blocking"]
         }
         return skills.get(sport, skills[models.Sport.BASKETBALL])
 
     def _extract_skill(self, message: str, sport: models.Sport) -> Optional[str]:
-        """Extract mentioned skill from message"""
-        skills = self._get_sport_skills(sport)
-        for skill in skills:
+        """Extract mentioned skill from message, using sport-specific keyword aliases first."""
+        # Alias map checked first; entries are ordered longest-phrase-first to avoid
+        # "throw" matching before "throwing mechanics" in the same message.
+        for keyword, canonical in _SPORT_SKILL_ALIASES.get(sport.value, []):
+            if keyword in message:
+                return canonical
+        # Fall back to direct skill name match
+        for skill in self._get_sport_skills(sport):
             if skill.lower() in message:
                 return skill.lower()
         return None
@@ -1821,6 +1869,12 @@ FOLLOWUP: ONE natural follow-up question that moves the conversation forward. Ma
         }
 
         football_drills = {
+            "throwing": [
+                "3-step drop, feet set before release — 10 reps to short zones each side",
+                "5-step drop with hitch, throw intermediate — 8 reps per target zone",
+                "Seated throw drill — isolate hip/shoulder rotation, 3×10 each side",
+                "Towel drill on wall — 20 reps, same release point and follow-through every time"
+            ],
             "route running": [
                 "5-yard out route with sharp break — 3×15 each side",
                 "Slant from the slot — full speed, 3×12",

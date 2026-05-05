@@ -271,7 +271,7 @@ struct VideoUploadView: View {
                 _ = try await APIClient.shared.uploadClipVideo(
                     videoURL: videoURL,
                     title: title,
-                    sport: selectedSport.rawValue,
+                    sport: selectedSport.apiValue,
                     description: description.isEmpty ? nil : description
                 )
                 
