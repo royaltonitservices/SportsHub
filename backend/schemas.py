@@ -188,7 +188,7 @@ class ChallengeResponse(BaseModel):
 class SubmitMatchResult(BaseModel):
     challenge_id: UUID
     winner_id: UUID
-    score_data: Optional[dict] = None
+    score_data: Optional[str] = None  # "21-15" format; matches String(50) DB column and iOS SubmitMatchResultRequest
 
 
 class DisputeCreate(BaseModel):

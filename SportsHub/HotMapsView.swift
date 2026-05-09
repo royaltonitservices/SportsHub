@@ -151,7 +151,7 @@ struct HotMapsView: View {
         defer { isLoadingPlayers = false }
 
         do {
-            nearbyPlayers = try await APIClient.shared.findOpponents(sport: selectedSport.apiValue, matchType: "casual")
+            nearbyPlayers = try await APIClient.shared.findOpponents(sport: selectedSport.apiValue, matchType: "ranked")
         } catch {
             loadError = "Couldn't load players. Pull to refresh."
         }
