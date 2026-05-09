@@ -3,21 +3,22 @@
 ## Metadata
 
 - **Purpose:** Living source of truth for Claude sessions working on SportsHub
-- **Last Updated:** 2026-05-05 (first-class sport equality hardening)
+- **Last Updated:** 2026-05-09 (challenge lifecycle E2E validation)
 - **Checkpoint Branch:** `current-state-stabilization-checkpoint`
-- **Checkpoint Commit:** `4b9d92b` (four-sport productization); sport-equality-hardening commit pending
-- **Tag:** `first-class-sport-equality-complete` (pending)
-- **Checkpoint Note:** Session 2026-05-05: First-Class Sport Equality Hardening complete. All 4 sports are now equal first-class development lanes. Added `_SPORT_SKILL_ALIASES` map (basketball 10 aliases, football 13, soccer 11, tennis 9) to `ai_orchestrator.py`; updated `_extract_skill()` to check aliases first; added football "throwing" drill bucket (4 drills); corrected soccer skill display list (Finishing/First touch replacing Shooting/Defense); extended `_INJURY_KEYWORDS` with concussion/dizzy/head-impact terms; added "require", "need to work", "i need help" to improvement keyword list. iOS: fixed VideoUploadView and SettingsView to use `.apiValue` instead of `.rawValue` for backend API calls. Validation: 16/16 coaching prompts Strong, 12/12 safety prompts PASS. Backend endpoints 200 for all 4 sports.
+- **Checkpoint Commit:** `4704a2c` (challenge lifecycle E2E)
+- **Tag:** `challenge-lifecycle-e2e-complete`
+- **Checkpoint Note:** Session 2026-05-09: Challenge Lifecycle E2E validation complete across all 4 sports. Two critical bugs found and fixed: (1) `SubmitMatchResult.score_data` was typed `Optional[dict]` in backend schema but DB column is `String(50)` and iOS sends a string — any iOS result submission with a score caused 422/500; fixed to `Optional[str]`. (2) HotMapsView sent `matchType: "casual"` (invalid enum value, causing 422 on every Hot Maps load); fixed to `"ranked"`. Full lifecycle validated: create → accept → challenger-submit → opponent-submit → completed, with ELO rating updates confirmed for Basketball, Football, Soccer, Tennis. Dispute detection (score mismatch → DISPUTED state) also verified. Activity feed emits `match_completed` events. Known architectural gap: leaderboard win/loss counts (`/leaderboards/ranked/{sport}`) always 0 because they query the `matches` table, never populated by the challenge flow; ELO is correct.
 - **Overall Completion:** ~100% (all identified gaps closed)
 
 ---
 
-## Latest Checkpoint — First-Class Sport Equality Hardening Complete
+## Latest Checkpoint — Challenge Lifecycle E2E: Four-Sport Validation Complete
 
-- **Status:** First-Class Sport Equality Hardening complete. All 4 sports validated equal.
+- **Status:** Challenge lifecycle validated end-to-end for Basketball, Football, Soccer, Tennis. Two critical bugs fixed.
 - **Branch:** `current-state-stabilization-checkpoint`
-- **Latest commit:** first-class sport equality hardening (pending tag: `first-class-sport-equality-complete`)
-- **Prior checkpoint:** `sport-equality-audit-complete` at commit `36e2a1f`
+- **Latest commit:** `4704a2c` — "Validate four-sport challenge lifecycle"
+- **Tag:** `challenge-lifecycle-e2e-complete`
+- **Prior checkpoint:** `first-class-sport-equality-complete` at commit `89ce68d`
 - **Working tree:** clean after commit
 - **Seed script:** `backend/seed_dev_data.py` — run `python3 seed_dev_data.py` to populate; idempotent (--reset to wipe and re-seed)
 - **Migration script:** `backend/migrate_schema_v2.py`
@@ -450,8 +451,8 @@ Both compile into the same target. The split is organic, not architectural.
 
 3. **DrillLibraryView hardcoded** — ~2000 lines of drill definitions inline, not from API
 4. **Video playback untested end-to-end** — StaticFiles mount + AVPlayer error handling fixed; needs verification with real uploaded videos
-5. **Soccer "first touch" unreachable in fallback AI Coach** — `_get_sport_skills(SOCCER)` lists ["Dribbling", "Passing", "Shooting", "Defense"] but not "first touch"; drill exists in `_get_skill_drills` but extraction returns None; fallback lists soccer skills instead of specific drills (GPT mode not affected)
-6. **Football "routes" extraction mismatch** — "help me run sharper routes" doesn't match "route running" in `_extract_skill`; same fallback behavior as soccer gap above
+5. **Leaderboard win/loss always 0** — `/leaderboards/ranked/{sport}` queries `models.Match` table for win/loss counts; `Match` table is never populated by the challenge completion flow; ELO ratings in `sport_profiles` are correct. Fix requires inserting a `Match` record when a challenge completes.
+6. **Dead `submitResult()` path in APIClient** — `func submitResult(challengeId:request:)` posts to `/challenges/{id}/result` (returns 404); never called from any view. Safe to remove in a future cleanup pass.
 
 ### Fixed (2026-04-08)
 
@@ -463,6 +464,11 @@ Both compile into the same target. The split is organic, not architectural.
 - ~~Performance graphs use mock data~~ — replaced with real data via `getRecentMatches()`
 - ~~AICoachLevelView division-by-zero crash~~ — fixed guard for `insightsReceived == 0`
 - ~~ProfileView hardcoded 0/0/1500 stats~~ — replaced with real `getSportProfile()` call
+
+### Fixed (2026-05-09 — Challenge lifecycle E2E validation)
+
+- ~~`SubmitMatchResult.score_data` typed `Optional[dict]` (backend)~~ — iOS sends a string ("21-15"); dict type caused 422 for any scored submission; 500 when dict passed; fixed to `Optional[str]` in `schemas.py` to match `String(50)` DB column and `SubmitMatchResultRequest.scoreData: String?` in iOS. Full two-phase result flow now works for all 4 sports.
+- ~~HotMapsView `matchType: "casual"` invalid enum~~ — "casual" is not a valid `MatchType` value (only "ranked"/"unranked"); caused 422 on every Hot Maps load; fixed to `"ranked"` in `HotMapsView.swift`.
 
 ### Fixed (2026-05-05 — First-class sport equality hardening)
 
