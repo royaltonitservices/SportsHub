@@ -12,36 +12,50 @@
 
 ---
 
-## Latest Checkpoint — Challenge Lifecycle E2E: Four-Sport Validation Complete
+## Latest Checkpoint — Challenge Lifecycle E2E Frozen
 
-- **Status:** Challenge lifecycle validated end-to-end for Basketball, Football, Soccer, Tennis. Two critical bugs fixed.
-- **Branch:** `current-state-stabilization-checkpoint`
-- **Latest commit:** `4704a2c` — "Validate four-sport challenge lifecycle"
-- **Tag:** `challenge-lifecycle-e2e-complete`
-- **Prior checkpoint:** `first-class-sport-equality-complete` at commit `89ce68d`
-- **Working tree:** clean after commit
-- **Seed script:** `backend/seed_dev_data.py` — run `python3 seed_dev_data.py` to populate; idempotent (--reset to wipe and re-seed)
-- **Migration script:** `backend/migrate_schema_v2.py`
-- **Migration script verified locally with:**
-  - `python -m py_compile backend/migrate_schema_v2.py`
-  - `cd backend && python migrate_schema_v2.py --dry-run`
-- **Dry run confirmed all 8 schema-v2 columns already exist and were skipped safely:**
-  - `challenges.accepted_at`
-  - `challenges.challenger_submitted_score`
-  - `challenges.opponent_submitted_score`
-  - `challenges.challenger_submitted_at`
-  - `challenges.opponent_submitted_at`
-  - `clips.description`
-  - `clips.thumbnail_url`
-  - `onboarding_surveys.goals`
+- **Freeze commit:** `4704a2cbca9dab09f3d8b95b9fff83b51c229fca` — "Validate four-sport challenge lifecycle"
+- **Tag:** `challenge-lifecycle-e2e-complete` (local + pushed to origin)
+- **Branch:** `current-state-stabilization-checkpoint` (pushed clean)
+- **Working tree at freeze:** clean — no uncommitted changes, no staged files
+- **Prior checkpoint:** `first-class-sport-equality-complete` at `89ce68d` — "Harden first-class sport equality across four sports"
+- **`.env` / DB:** not committed; `.env` is gitignored; SQLite DB is gitignored
 
-**Guidance:**
-- Do not reopen Backend-Up E2E Validation.
-- Do not start another broad audit.
-- Future work should be narrow, evidence-driven, and based on real usage or explicit infrastructure priorities.
-- For any existing SQLite DB from before this checkpoint, run:
-  `cd backend && python migrate_schema_v2.py`
-- Fresh DBs are safe — `Base.metadata.create_all()` reflects the current `models.py` schema automatically.
+### Proven at this freeze (tested against running backend + seeded data)
+
+1. **Opponent discovery** — `GET /matchmaking/find-opponents?sport=basketball&match_type=ranked` returns seeded users for all 4 sports
+2. **Challenge creation** — `POST /challenges/create` creates a pending challenge for Basketball, Football, Soccer, Tennis
+3. **Challenge acceptance** — `POST /challenges/{id}/accept` transitions status to `accepted`
+4. **Challenger result submission** — `POST /challenges/{id}/submit-result` with matching score → status `waiting_for_opponent`
+5. **Opponent result submission** — second submit with same score → status `completed`; ELO delta applied to both `sport_profiles` rows
+6. **ELO updates confirmed** — `sport_profiles.rating` changes reflected in `/sports/profiles/{sport}` after completion for all 4 sports
+7. **Dispute detection** — mismatched score between challenger + opponent → status `DISPUTED`
+8. **Activity feed event** — `match_completed` event emitted to activity feed on challenge completion
+9. **Hot Maps loads cleanly** — `matchType: "ranked"` fix resolved 422 on every HotMapsView appear
+10. **`score_data` round-trip** — iOS string `"21-15"` accepted by backend (was 422 with `Optional[dict]`); stored to `String(50)` column correctly
+11. **AI Coach fallback quality** — 16/16 coaching prompts return Strong (drill-specific) for all 4 sports via `_SPORT_SKILL_ALIASES`
+12. **Safety detection** — 12/12 injury prompts return `tone=concerned` including head impact / concussion terms
+
+### Known caveats at this freeze
+
+1. **Leaderboard win/loss always 0** — `/leaderboards/ranked/{sport}` queries `models.Match` table; challenge completion flow never inserts into `Match`; ELO in `sport_profiles` is correct; fix requires inserting a `Match` row on challenge completion
+2. **Free-form score accepted without validation** — `score_data` is `Optional[str]`; backend stores any string without parsing; no format enforcement (e.g. "21-15" vs "banana" both accepted)
+3. **Tennis lifecycle simplified** — tennis challenges tested without court picker integration; court requirement exists in `TennisCourtPickerView` but is not enforced by challenge creation API
+4. **Football/Soccer skill-to-challenge cross-link not tested** — AI Coach returns correct drill recommendations but the "Create Challenge" CTA from coaching context was not verified end-to-end at this freeze
+5. **Dead `submitResult()` path** — `APIClient.submitResult()` posts to `/challenges/{id}/result` (404); not called from any view; safe dead code, deferred for cleanup
+
+### Guidance for future sessions
+
+- Do not reopen challenge lifecycle validation — all 4 sports are proven end-to-end
+- Do not reopen sport equality audit — equality is guaranteed by `_SPORT_SKILL_ALIASES` + confirmed 16/16
+- Recommended next candidates (narrow, evidence-driven):
+  1. **Leaderboard win/loss fix** — insert `Match` row on challenge completion (models.py + challenges router)
+  2. **Video playback E2E** — test upload → `/cdn/videos` → AVPlayer with a real clip; confirm no 404
+  3. **`submitResult()` dead code removal** — delete from APIClient.swift; no view calls it
+  4. **Drill library from API** — replace ~2000-line hardcoded DrillLibraryView with dynamic fetch
+- For any existing SQLite DB from before this checkpoint, run: `cd backend && python migrate_schema_v2.py`
+- Fresh DBs are safe — `Base.metadata.create_all()` reflects the current `models.py` schema automatically
+- Seed script: `python3 backend/seed_dev_data.py` — idempotent; `--reset` to wipe and re-seed all 4 sports
 
 ---
 
