@@ -264,7 +264,7 @@ struct ClipCard: View {
                                 ProgressView()
                                     .progressViewStyle(CircularProgressViewStyle(tint: .white))
                                     .scaleEffect(1.5)
-                            } else {
+                            } else if clip.videoUrl != nil {
                                 Button {
                                     loadAndPlay()
                                 } label: {
@@ -274,6 +274,7 @@ struct ClipCard: View {
                                         .shadow(radius: 4)
                                 }
                             }
+                            // nil videoUrl: no overlay — thumbnail (or gray rect) is shown as-is
                         }
                 }
             }
@@ -317,12 +318,16 @@ struct ClipCard: View {
     }
     
     private func loadAndPlay() {
+        guard let rawVideoUrl = clip.videoUrl else {
+            playerLoadFailed = true
+            return
+        }
         // Resolve the video URL — handle relative paths by prepending base URL
         let urlString: String
-        if clip.videoUrl.hasPrefix("http://") || clip.videoUrl.hasPrefix("https://") {
-            urlString = clip.videoUrl
+        if rawVideoUrl.hasPrefix("http://") || rawVideoUrl.hasPrefix("https://") {
+            urlString = rawVideoUrl
         } else {
-            urlString = APIConfig.baseURL + clip.videoUrl
+            urlString = APIConfig.baseURL + rawVideoUrl
         }
         
         guard let url = URL(string: urlString) else {

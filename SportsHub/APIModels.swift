@@ -494,7 +494,7 @@ struct ClipResponse: Codable, Identifiable {
     let title: String
     let description: String?
     let sport: String
-    let videoUrl: String
+    let videoUrl: String?  // nullable — seeded records and fresh uploads before backend processes them may have null
     let thumbnailUrl: String?
     let viewsCount: Int
     let likesCount: Int
