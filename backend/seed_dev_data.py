@@ -449,8 +449,8 @@ def run_seed(dry_run: bool = False, reset: bool = False) -> None:
     # -----------------------------------------------------------------------
     print("\n[6/8] Clips (records only — no video file)")
     clips = [
-        (CLIP_1_ID, SAM_ID,  "basketball", "Crossover highlight reel",  "Dev seed — no video file."),
-        (CLIP_2_ID, MAYA_ID, "basketball", "Post move breakdown",        "Dev seed — no video file."),
+        (CLIP_1_ID, SAM_ID,  "BASKETBALL", "Crossover highlight reel",  "Dev seed — no video file."),
+        (CLIP_2_ID, MAYA_ID, "BASKETBALL", "Post move breakdown",        "Dev seed — no video file."),
     ]
     for cid, author, sport, title, desc in clips:
         if row_exists(cur, "clips", cid):
@@ -752,9 +752,9 @@ def run_seed(dry_run: bool = False, reset: bool = False) -> None:
     # -----------------------------------------------------------------------
     print("\n[15/15] Multi-Sport Clips (records only — no video file)")
     multi_clips = [
-        (CLIP_F_ID, RJ_ID,    "football", "Route running reel",         "Dev seed — no video file."),
-        (CLIP_S_ID, SASHA_ID, "soccer",   "Striker finishing drills",   "Dev seed — no video file."),
-        (CLIP_T_ID, KAI_ID,   "tennis",   "Serve technique breakdown",  "Dev seed — no video file."),
+        (CLIP_F_ID, RJ_ID,    "FOOTBALL", "Route running reel",         "Dev seed — no video file."),
+        (CLIP_S_ID, SASHA_ID, "SOCCER",   "Striker finishing drills",   "Dev seed — no video file."),
+        (CLIP_T_ID, KAI_ID,   "TENNIS",   "Serve technique breakdown",  "Dev seed — no video file."),
     ]
     for cid, author, sport, title, desc in multi_clips:
         if row_exists(cur, "clips", cid):
