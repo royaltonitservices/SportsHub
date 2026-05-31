@@ -3,16 +3,65 @@
 ## Metadata
 
 - **Purpose:** Living source of truth for Claude sessions working on SportsHub
-- **Last Updated:** 2026-05-09 (challenge lifecycle E2E validation)
+- **Last Updated:** 2026-05-31 (media upload/feed validation — PARTIAL)
 - **Checkpoint Branch:** `current-state-stabilization-checkpoint`
-- **Checkpoint Commit:** `4704a2c` (challenge lifecycle E2E)
-- **Tag:** `challenge-lifecycle-e2e-complete`
-- **Checkpoint Note:** Session 2026-05-09: Challenge Lifecycle E2E validation complete across all 4 sports. Two critical bugs found and fixed: (1) `SubmitMatchResult.score_data` was typed `Optional[dict]` in backend schema but DB column is `String(50)` and iOS sends a string — any iOS result submission with a score caused 422/500; fixed to `Optional[str]`. (2) HotMapsView sent `matchType: "casual"` (invalid enum value, causing 422 on every Hot Maps load); fixed to `"ranked"`. Full lifecycle validated: create → accept → challenger-submit → opponent-submit → completed, with ELO rating updates confirmed for Basketball, Football, Soccer, Tennis. Dispute detection (score mismatch → DISPUTED state) also verified. Activity feed emits `match_completed` events. Known architectural gap: leaderboard win/loss counts (`/leaderboards/ranked/{sport}`) always 0 because they query the `matches` table, never populated by the challenge flow; ELO is correct.
-- **Overall Completion:** ~100% (all identified gaps closed)
+- **Checkpoint Commit:** `510e6778a5dd8a0dd6829bbfba213c54dbb44a6c` (media upload/feed validation, PARTIAL)
+- **Tag:** `media-upload-feed-validation-complete`
+- **Checkpoint Note:** Session 2026-05-31: Media Upload/Feed Validation frozen as PARTIAL. Real video uploads against a running backend proved end-to-end for all 4 sports: DB record creation, non-null `video_url`, file written under `backend/uploads/videos/`, HTTP 200 with `content-type: video/quicktime`, and `/clips/feed?sport={sport}` returning the uploaded clip alongside seeded null-video clips. One bug found and fixed: the prior 2026-05-11 lowercase clip-sport "fix" was inverted — SQLAlchemy `SQLEnum` stores enum NAMES (uppercase), so lowercase rows caused `LookupError` → 500 on unfiltered `/clips/feed` and silently dropped seeded clips from sport-filtered feeds. `seed_dev_data.py` clip sport values restored to UPPERCASE; existing DB rows uppercased in place. iOS app builds, installs, and launches in iPhone 17 Pro simulator (renders onboarding). iOS AVPlayer tap-to-play runtime playback NOT validated — simulator UI could not be driven past onboarding without assistive access / XCUITest. Tag `video-upload-playback-e2e-complete` intentionally NOT used.
+- **Overall Completion:** ~100% (all identified gaps closed; iOS AVPlayer runtime playback remains the only unproven leg of the media path)
 
 ---
 
-## Latest Checkpoint — Challenge Lifecycle E2E Frozen
+## Latest Checkpoint — Media Upload/Feed Validation Frozen
+
+- **Phase frozen:** Media Upload/Feed Validation
+- **Status:** PARTIAL media checkpoint — NOT full playback E2E
+- **Branch:** `current-state-stabilization-checkpoint`
+- **Final commit:** `510e6778a5dd8a0dd6829bbfba213c54dbb44a6c` — "Restore clip sport enum NAMES (uppercase) for SQLAlchemy hydration"
+- **Tag pushed:** `media-upload-feed-validation-complete` (local + pushed to origin)
+- **Working tree at freeze:** verified clean — no uncommitted changes, no staged files
+- **`backend/.env`:** not committed (gitignored via `.gitignore:23`)
+- **DB files:** not committed (`backend/sportshub.db` gitignored via `.gitignore:29`)
+- **Uploaded media files:** not committed (`backend/uploads/` gitignored via `.gitignore:34`)
+
+### Proven at this freeze (tested against running backend)
+
+1. **Backend started and `/health` returned 200** — `python3 -m uvicorn main:app --host 0.0.0.0 --port 8000`
+2. **Real clip uploads succeeded across all 4 sports** — Basketball, Football, Soccer, Tennis (real ~1 MB QuickTime sample from system FitnessUIAssets)
+3. **Each upload created a DB record** — `models.Clip` row inserted with `author_id`, `sport`, `title`, `description`
+4. **Each uploaded clip returned a non-null `video_url`** — server-resolved `http://localhost:8000/cdn/videos/<uuid>.mov`
+5. **Uploaded files were written under `backend/uploads/videos/`** — 1,061,190 bytes each, on disk, mapped 1:1 to `video_url`
+6. **Each uploaded video URL returned HTTP 200** — direct `GET` via `curl -I` confirmed
+7. **Uploaded video content type was `video/quicktime`** — set by FastAPI `StaticFiles` mount
+8. **`/clips/feed?sport={sport}` returned uploaded clips for all four sports** — basketball: 3, football: 2, soccer: 2, tennis: 2 (uploaded + seeded null-video rows)
+9. **Seeded null-video clips no longer break feed decoding** — unfiltered `/clips/feed` returns 9 rows with no 500 after the uppercase repair
+10. **Seeded null-video clips are handled honestly in iOS by hiding the play button** — `ClipsView.swift:267` guards on `clip.videoUrl != nil`; comment at `:277` documents "nil videoUrl: no overlay"
+11. **`ClipResponse.videoUrl` is optional** — `APIModels.swift:497` `let videoUrl: String?` (decode-safe for seeded rows)
+12. **`ClipsView` guards nil `videoUrl`** — `loadAndPlay()` at `ClipsView.swift:321` returns early on `nil` with `playerLoadFailed = true`
+13. **SQLAlchemy clip sport enum values corrected back to uppercase NAMES** — `seed_dev_data.py:452-453,755-757` and live DB row repair `UPDATE clips SET sport = UPPER(sport)`
+14. **iOS app built, installed, launched in simulator, and rendered onboarding** — `BuildProject` 0 errors / 4.04 s; installed on `iPhone 17 Pro (EADA9837…)`; launched as PID 10591; screenshot confirms onboarding renders
+
+### Known caveats at this freeze
+
+1. **iOS AVPlayer tap-to-play runtime playback was NOT validated** — backend serves valid `video/quicktime` and iOS code path is structurally correct, but tap-to-play was never exercised
+2. **Simulator UI could not be driven past onboarding** — assistive access / `osascript` System Events blocked; `simctl io` exposes no tap input; no XCUITest harness wired for this flow
+3. **Tag `video-upload-playback-e2e-complete` was intentionally NOT used** — that tag is reserved for a future checkpoint that actually validates AVPlayer playback in-simulator or on-device
+4. **Thumbnail generation is still placeholder** — `thumbnail_url` is returned but no real image is produced; thumbnail URLs may 404
+5. **`video_url` uses `localhost` / `CDN_URL` behavior** — physical-device playback may require `CDN_URL` env var; `localhost` will not resolve from a non-host device
+6. **`clip.duration` remains 0** — real duration extraction requires `ffprobe` (see `clips.py:318` comment); not in scope
+7. **Existing orphaned upload files may remain on disk** — two 97 MB `.mov` files from earlier sessions exist under `backend/uploads/videos/` with no matching DB rows; harmless, untracked, not cleaned up
+8. **Highlight video upload remains partial** — iOS highlight upload is image-only; video-highlight upload is unproven
+
+### Guidance for future sessions
+
+- **Do not claim full playback E2E until AVPlayer playback is actually tested** — only `media-upload-feed-validation-complete` is true today
+- **Future media work should resume from this checkpoint and focus only on iOS runtime playback** if desired (XCUITest or manual device validation are the practical paths)
+- **Do not reopen backend upload / feed validation** unless a regression is found — upload, DB persistence, file write, HTTP serve, and feed return are proven across all 4 sports
+- The prior commit `3209c8f` ("Validate video upload and playback media path") was a static-only PARTIAL pass; commit `510e677` corrects its inverted lowercase clip-sport assumption based on real DB / ORM behavior
+
+---
+
+## Prior Checkpoint — Challenge Lifecycle E2E Frozen
 
 - **Freeze commit:** `4704a2cbca9dab09f3d8b95b9fff83b51c229fca` — "Validate four-sport challenge lifecycle"
 - **Tag:** `challenge-lifecycle-e2e-complete` (local + pushed to origin)
