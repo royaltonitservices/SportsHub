@@ -3,16 +3,58 @@
 ## Metadata
 
 - **Purpose:** Living source of truth for Claude sessions working on SportsHub
-- **Last Updated:** 2026-05-31 (media upload/feed validation — PARTIAL)
+- **Last Updated:** 2026-05-31 (video upload / playback E2E validation — COMPLETE)
 - **Checkpoint Branch:** `current-state-stabilization-checkpoint`
-- **Checkpoint Commit:** `510e6778a5dd8a0dd6829bbfba213c54dbb44a6c` (media upload/feed validation, PARTIAL)
-- **Tag:** `media-upload-feed-validation-complete`
-- **Checkpoint Note:** Session 2026-05-31: Media Upload/Feed Validation frozen as PARTIAL. Real video uploads against a running backend proved end-to-end for all 4 sports: DB record creation, non-null `video_url`, file written under `backend/uploads/videos/`, HTTP 200 with `content-type: video/quicktime`, and `/clips/feed?sport={sport}` returning the uploaded clip alongside seeded null-video clips. One bug found and fixed: the prior 2026-05-11 lowercase clip-sport "fix" was inverted — SQLAlchemy `SQLEnum` stores enum NAMES (uppercase), so lowercase rows caused `LookupError` → 500 on unfiltered `/clips/feed` and silently dropped seeded clips from sport-filtered feeds. `seed_dev_data.py` clip sport values restored to UPPERCASE; existing DB rows uppercased in place. iOS app builds, installs, and launches in iPhone 17 Pro simulator (renders onboarding). iOS AVPlayer tap-to-play runtime playback NOT validated — simulator UI could not be driven past onboarding without assistive access / XCUITest. Tag `video-upload-playback-e2e-complete` intentionally NOT used.
-- **Overall Completion:** ~100% (all identified gaps closed; iOS AVPlayer runtime playback remains the only unproven leg of the media path)
+- **Checkpoint Commit:** `749476e6e8ec9e9390b3305cb7082178fa7a72aa` (video upload / playback E2E, COMPLETE)
+- **Tag:** `video-upload-playback-e2e-complete`
+- **Checkpoint Note:** Session 2026-05-31: Video Upload / Playback E2E Validation frozen as COMPLETE. Backend upload + feed + static serving were already proven across all 4 sports at the prior `media-upload-feed-validation-complete` partial checkpoint; this session closed the only remaining leg by exercising iOS AVPlayer runtime playback in the iPhone 17 Pro simulator via a new XCUITest (`SportsHubUITests.testClipsPlaybackE2E`) that drives auth → Clips → tap-play and asserts the `Video unavailable` failure overlay does NOT appear within the 10 s AVPlayer readiness window. Backend log confirmed the simulator's AVPlayer issued `HEAD /<uuid>.mov` → 200 under the `/cdn/videos` StaticFiles mount, and `avPlayer.play()` was invoked (per `ClipsView.swift:344-360`). The test also implicitly confirmed seeded null-video clips do not render play controls (only one `play.circle.fill` button matched on the Basketball feed of 3 clips, the uploaded one). Tag `media-upload-feed-validation-complete` is preserved unchanged as the prior partial checkpoint.
+- **Overall Completion:** ~100% (all identified gaps closed; full media path — upload, persistence, serving, feed, iOS playback — is proven)
 
 ---
 
-## Latest Checkpoint — Media Upload/Feed Validation Frozen
+## Latest Checkpoint — Video Upload / Playback E2E Frozen
+
+- **Phase frozen:** Video Upload / Playback E2E Validation
+- **Branch:** `current-state-stabilization-checkpoint`
+- **Final commit:** `749476e6e8ec9e9390b3305cb7082178fa7a72aa` — "Validate iOS AVPlayer runtime playback"
+- **Tag pushed:** `video-upload-playback-e2e-complete` (local + pushed to origin)
+- **Working tree at freeze:** verified clean — no uncommitted changes, no staged files
+- **`backend/.env`:** not committed (gitignored via `.gitignore:23`)
+- **DB files:** not committed (`backend/sportshub.db` gitignored via `.gitignore:29`)
+- **Uploaded media files:** not committed (`backend/uploads/` gitignored via `.gitignore:34`)
+
+### Proven at this freeze
+
+1. **Real backend clip upload validated across Basketball, Football, Soccer, and Tennis** (carried forward from the prior `media-upload-feed-validation-complete` partial checkpoint)
+2. **DB records are created on upload** — `models.Clip` row inserted per `POST /clips/upload`
+3. **Uploaded files are written under `backend/uploads/videos/`** — 1:1 with the returned `video_url`
+4. **`video_url` is non-null for uploaded clips** — server-resolved `http://localhost:8000/cdn/videos/<uuid>.mov`
+5. **Uploaded video URLs return HTTP 200 with valid video content type** — `content-type: video/quicktime`
+6. **`/clips/feed?sport={sport}` returns uploaded clips** for all four sports
+7. **Seeded null-video clips do not break feed decoding** — uppercase enum-name repair holds; unfiltered `/clips/feed` returns 9 rows with no 500
+8. **Seeded null-video clips do not show play controls** — `XCUITest` saw exactly ONE `play.circle.fill` button on the 3-clip Basketball feed (matches `ClipsView.swift:267` `clip.videoUrl != nil` guard)
+9. **iOS app builds, installs, launches, and reaches runtime successfully** in iPhone 17 Pro (iOS 26.5) simulator; `BuildProject` 0 errors / 4.06 s
+10. **XCUITest validated auth → Clips → tap play** — `SportsHubUITests.testClipsPlaybackE2E` passed in 29.7 s against the live backend
+11. **AVPlayer runtime playback was validated in simulator** — `Video unavailable` overlay never appeared within 10 s after tap → `AVPlayerItem.status == .readyToPlay` → `avPlayer.play()` invoked (per `ClipsView.swift:344-360`); backend log shows `HEAD /<uuid>.mov` → 200
+12. **`media-upload-feed-validation-complete` remains preserved as the earlier partial checkpoint** — tag still points at `510e6778a5dd8a0dd6829bbfba213c54dbb44a6c`, unchanged on local and origin
+
+### Known caveats at this freeze
+
+1. **Runtime playback was deeply exercised on Basketball in simulator; backend media path had already been validated across all four sports** — iOS playback code path is sport-agnostic (`ClipCard` / `loadAndPlay` is shared), so the same flow exercised here applies identically to Football, Soccer, Tennis
+2. **Thumbnail generation is still placeholder** — `thumbnail_url` is returned but no real image is produced; thumbnail URLs may 404 (backend log shows `.jpg` requests returning 404)
+3. **`clip.duration` remains 0** — real duration extraction requires `ffprobe` (see `clips.py:318` comment); not in scope
+4. **Physical-device playback may require non-`localhost` `CDN_URL`** — `localhost` will not resolve from a non-host device; production deployment must set `CDN_URL` env var
+5. **Highlight video upload remains partial** because iOS highlight upload is image-only; video-highlight upload is unproven
+
+### Guidance for future sessions
+
+- **Do not reopen Video Upload / Playback E2E** unless a real regression is found — the upload → DB → file → HTTP serve → feed → iOS AVPlayer playback path is end-to-end proven
+- **Do not collapse the partial media checkpoint into the full playback checkpoint** — both `media-upload-feed-validation-complete` (510e677) and `video-upload-playback-e2e-complete` (749476e) should remain preserved as distinct freeze points
+- **Future media work, if any, should be narrow and evidence-driven** — candidates include real thumbnail generation (ffmpeg/ffprobe), real `clip.duration` extraction, and video-highlight upload from iOS
+
+---
+
+## Prior Checkpoint — Media Upload/Feed Validation Frozen
 
 - **Phase frozen:** Media Upload/Feed Validation
 - **Status:** PARTIAL media checkpoint — NOT full playback E2E
