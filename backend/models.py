@@ -346,6 +346,10 @@ class Match(Base):
     player2_elo_change = Column(Integer)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     completed_at = Column(DateTime(timezone=True))
+    # FK to the originating Challenge — enforces 1:1 mapping so a Match row is
+    # created exactly once per completed challenge (idempotency guard for the
+    # leaderboard win/loss sync).
+    challenge_id = Column(UUID(), ForeignKey("challenges.id", ondelete="CASCADE"), unique=True)
 
 
 class Post(Base):

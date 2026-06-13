@@ -17,6 +17,68 @@ import schemas
 router = APIRouter(prefix="/matchmaking", tags=["matchmaking"])
 
 
+def _parse_match_score(score_data):
+    """Parse a stored score string like "21-15" into (p1, p2) ints. None on any miss."""
+    if not score_data or not isinstance(score_data, str):
+        return None, None
+    parts = score_data.split("-")
+    if len(parts) != 2:
+        return None, None
+    try:
+        return int(parts[0].strip()), int(parts[1].strip())
+    except (ValueError, AttributeError):
+        return None, None
+
+
+def _create_match_for_completed_challenge(db: Session, challenge: "models.Challenge") -> None:
+    """
+    Insert a Match row mirroring a successfully completed Challenge.
+
+    Idempotent: skips if a Match for this challenge_id already exists. Used by
+    the matchmaking submit-result and challenges /complete paths so that the
+    Match-backed leaderboard queries (/leaderboards/ranked/{sport},
+    /leaderboards/challenges) return real win/loss counts. Disputes never call
+    this — only the matched-score / explicit-completion paths do.
+    """
+    existing = db.query(models.Match).filter(
+        models.Match.challenge_id == challenge.id
+    ).first()
+    if existing is not None:
+        return
+
+    p1_score, p2_score = _parse_match_score(challenge.score_data)
+
+    p1_change = None
+    p2_change = None
+    if (challenge.match_type == models.MatchType.RANKED and
+        challenge.challenger_rating_before is not None and
+        challenge.challenger_rating_after is not None and
+        challenge.opponent_rating_before is not None and
+        challenge.opponent_rating_after is not None):
+        p1_change = challenge.challenger_rating_after - challenge.challenger_rating_before
+        p2_change = challenge.opponent_rating_after - challenge.opponent_rating_before
+
+    match = models.Match(
+        sport=challenge.sport,
+        match_type=challenge.match_type,
+        player1_id=challenge.challenger_id,
+        player2_id=challenge.opponent_id,
+        status="completed",
+        player1_score=p1_score,
+        player2_score=p2_score,
+        winner_id=challenge.winner_id,
+        player1_elo_before=challenge.challenger_rating_before,
+        player2_elo_before=challenge.opponent_rating_before,
+        player1_elo_after=challenge.challenger_rating_after,
+        player2_elo_after=challenge.opponent_rating_after,
+        player1_elo_change=p1_change,
+        player2_elo_change=p2_change,
+        completed_at=challenge.completed_at,
+        challenge_id=challenge.id,
+    )
+    db.add(match)
+
+
 @router.post("/find-opponents", response_model=List[schemas.UserProfile])
 async def find_opponents(
     request: schemas.MatchmakingRequest,
@@ -440,6 +502,12 @@ async def submit_match_result(
         # Mark challenge as completed
         challenge.status = models.ChallengeStatus.COMPLETED
         challenge.completed_at = datetime.utcnow()
+
+        # Sync to the Match table so leaderboard win/loss queries return honest
+        # counts. Idempotent via challenge_id uniqueness — a re-entry would be
+        # blocked by the ACCEPTED-status gate above, but the existence check
+        # is kept as a defense-in-depth backstop.
+        _create_match_for_completed_challenge(db, challenge)
 
         db.commit()
 

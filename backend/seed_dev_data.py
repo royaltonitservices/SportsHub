@@ -166,6 +166,46 @@ def profile_exists(cur: sqlite3.Cursor, user_id: str, sport: str) -> bool:
     return cur.fetchone() is not None
 
 
+def seed_match_for_completed_challenge(
+    cur: sqlite3.Cursor,
+    challenge_id: str,
+    sport: str,
+    match_type: str,
+    challenger_id: str,
+    opponent_id: str,
+    winner_id: str,
+    rb_c, ra_c, rb_o, ra_o,
+    completed_at: str,
+):
+    """Insert a corresponding matches row for a seeded completed challenge.
+
+    Idempotent: skips if a match for this challenge_id already exists. Required
+    so the leaderboard win/loss queries see the seeded history.
+    """
+    cur.execute("SELECT 1 FROM matches WHERE challenge_id = ?", (challenge_id,))
+    if cur.fetchone():
+        return
+    p1_change = (ra_c - rb_c) if (match_type == "RANKED" and ra_c is not None and rb_c is not None) else None
+    p2_change = (ra_o - rb_o) if (match_type == "RANKED" and ra_o is not None and rb_o is not None) else None
+    cur.execute(
+        """
+        INSERT INTO matches
+            (id, sport, match_type, player1_id, player2_id, status,
+             player1_score, player2_score, winner_id,
+             player1_elo_before, player2_elo_before,
+             player1_elo_after, player2_elo_after,
+             player1_elo_change, player2_elo_change,
+             created_at, completed_at, challenge_id)
+        VALUES (?, ?, ?, ?, ?, 'completed', NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            str(uuid_mod.uuid4()), sport, match_type, challenger_id, opponent_id,
+            winner_id, rb_c, rb_o, ra_c, ra_o, p1_change, p2_change,
+            completed_at, completed_at, challenge_id,
+        ),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Reset helpers
 # ---------------------------------------------------------------------------
@@ -402,6 +442,11 @@ def run_seed(dry_run: bool = False, reset: bool = False) -> None:
                 """, (cid, sport, mtype, chall, opp, status, winner,
                       rb_c, ra_c, rb_o, ra_o,
                       ts(cr_off), ts(ac_off), completed_at))
+                if status == "COMPLETED" and completed_at is not None:
+                    seed_match_for_completed_challenge(
+                        cur, cid, sport, mtype, chall, opp, winner,
+                        rb_c, ra_c, rb_o, ra_o, completed_at,
+                    )
             add(f"challenge {cid[:8]}... {chall[:8]}... vs {opp[:8]}... [{status}]", dry_run)
 
     # -----------------------------------------------------------------------
@@ -689,6 +734,11 @@ def run_seed(dry_run: bool = False, reset: bool = False) -> None:
                 """, (cid, sport, mtype, chall, opp, status, winner,
                       rb_c, ra_c, rb_o, ra_o,
                       ts(cr_off), ts(ac_off), completed_at))
+                if status == "COMPLETED" and completed_at is not None:
+                    seed_match_for_completed_challenge(
+                        cur, cid, sport, mtype, chall, opp, winner,
+                        rb_c, ra_c, rb_o, ra_o, completed_at,
+                    )
             add(f"challenge {cid[:8]}... {sport} {chall[:8]}... vs {opp[:8]}... [{status}]", dry_run)
 
     # -----------------------------------------------------------------------

@@ -236,6 +236,11 @@ async def complete_challenge(
         loser_profile.current_streak = 0
         loser_profile.last_played = datetime.utcnow()
 
+    # Mirror the completion into the Match table so leaderboard win/loss
+    # queries see this challenge. Idempotent via challenge_id uniqueness.
+    from routers.matchmaking import _create_match_for_completed_challenge
+    _create_match_for_completed_challenge(db, challenge)
+
     db.commit()
 
     return {"message": "Challenge completed", "winner_id": str(winner_id)}
