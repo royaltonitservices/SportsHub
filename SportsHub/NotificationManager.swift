@@ -79,19 +79,29 @@ class NotificationManager: ObservableObject {
         }
     }
     
-    func scheduleResultNotification(opponentName: String, won: Bool, ratingChange: Int) {
+    /// Schedule a local result notification.
+    /// - Parameter ratingChange: pass the real backend ELO delta when available;
+    ///   pass `nil` to omit the "Rating: …" suffix entirely instead of
+    ///   fabricating one.
+    func scheduleResultNotification(opponentName: String, won: Bool, ratingChange: Int?) {
         guard areNotificationsEnabled else { return }
         let content = UNMutableNotificationContent()
         content.title = won ? "Victory!" : "Match Complete"
-        let ratingText = ratingChange >= 0 ? "+\(ratingChange)" : "\(ratingChange)"
+        let ratingSuffix: String
+        if let delta = ratingChange {
+            let ratingText = delta >= 0 ? "+\(delta)" : "\(delta)"
+            ratingSuffix = " Rating: \(ratingText)"
+        } else {
+            ratingSuffix = ""
+        }
         if opponentName.isEmpty {
             content.body = won
-                ? "You won the match! Rating: \(ratingText)"
-                : "Match submitted. Rating: \(ratingText)"
+                ? "You won the match!\(ratingSuffix)"
+                : "Match submitted.\(ratingSuffix)"
         } else {
             content.body = won
-                ? "You defeated \(opponentName)! Rating: \(ratingText)"
-                : "You lost to \(opponentName). Rating: \(ratingText)"
+                ? "You defeated \(opponentName)!\(ratingSuffix)"
+                : "You lost to \(opponentName).\(ratingSuffix)"
         }
         content.sound = .default
         content.badge = 1

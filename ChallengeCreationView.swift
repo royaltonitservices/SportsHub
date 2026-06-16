@@ -266,12 +266,18 @@ struct FriendSelectionView: View {
             do {
                 let friendships = try await APIClient.shared.getFriends()
                 let currentUserId = SessionManager.shared.currentUser?.id.uuidString ?? ""
-                friends = friendships.map { friendship in
+                friends = friendships.compactMap { friendship -> FriendPreview? in
                     let friendId = friendship.userAId == currentUserId ? friendship.userBId : friendship.userAId
+                    let side = friendship.otherSide(currentUserId: currentUserId)
+                    // Refuse to invent a UUID-shaped "name" — if the backend can't
+                    // tell us who this friend is, drop the row rather than show
+                    // "User a1b2c3d4" as a fake identity.
+                    guard let username = side.username, !username.isEmpty else { return nil }
+                    let displayName = (side.displayName?.isEmpty == false) ? side.displayName! : username
                     return FriendPreview(
                         id: friendId,
-                        name: "User \(friendId.prefix(8))",
-                        username: friendId.prefix(8).lowercased()
+                        name: displayName,
+                        username: username
                     )
                 }
             } catch {

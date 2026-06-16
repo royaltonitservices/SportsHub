@@ -671,7 +671,7 @@ extension APIClient {
         try await post("/challenges/\(challengeId)/result", body: request)
     }
     
-    func submitMatchResult(challengeId: String, winnerId: String, scoreData: String?) async throws -> MessageResponse {
+    func submitMatchResult(challengeId: String, winnerId: String, scoreData: String?) async throws -> SubmitMatchResultResponse {
         let request = SubmitMatchResultRequest(
             challengeId: challengeId,
             winnerId: winnerId,

@@ -327,25 +327,33 @@ struct ResultSubmissionView: View {
         errorMessage = nil
         
         do {
-            let scoreData = !myScore.isEmpty && !opponentScore.isEmpty 
+            let scoreData = !myScore.isEmpty && !opponentScore.isEmpty
                 ? "\(myScore)-\(opponentScore)"
                 : nil
-            
-            _ = try await APIClient.shared.submitMatchResult(
+
+            let response = try await APIClient.shared.submitMatchResult(
                 challengeId: challenge.id,
                 winnerId: selectedWinner,
                 scoreData: scoreData
             )
-            
-            // Fire result notification before dismissing
-            let currentUserId = SessionManager.shared.currentUser?.id.uuidString ?? ""
-            let currentUserWon = !currentUserId.isEmpty && selectedWinner == currentUserId
-            NotificationManager.shared.scheduleResultNotification(
-                opponentName: "",
-                won: currentUserWon,
-                ratingChange: currentUserWon ? 15 : -10
-            )
-            
+
+            // Only fire a result notification when the match actually closed
+            // (status == "completed"). For first-submitter "waiting" and
+            // "disputed" states, suppress the alert because no rating change
+            // applies yet — surfacing a +15/-10 placeholder would be a lie.
+            if response.status == "completed" {
+                let currentUserId = SessionManager.shared.currentUser?.id.uuidString ?? ""
+                let currentUserWon = !currentUserId.isEmpty && selectedWinner == currentUserId
+                let myDelta = currentUserId == challenge.challengerId
+                    ? response.challengerRatingChange
+                    : response.opponentRatingChange
+                NotificationManager.shared.scheduleResultNotification(
+                    opponentName: "",
+                    won: currentUserWon,
+                    ratingChange: myDelta
+                )
+            }
+
             await onSubmit()
             dismiss()
         } catch {

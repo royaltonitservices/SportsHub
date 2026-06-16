@@ -286,76 +286,72 @@ struct ProfileView: View {
     }
     
     private var premiumActiveCard: some View {
-        Button(action: {
-            showPremiumSheet = true
-        }) {
-            VStack(alignment: .leading, spacing: Spacing.md) {
-                HStack(spacing: Spacing.sm) {
-                    Image(systemName: "star.circle.fill")
-                        .font(.title2)
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: [.purple, .blue],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
+        // For already-premium users, this card is informational only.
+        // The previous Button(action: showPremiumSheet = true) routed users
+        // into the purchase paywall as if it were a "Manage Plan" surface,
+        // which it isn't — there is no in-app cancel/manage flow yet. iOS
+        // subscriptions are actually managed in system Settings → Apple ID →
+        // Subscriptions, so we say so directly instead of misleading the tap.
+        VStack(alignment: .leading, spacing: Spacing.md) {
+            HStack(spacing: Spacing.sm) {
+                Image(systemName: "star.circle.fill")
+                    .font(.title2)
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [.purple, .blue],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
                         )
-                    
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Your Premium Plan")
-                            .font(.headline)
-                            .fontWeight(.bold)
-                            .foregroundStyle(Color.appTextPrimary)
-                        
-                        Text("Active • All features unlocked")
-                            .font(.caption)
-                            .foregroundStyle(Color.appTextSecondary)
-                    }
-                    
-                    Spacer()
-                    
-                    Image(systemName: "checkmark.seal.fill")
-                        .font(.title3)
-                        .foregroundStyle(Color.green)
-                }
-                
-                Divider()
-                    .padding(.vertical, Spacing.xs)
-                
-                // Top Premium Benefits
+                    )
+
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Top Benefits")
+                    Text("Your Premium Plan")
+                        .font(.headline)
+                        .fontWeight(.bold)
+                        .foregroundStyle(Color.appTextPrimary)
+
+                    Text("Active • All features unlocked")
                         .font(.caption)
-                        .fontWeight(.semibold)
                         .foregroundStyle(Color.appTextSecondary)
-                        .padding(.bottom, 4)
-                    
-                    VStack(alignment: .leading, spacing: Spacing.sm) {
-                        premiumFeatureBadge(icon: "calendar.badge.clock", text: "AI Weekly Drills", color: .cyan)
-                        premiumFeatureBadge(icon: "brain.head.profile", text: "AI Coach", color: .purple)
-                        premiumFeatureBadge(icon: "chart.line.uptrend.xyaxis", text: "Advanced Analytics", color: .green)
-                    }
                 }
-                
-                // More included indicator
+
+                Spacer()
+
+                Image(systemName: "checkmark.seal.fill")
+                    .font(.title3)
+                    .foregroundStyle(Color.green)
+            }
+
+            Divider()
+                .padding(.vertical, Spacing.xs)
+
+            // Top Premium Benefits
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Top Benefits")
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(Color.appTextSecondary)
+                    .padding(.bottom, 4)
+
+                VStack(alignment: .leading, spacing: Spacing.sm) {
+                    premiumFeatureBadge(icon: "calendar.badge.clock", text: "AI Weekly Drills", color: .cyan)
+                    premiumFeatureBadge(icon: "brain.head.profile", text: "AI Coach", color: .purple)
+                    premiumFeatureBadge(icon: "chart.line.uptrend.xyaxis", text: "Advanced Analytics", color: .green)
+                }
+            }
+
+            // Honest management note + deep link to system Subscriptions
+            // (StoreKit's canonical "manage" surface — no in-app paywall).
+            Link(destination: URL(string: "https://apps.apple.com/account/subscriptions")!) {
                 HStack {
-                    Image(systemName: "sparkles")
-                        .font(.caption)
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: [.purple, .blue],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
-                    
-                    Text("Plus wearable sync, tournaments, and more")
+                    Image(systemName: "gearshape.fill")
                         .font(.caption)
                         .foregroundStyle(Color.appTextSecondary)
-                    
+                    Text("Manage or cancel in System Settings → Subscriptions")
+                        .font(.caption)
+                        .foregroundStyle(Color.appTextSecondary)
                     Spacer()
-                    
-                    Image(systemName: "chevron.right")
+                    Image(systemName: "arrow.up.right.square")
                         .font(.caption)
                         .foregroundStyle(Color.appTextSecondary)
                 }
@@ -365,33 +361,33 @@ struct ProfileView: View {
                 .background(Color.purple.opacity(0.08))
                 .cornerRadius(8)
             }
-            .padding(Spacing.md)
-            .background(
-                LinearGradient(
-                    colors: [
-                        Color.purple.opacity(0.05),
-                        Color.blue.opacity(0.05)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            )
-            .cornerRadius(CornerRadius.large)
-            .overlay(
-                RoundedRectangle(cornerRadius: CornerRadius.large)
-                    .stroke(
-                        LinearGradient(
-                            colors: [.purple.opacity(0.3), .blue.opacity(0.3)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        lineWidth: 1.5
-                    )
-            )
         }
-        .buttonStyle(.plain)
+        .padding(Spacing.md)
+        .background(
+            LinearGradient(
+                colors: [
+                    Color.purple.opacity(0.05),
+                    Color.blue.opacity(0.05)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        )
+        .cornerRadius(CornerRadius.large)
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.large)
+                .stroke(
+                    LinearGradient(
+                        colors: [.purple.opacity(0.3), .blue.opacity(0.3)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 1.5
+                )
+        )
     }
-    
+
+
     private var premiumUpgradeCard: some View {
         Button(action: {
             showPremiumSheet = true

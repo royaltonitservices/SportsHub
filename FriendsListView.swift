@@ -471,11 +471,20 @@ struct BlockedUserRowView: View {
 // MARK: - Add Friend View
 struct AddFriendView: View {
     @Environment(\.dismiss) var dismiss
-    @State private var searchText = ""
+    @State private var searchText: String = ""
     @State private var searchResults: [UserResponse] = []
     @State private var isSearching = false
     @State private var errorMessage: String?
+    /// Optional query carried over from the caller (e.g. HomeView's search
+    /// field). When non-empty, we populate the search field and immediately
+    /// kick off a username search so the typed text is not silently dropped.
+    let initialQuery: String
     let onRequestSent: () -> Void
+
+    init(initialQuery: String = "", onRequestSent: @escaping () -> Void) {
+        self.initialQuery = initialQuery
+        self.onRequestSent = onRequestSent
+    }
 
     var body: some View {
         NavigationView {
@@ -536,6 +545,15 @@ struct AddFriendView: View {
                     Button("Cancel") {
                         dismiss()
                     }
+                }
+            }
+            .task {
+                // Carry through whatever the user typed in the originating
+                // search field instead of dropping the query.
+                let trimmed = initialQuery.trimmingCharacters(in: .whitespaces)
+                if !trimmed.isEmpty && searchText.isEmpty {
+                    searchText = trimmed
+                    await searchUsers()
                 }
             }
         }

@@ -2,7 +2,7 @@
 Comment system endpoints
 """
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from typing import List
 from uuid import UUID
 
@@ -79,9 +79,13 @@ async def get_post_comments(
     """
     Get all comments for a post
     """
-    comments = db.query(models.Comment).filter(
-        models.Comment.post_id == post_id
-    ).order_by(models.Comment.created_at.desc()).all()
+    comments = (
+        db.query(models.Comment)
+        .options(joinedload(models.Comment.author))
+        .filter(models.Comment.post_id == post_id)
+        .order_by(models.Comment.created_at.desc())
+        .all()
+    )
 
     return comments
 

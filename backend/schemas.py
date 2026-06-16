@@ -130,11 +130,35 @@ class FriendshipResponse(BaseModel):
     id: UUID
     user_a_id: UUID
     user_b_id: UUID
+    user_a_username: Optional[str] = None
+    user_b_username: Optional[str] = None
+    user_a_display_name: Optional[str] = None
+    user_b_display_name: Optional[str] = None
     status: models.FriendshipStatus
     created_at: datetime
 
     class Config:
         from_attributes = True
+
+    @model_validator(mode='before')
+    @classmethod
+    def populate_user_fields(cls, obj):
+        # Pull username + display_name off the joined user_a / user_b
+        # relationships so clients never have to fabricate identity
+        # (ChallengeCreationView used to show "User <uuid-prefix>").
+        if isinstance(obj, dict):
+            return obj
+        return {
+            'id': obj.id,
+            'user_a_id': obj.user_a_id,
+            'user_b_id': obj.user_b_id,
+            'user_a_username': obj.user_a.username if getattr(obj, 'user_a', None) else None,
+            'user_b_username': obj.user_b.username if getattr(obj, 'user_b', None) else None,
+            'user_a_display_name': obj.user_a.display_name if getattr(obj, 'user_a', None) else None,
+            'user_b_display_name': obj.user_b.display_name if getattr(obj, 'user_b', None) else None,
+            'status': obj.status,
+            'created_at': obj.created_at,
+        }
 
 
 class FriendStatusResponse(BaseModel):
@@ -348,6 +372,8 @@ class CommentResponse(BaseModel):
     id: UUID
     post_id: UUID
     author_id: UUID
+    username: Optional[str] = None
+    display_name: Optional[str] = None
     content: str
     parent_comment_id: Optional[UUID]
     likes_count: int
@@ -355,6 +381,26 @@ class CommentResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+    @model_validator(mode='before')
+    @classmethod
+    def populate_author_fields(cls, obj):
+        # Mirror the pattern used by PostResponse: pull username + display_name
+        # off the loaded `author` relationship when it's available so iOS
+        # never has to invent a placeholder identity.
+        if isinstance(obj, dict):
+            return obj
+        return {
+            'id': obj.id,
+            'post_id': obj.post_id,
+            'author_id': obj.author_id,
+            'username': obj.author.username if getattr(obj, 'author', None) else None,
+            'display_name': obj.author.display_name if getattr(obj, 'author', None) else None,
+            'content': obj.content,
+            'parent_comment_id': obj.parent_comment_id,
+            'likes_count': obj.likes_count,
+            'created_at': obj.created_at,
+        }
 
 
 # Block Schemas

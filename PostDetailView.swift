@@ -345,18 +345,15 @@ struct PostDetailView: View {
     
     private func loadComments() async {
         isLoadingComments = true
-        
+
         do {
+            // Backend CommentResponse now includes username + display_name from
+            // the joined author relationship, so we no longer need to fabricate
+            // identities client-side. Older builds had: enrichedComments[i].authorUsername = "athlete\(i + 1)".
             let fetchedComments = try await APIClient.shared.getPostComments(postId: post.id)
-            
-            // Fetch usernames for comments (in real app, backend should include this)
-            var enrichedComments = fetchedComments
-            for i in 0..<enrichedComments.count {
-                enrichedComments[i].authorUsername = "athlete\(i + 1)" // Mock for now
-            }
-            
+
             await MainActor.run {
-                comments = enrichedComments.sorted { $0.createdAt > $1.createdAt }
+                comments = fetchedComments.sorted { $0.createdAt > $1.createdAt }
                 isLoadingComments = false
             }
         } catch {

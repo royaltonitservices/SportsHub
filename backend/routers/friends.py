@@ -2,7 +2,7 @@
 Friend system endpoints for requests, acceptance, and management
 """
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import or_, and_
 from typing import List
 from uuid import UUID
@@ -186,13 +186,21 @@ async def get_my_friends(
 ):
     """Get all accepted friendships for current user"""
 
-    friendships = db.query(models.Friendship).filter(
-        or_(
-            models.Friendship.user_a_id == current_user.id,
-            models.Friendship.user_b_id == current_user.id
-        ),
-        models.Friendship.status == models.FriendshipStatus.ACCEPTED
-    ).all()
+    friendships = (
+        db.query(models.Friendship)
+        .options(
+            joinedload(models.Friendship.user_a),
+            joinedload(models.Friendship.user_b),
+        )
+        .filter(
+            or_(
+                models.Friendship.user_a_id == current_user.id,
+                models.Friendship.user_b_id == current_user.id,
+            ),
+            models.Friendship.status == models.FriendshipStatus.ACCEPTED,
+        )
+        .all()
+    )
 
     return friendships
 
@@ -204,13 +212,21 @@ async def get_pending_requests(
 ):
     """Get all pending friend requests (sent and received)"""
 
-    requests = db.query(models.Friendship).filter(
-        or_(
-            models.Friendship.user_a_id == current_user.id,
-            models.Friendship.user_b_id == current_user.id
-        ),
-        models.Friendship.status == models.FriendshipStatus.PENDING
-    ).all()
+    requests = (
+        db.query(models.Friendship)
+        .options(
+            joinedload(models.Friendship.user_a),
+            joinedload(models.Friendship.user_b),
+        )
+        .filter(
+            or_(
+                models.Friendship.user_a_id == current_user.id,
+                models.Friendship.user_b_id == current_user.id,
+            ),
+            models.Friendship.status == models.FriendshipStatus.PENDING,
+        )
+        .all()
+    )
 
     return requests
 
@@ -222,10 +238,18 @@ async def get_received_requests(
 ):
     """Get pending friend requests received by current user"""
 
-    requests = db.query(models.Friendship).filter(
-        models.Friendship.user_b_id == current_user.id,
-        models.Friendship.status == models.FriendshipStatus.PENDING
-    ).all()
+    requests = (
+        db.query(models.Friendship)
+        .options(
+            joinedload(models.Friendship.user_a),
+            joinedload(models.Friendship.user_b),
+        )
+        .filter(
+            models.Friendship.user_b_id == current_user.id,
+            models.Friendship.status == models.FriendshipStatus.PENDING,
+        )
+        .all()
+    )
 
     return requests
 

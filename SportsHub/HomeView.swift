@@ -67,8 +67,13 @@ struct HomeView: View {
         .sheet(isPresented: $showNotifications) {
             NotificationsView()
         }
-        .sheet(isPresented: $showSearchSheet) {
-            AddFriendView(onRequestSent: {})
+        .sheet(isPresented: $showSearchSheet, onDismiss: {
+            // Clear the carried query after the sheet closes so a follow-up
+            // tap on the search field starts clean instead of repeating the
+            // previous lookup.
+            searchText = ""
+        }) {
+            AddFriendView(initialQuery: searchText, onRequestSent: {})
         }
         .sheet(isPresented: $showMessages) {
             MessagesListView()

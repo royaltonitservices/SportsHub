@@ -236,6 +236,26 @@ struct SubmitMatchResultRequest: Codable {
     }
 }
 
+/// Response from POST /matchmaking/submit-result.
+/// Status is "waiting" (first submission), "completed" (matched scores), or
+/// "disputed" (mismatch). `challengerRatingChange` / `opponentRatingChange`
+/// are only present when status == "completed" AND match_type was ranked.
+struct SubmitMatchResultResponse: Codable {
+    let message: String
+    let status: String
+    let challengerRatingChange: Int?
+    let opponentRatingChange: Int?
+    let trustUpdated: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case message
+        case status
+        case challengerRatingChange = "challenger_rating_change"
+        case opponentRatingChange = "opponent_rating_change"
+        case trustUpdated = "trust_updated"
+    }
+}
+
 // MARK: - Dispute Models (Phase 3)
 struct DisputeResponse: Codable, Identifiable {
     let id: String
@@ -334,6 +354,10 @@ struct FriendshipResponse: Codable, Identifiable {
     let id: String
     let userAId: String
     let userBId: String
+    let userAUsername: String?
+    let userBUsername: String?
+    let userADisplayName: String?
+    let userBDisplayName: String?
     let status: String  // pending, accepted, blocked, declined
     let createdAt: String
 
@@ -341,8 +365,23 @@ struct FriendshipResponse: Codable, Identifiable {
         case id
         case userAId = "user_a_id"
         case userBId = "user_b_id"
+        case userAUsername = "user_a_username"
+        case userBUsername = "user_b_username"
+        case userADisplayName = "user_a_display_name"
+        case userBDisplayName = "user_b_display_name"
         case status
         case createdAt = "created_at"
+    }
+
+    /// Returns (username, displayName) for the friend on the other side of the
+    /// relationship from `currentUserId`. Falls back to nil when the backend
+    /// didn't enrich the row (older deployments).
+    func otherSide(currentUserId: String) -> (username: String?, displayName: String?) {
+        if userAId == currentUserId {
+            return (userBUsername, userBDisplayName)
+        } else {
+            return (userAUsername, userADisplayName)
+        }
     }
 }
 
@@ -454,19 +493,22 @@ struct CommentResponse: Codable, Identifiable {
     let id: String
     let postId: String
     let authorId: String
+    var authorUsername: String?
+    var authorDisplayName: String?
     let content: String
     let parentCommentId: String?
     let likesCount: Int
     let createdAt: String
-    
-    // Populated by client
-    var authorUsername: String?
+
+    // Populated by client (threading)
     var replies: [CommentResponse]?
-    
+
     enum CodingKeys: String, CodingKey {
         case id
         case postId = "post_id"
         case authorId = "author_id"
+        case authorUsername = "username"
+        case authorDisplayName = "display_name"
         case content
         case parentCommentId = "parent_comment_id"
         case likesCount = "likes_count"

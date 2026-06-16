@@ -483,6 +483,11 @@ class Comment(Base):
     likes_count = Column(Integer, default=0)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
+    # Eager-load the comment author so CommentResponse can include the real
+    # username + display_name instead of iOS having to fabricate them.
+    # Mirrors Post.author / Clip.author at models.py:368 / :388.
+    author = relationship("User", foreign_keys=[author_id], lazy="joined")
+
 
 class UserBadge(Base):
     __tablename__ = "user_badges"
