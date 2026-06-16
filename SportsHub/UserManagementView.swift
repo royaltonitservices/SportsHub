@@ -178,9 +178,7 @@ struct FilterChip: View {
 struct UserDetailView: View {
     @Environment(\.dismiss) private var dismiss
     let user: AdminUserView
-    @State private var showSuspendDialog = false
-    @State private var showBanDialog = false
-    
+
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -217,48 +215,30 @@ struct UserDetailView: View {
                     }
                     
                     // Admin Actions
-                    VStack(spacing: Spacing.md) {
-                        Text("Admin Actions")
-                            .font(.title3)
-                            .fontWeight(.semibold)
-                            .foregroundStyle(Color.appTextPrimary)
+                    // Admin Actions — not enabled in this build.
+                    // The previous Suspend/Ban/Unsuspend/Strike/Reset-Password buttons
+                    // operated on MockAdminData and never reached the backend; the
+                    // explicit dead buttons (action: {}) were replaced with this
+                    // honest notice so the surface stays read-only.
+                    VStack(alignment: .leading, spacing: Spacing.sm) {
+                        HStack(spacing: Spacing.sm) {
+                            Image(systemName: "lock.shield")
+                                .foregroundStyle(Color.appTextSecondary)
+                            Text("Admin Actions")
+                                .font(.title3)
+                                .fontWeight(.semibold)
+                                .foregroundStyle(Color.appTextPrimary)
+                        }
+
+                        Text("Account moderation actions (suspend, ban, strikes, password reset) are not enabled in this build. This screen is read-only.")
+                            .font(.subheadline)
+                            .foregroundStyle(Color.appTextSecondary)
+                            .multilineTextAlignment(.leading)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                        
-                        if user.accountStatus == .suspended {
-                            Button(action: {}) {
-                                Text("Unsuspend Account")
-                                    .frame(maxWidth: .infinity)
-                            }
-                            .primaryButton()
-                        } else if user.accountStatus == .active {
-                            Button(action: { showSuspendDialog = true }) {
-                                Text("Suspend Account")
-                                    .frame(maxWidth: .infinity)
-                            }
-                            .secondaryButton()
-                        }
-                        
-                        Button(action: {}) {
-                            Text("Add Strike")
-                                .frame(maxWidth: .infinity)
-                        }
-                        .secondaryButton()
-                        
-                        Button(action: {}) {
-                            Text("Reset Password")
-                                .frame(maxWidth: .infinity)
-                        }
-                        .secondaryButton()
-                        
-                        if user.accountStatus != .banned {
-                            Button(action: { showBanDialog = true }) {
-                                Text("Ban Account")
-                                    .foregroundStyle(Color.appError)
-                                    .frame(maxWidth: .infinity)
-                            }
-                            .secondaryButton()
-                        }
                     }
+                    .padding(Spacing.md)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .cardBackground()
                 }
                 .padding(Spacing.md)
             }

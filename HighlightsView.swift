@@ -369,15 +369,46 @@ struct CreateHighlightView: View {
 
         do {
             let mediaUrl = try await APIClient.shared.uploadHighlightMedia(imageData: imageData)
-            _ = try await APIClient.shared.createHighlight(
+            guard !mediaUrl.isEmpty else {
+                errorMessage = "Upload didn't return a media URL. Please try again."
+                return
+            }
+            let created = try await APIClient.shared.createHighlight(
                 mediaUrl: mediaUrl,
                 caption: caption.isEmpty ? nil : caption,
                 sport: selectedSport?.rawValue
             )
-            dismiss()
+            // Best-effort visibility check: the highlight should land in the
+            // feed within a moment. If we can confirm it's there before we
+            // dismiss, the user gets honest confidence; if not, surface a
+            // soft "may take a moment" message instead of a silent dismiss.
+            let visible = await highlightAppearsInFeed(id: created.id)
+            if visible {
+                dismiss()
+            } else {
+                errorMessage = "Uploaded — it may take a moment to appear in your feed."
+            }
         } catch {
             errorMessage = "Upload failed. Please try again."
         }
+    }
+
+    /// Polls /highlights/user/{me} briefly to confirm the new highlight is visible.
+    /// Returns true on first sighting; false after the short window or on any error.
+    private func highlightAppearsInFeed(id: String) async -> Bool {
+        guard let me = SessionManager.shared.currentUser?.id.uuidString else { return false }
+        for _ in 0..<3 {
+            do {
+                let mine = try await APIClient.shared.getUserHighlights(userId: me)
+                if mine.contains(where: { $0.id == id }) {
+                    return true
+                }
+            } catch {
+                return false
+            }
+            try? await Task.sleep(nanoseconds: 700_000_000)
+        }
+        return false
     }
 }
 

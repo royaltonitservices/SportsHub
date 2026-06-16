@@ -449,16 +449,20 @@ struct LobbyCard: View {
                     .font(.caption)
                     .foregroundStyle(Color.appTextSecondary)
                 Spacer()
-                Button(action: onJoin) {
-                    Text("Challenge")
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, Spacing.md)
-                        .padding(.vertical, Spacing.xs)
-                        .background(Color.appPrimary)
-                        .cornerRadius(8)
-                }
+                // Team-vs-team challenges are not yet wired (joinLobby surfaces an
+                // honest "coming soon" message). Demote the affordance so users
+                // don't keep tapping a primary-colored CTA that can't complete.
+                Text("Coming Soon")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color.appTextSecondary)
+                    .padding(.horizontal, Spacing.md)
+                    .padding(.vertical, Spacing.xs)
+                    .background(Color.appSurface)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(Color.appTextSecondary.opacity(0.25), lineWidth: 1)
+                    )
+                    .cornerRadius(8)
             }
         }
         .padding(Spacing.md)

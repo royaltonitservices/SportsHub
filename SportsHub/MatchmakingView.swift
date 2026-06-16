@@ -60,13 +60,12 @@ struct MatchmakingView: View {
                     if sport == .tennis {
                         tennisCourtSelector
                     }
-                    
-                    // Rating Range Controls
-                    ratingRangeCard
-                    
-                    // Distance/Radius Control
-                    radiusControlCard
-                    
+
+                    // ELO range and search radius cards intentionally removed:
+                    // the backend MatchmakingRequest only accepts {sport, match_type}
+                    // and findOpponents() did not send those filters, so the controls
+                    // were decorative. See backend/schemas.py MatchmakingRequest.
+
                     // Availability Control (Enhanced)
                     availabilityCard
                     
@@ -664,33 +663,10 @@ struct MatchmakingView: View {
             .padding(.top, Spacing.lg)
             
             VStack(spacing: Spacing.sm) {
-                fallbackButton(
-                    icon: "arrow.up.left.and.arrow.down.right",
-                    title: "Widen Skill Range",
-                    subtitle: "Search for more players"
-                ) {
-                    if useManualRange {
-                        manualRangeLower = min(150, manualRangeLower + 50)
-                        manualRangeUpper = min(150, manualRangeUpper + 50)
-                    } else {
-                        eloRangeAdjustment = min(200, eloRangeAdjustment + 50)
-                    }
-                    Task {
-                        await findOpponents()
-                    }
-                }
-                
-                fallbackButton(
-                    icon: "location.circle",
-                    title: "Expand Search Radius",
-                    subtitle: "Include players farther away"
-                ) {
-                    searchRadius = min(100, searchRadius * 2)
-                    Task {
-                        await findOpponents()
-                    }
-                }
-                
+                // "Widen Skill Range" and "Expand Search Radius" removed —
+                // the backend ignores those filters, so the buttons would
+                // simply re-issue the same query and produce the same result.
+
                 if matchType == .ranked {
                     fallbackButton(
                         icon: "gamecontroller.fill",

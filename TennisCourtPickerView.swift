@@ -11,6 +11,10 @@ struct TennisCourtPickerView: View {
     @State private var errorMessage: String?
     @State private var searchRadius: Double = 10.0
 
+    // By-city fallback when location is unavailable or permission denied.
+    // Backed by APIClient.searchTennisCourtsByCity / GET /tennis-courts/search/by-city.
+    @State private var cityQuery: String = ""
+
     let onCourtSelected: (TennisCourt) -> Void
     @Environment(\.dismiss) private var dismiss
 
@@ -57,6 +61,34 @@ struct TennisCourtPickerView: View {
                     }
                     .padding(.horizontal, Spacing.lg)
                     .disabled(isLoading)
+
+                    // By-city fallback: works without location permission.
+                    HStack(spacing: Spacing.sm) {
+                        Image(systemName: "magnifyingglass")
+                            .foregroundStyle(Color.appTextSecondary)
+                        TextField("Search by city (e.g. Seattle)", text: $cityQuery)
+                            .textInputAutocapitalization(.words)
+                            .submitLabel(.search)
+                            .onSubmit { searchByCity() }
+                            .foregroundStyle(Color.appTextPrimary)
+                        Button {
+                            searchByCity()
+                        } label: {
+                            Text("Search")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, Spacing.md)
+                                .padding(.vertical, 6)
+                                .background(Color.appPrimary)
+                                .cornerRadius(CornerRadius.sm)
+                        }
+                        .disabled(cityQuery.trimmingCharacters(in: .whitespaces).isEmpty || isLoading)
+                    }
+                    .padding(.horizontal, Spacing.md)
+                    .padding(.vertical, Spacing.sm)
+                    .background(Color.appSurface)
+                    .clipShape(RoundedRectangle(cornerRadius: CornerRadius.medium))
+                    .padding(.horizontal, Spacing.lg)
                 }
                 .padding(.bottom, Spacing.md)
                 .background(Color.appBackground)
@@ -149,7 +181,7 @@ struct TennisCourtPickerView: View {
 
     private func fetchNearbyCourts() {
         guard let location = locationManager.location else {
-            errorMessage = "Unable to determine your location. Please enable location services."
+            errorMessage = "Location unavailable. Search by city below to find courts without granting location access."
             return
         }
 
@@ -170,7 +202,34 @@ struct TennisCourtPickerView: View {
                 }
             } catch {
                 await MainActor.run {
-                    errorMessage = (error as? APIError)?.userFriendlyMessage ?? "We couldn't find tennis courts near you. Please try again."
+                    errorMessage = (error as? APIError)?.userFriendlyMessage ?? "We couldn't find tennis courts near you. Try the by-city search below."
+                    isLoading = false
+                }
+            }
+        }
+    }
+
+    private func searchByCity() {
+        let trimmed = cityQuery.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return }
+
+        isLoading = true
+        errorMessage = nil
+        selectedCourt = nil
+
+        Task {
+            do {
+                let fetched = try await APIClient.shared.searchTennisCourtsByCity(city: trimmed)
+                await MainActor.run {
+                    courts = fetched
+                    if fetched.isEmpty {
+                        errorMessage = "No courts found in \(trimmed). Try a nearby city or check spelling."
+                    }
+                    isLoading = false
+                }
+            } catch {
+                await MainActor.run {
+                    errorMessage = (error as? APIError)?.userFriendlyMessage ?? "Couldn't search \(trimmed) right now. Please try again."
                     isLoading = false
                 }
             }

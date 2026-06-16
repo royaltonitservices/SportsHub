@@ -314,6 +314,23 @@ struct GroupChatDetailView: View {
     
     var body: some View {
         VStack(spacing: 0) {
+            // Honest disclosure: live updates and member management are not
+            // wired in this build. Users were tapping into the chat expecting
+            // realtime + add/remove member affordances that don't exist.
+            HStack(spacing: Spacing.xs) {
+                Image(systemName: "info.circle")
+                    .font(.caption2)
+                    .foregroundStyle(Color.appTextSecondary)
+                Text("Pull down to refresh for new messages. Adding or removing members is not available yet.")
+                    .font(.caption2)
+                    .foregroundStyle(Color.appTextSecondary)
+                    .lineLimit(2)
+                Spacer()
+            }
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, 6)
+            .background(Color.appSurface)
+
             ScrollView {
                 LazyVStack(spacing: Spacing.sm) {
                     ForEach(messages) { message in
@@ -322,7 +339,10 @@ struct GroupChatDetailView: View {
                 }
                 .padding(Spacing.md)
             }
-            
+            .refreshable {
+                await loadMessages()
+            }
+
             // Send error banner
             if let err = sendError {
                 HStack(spacing: Spacing.sm) {
