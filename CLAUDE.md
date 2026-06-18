@@ -3,16 +3,78 @@
 ## Metadata
 
 - **Purpose:** Living source of truth for Claude sessions working on SportsHub
-- **Last Updated:** 2026-05-31 (video upload / playback E2E validation — COMPLETE)
+- **Last Updated:** 2026-06-18 (trust & honesty cleanup stack — COMPLETE)
 - **Checkpoint Branch:** `current-state-stabilization-checkpoint`
-- **Checkpoint Commit:** `749476e6e8ec9e9390b3305cb7082178fa7a72aa` (video upload / playback E2E, COMPLETE)
-- **Tag:** `video-upload-playback-e2e-complete`
-- **Checkpoint Note:** Session 2026-05-31: Video Upload / Playback E2E Validation frozen as COMPLETE. Backend upload + feed + static serving were already proven across all 4 sports at the prior `media-upload-feed-validation-complete` partial checkpoint; this session closed the only remaining leg by exercising iOS AVPlayer runtime playback in the iPhone 17 Pro simulator via a new XCUITest (`SportsHubUITests.testClipsPlaybackE2E`) that drives auth → Clips → tap-play and asserts the `Video unavailable` failure overlay does NOT appear within the 10 s AVPlayer readiness window. Backend log confirmed the simulator's AVPlayer issued `HEAD /<uuid>.mov` → 200 under the `/cdn/videos` StaticFiles mount, and `avPlayer.play()` was invoked (per `ClipsView.swift:344-360`). The test also implicitly confirmed seeded null-video clips do not render play controls (only one `play.circle.fill` button matched on the Basketball feed of 3 clips, the uploaded one). Tag `media-upload-feed-validation-complete` is preserved unchanged as the prior partial checkpoint.
-- **Overall Completion:** ~100% (all identified gaps closed; full media path — upload, persistence, serving, feed, iOS playback — is proven)
+- **Checkpoint Commit:** `76f556ab5a55e7bbd576871149488ea783ef4d59` (local-only / dead-path honesty cleanup, COMPLETE)
+- **Tag:** `local-only-honesty-cleanup-complete` (latest in a stack of three: `false-doors-cleanup-complete` → `identity-truth-cleanup-complete` → `local-only-honesty-cleanup-complete`)
+- **Checkpoint Note:** Three targeted post-validation cleanup passes were completed and frozen in sequence on `current-state-stabilization-checkpoint`: (1) False Doors & Reachable Unfinished Flow Cleanup (`a4fe497`, tag `false-doors-cleanup-complete`) removed empty admin buttons, decorative matchmaking filters, the TeamLobby challenge CTA, made highlight upload verify visibility, and added an honest disclosure + pull-to-refresh to group chats; tennis court picker gained a by-city fallback. (2) Identity Truth & Trust Surface Cleanup (`80f61d4`, tag `identity-truth-cleanup-complete`) wired real comment author identity end-to-end, real friend identity in the challenge picker, real backend rating delta in result notifications, an informational (non-paywall) premium plan card with a deep link to system Subscriptions, and a Home search field that carries the typed query into AddFriendView. (3) Local-Only / Infra-Blocked / Dead-Path Honesty Cleanup (`76f556a`, tag `local-only-honesty-cleanup-complete`) tightened TrainingSession save copy, added an offline-estimate caption to AI Coach trust score, renamed DailyReadiness's "AI" surfaces to honest local-logic labels, stopped suppressing the smartwatch sync-failed banner behind HealthKit data, disclosed in-app-only delivery on Notifications, removed the dead `submitResult` path, removed the dead `conversationDelete` capability plumbing, and surfaced unknown backend-earned badges in BadgeSystemView. The user-facing product is now substantially more honest about what it actually is — no more fake identities, fake stats, dead doors, or hidden local-only/sync-failure behavior.
+- **Overall Completion:** ~98% (validation phases plus honesty/identity/dead-path cleanup all complete; remaining gaps are architecturally large and intentionally deferred — APNs, real subscription management, team-vs-team challenges, GPT-only AI coach, full local-to-cloud sync for skill progression / workouts)
 
 ---
 
-## Latest Checkpoint — Video Upload / Playback E2E Frozen
+## Latest Checkpoint — Trust & Honesty Cleanup Stack Frozen
+
+- **Branch:** `current-state-stabilization-checkpoint`
+- **All three checkpoints below pushed to origin** — branch and every tag verified on `git ls-remote --tags origin`
+- **Working tree at each freeze:** verified clean — `git status` empty, no staged or untracked files
+- **`backend/.env`:** not committed (gitignored via `.gitignore:23`)
+- **DB files:** not committed (`backend/sportshub.db` gitignored via `.gitignore:29`)
+- **Uploaded media files:** not committed (`backend/uploads/` gitignored via `.gitignore:34`)
+
+### Checkpoint 1 — False Doors & Reachable Unfinished Flow Cleanup
+
+- **Commit:** `a4fe49730ef3fca6076b6a31f8cc3d2b42d08511`
+- **Tag:** `false-doors-cleanup-complete`
+- Removed three empty-action admin buttons (Unsuspend / Add Strike / Reset Password) from `UserManagementView` and replaced the whole action block with an honest read-only notice; demoted Suspend/Ban (whose alerts were never wired) at the same time.
+- Removed the decorative `ratingRangeCard` and `radiusControlCard` from `MatchmakingView`, plus the "Widen Skill Range" / "Expand Search Radius" fallback buttons — backend `MatchmakingRequest` only accepts `{sport, match_type}`.
+- Added a `searchTennisCourtsByCity` fallback row to `TennisCourtPickerView` so users who deny location can still find courts (wired to the existing `GET /tennis-courts/search/by-city`).
+- Demoted `TeamLobbyView`'s per-lobby "Challenge" CTA to a non-tap "Coming Soon" capsule.
+- `HighlightsView.shareHighlight()` now verifies the created highlight is visible via `getUserHighlights(me)` polling before dismissing; on miss, shows "Uploaded — it may take a moment to appear in your feed."
+- Added an honest disclosure banner + `.refreshable` to `GroupChatDetailView` ("Pull down to refresh for new messages. Adding or removing members is not available yet.").
+
+### Checkpoint 2 — Identity Truth & Trust Surface Cleanup
+
+- **Commit:** `80f61d412a5008de4ce363de2775b66c0e8712f6`
+- **Tag:** `identity-truth-cleanup-complete`
+- Backend `CommentResponse` now includes `username` + `display_name` via a `model_validator` that pulls them off a newly-added `Comment.author` eager relationship; `routers/comments.py` uses `joinedload(Comment.author)`. iOS removed the `enrichedComments[i].authorUsername = "athlete\(i + 1)"` mock loop; real handles flow straight through.
+- Backend `FriendshipResponse` enriched with `user_{a,b}_{username,display_name}` (same pattern) and `routers/friends.py /list`, `/requests/pending`, `/requests/received` use `joinedload(user_a)` + `joinedload(user_b)`. iOS `FriendshipResponse` gained an `otherSide(currentUserId:)` helper. `ChallengeCreationView.loadFriends()` now resolves real `display_name` / `username` and drops rows the backend can't identify — no more `User a1b2c3d4`.
+- iOS `submitMatchResult(...)` now returns a new `SubmitMatchResultResponse` (status + per-side `challenger_rating_change` / `opponent_rating_change` + `trust_updated`). `NotificationManager.scheduleResultNotification(... ratingChange: Int?)` omits the `Rating: …` suffix when `nil`. `ResultSubmissionView` only fires a notification on `status == "completed"` and uses the user's real per-side ELO delta — the hardcoded `+15 / -10` is gone.
+- `ProfileView.premiumActiveCard` is no longer a `Button`. For already-premium users it's an informational card with a `Link` to `apps.apple.com/account/subscriptions` ("Manage or cancel in System Settings → Subscriptions"); premium users no longer get routed into the purchase paywall as if it were "Manage Plan".
+- `AddFriendView` accepts `initialQuery`; on `.task`, if non-empty it pre-populates the search field and runs `searchUsers()`. `HomeView` presents `AddFriendView(initialQuery: searchText, …)` and clears the field on dismiss — the typed query is no longer dropped on the floor.
+
+### Checkpoint 3 — Local-Only / Infra-Blocked / Dead-Path Honesty Cleanup
+
+- **Commit:** `76f556ab5a55e7bbd576871149488ea783ef4d59`
+- **Tag:** `local-only-honesty-cleanup-complete`
+- `TrainingSessionView` now tracks `backendLogSucceeded` and distinguishes "logged to your account" from "saved on this device — server sync didn't complete" in the success alert.
+- `AICoachLevelView` shows a "· offline estimate" caption next to the Trust Score header when the local fallback (`min(100, max(5, localInsights × 3))`) is used because `GET /users/me/trust-score` failed.
+- `DailyReadinessView`: "AI Recommendation" → "Readiness Guidance" (heart icon); "AI Readiness Coach" → "Daily Readiness · Based on your wearable recovery signals". Reasoning is deterministic per readiness tier — not LLM — so the labels stopped overclaiming.
+- `SmartwatchSyncView` no longer suppresses the `syncFailed` banner when local HealthKit data exists; backend sync failures are visible even when local cards render above them.
+- `NotificationsView` shows an inline capsule at the top of the list: "Alerts fire while the app is open. Closed-app push isn't supported yet." (matches the actual UNUserNotificationCenter-only delivery).
+- Removed `APIClient.submitResult(challengeId:request:)` and its unused `SubmitResultRequest` model — the route was 404 and no view called the method. Canonical path is `submitMatchResult`.
+- Removed the `.conversationDelete` enum case, its `CapabilityRegistry` row, `featureManifestId` mapping, the matching `FeatureDefinition` and its `allFeatures` entry — no view ever applied `.capabilityGated(.conversationDelete)`.
+- `BadgeSystemView.loadBadges()` now appends a synthetic `Badge` (built from the `UserBadgeResponse` payload) for any earned badge name not in the local hardcoded catalog; backend-only badges no longer silently disappear from the grid.
+
+### Caveats preserved through this stack
+
+1. **APNs / push infrastructure still does not exist** — only local `UNUserNotificationCenter` delivery; closed-app push isn't supported.
+2. **Skill progression and workout saves remain local-first / local-only** in important ways (UserDefaults primary store; best-effort backend sync at most).
+3. **Some backend routes remain unused** from the iOS perspective — `/search/*`, `/placement/*`, and `/challenges/{id}/complete` are intentionally left in place but iOS never calls them.
+4. **Real in-app subscription management / cancel flow still does not exist** — the premium card now deep-links to Apple's canonical Subscriptions surface, but an in-app billing UI is still future work.
+5. **Team-vs-team challenge flow still does not exist** — TeamLobby create/browse works, but actual team-vs-team matchmaking is unbuilt.
+6. **AI Coach may still fall back to deterministic logic** when GPT or the backend coach endpoints are unavailable; the fallback is honest but it is not LLM-generated.
+7. **Physical-device media playback still depends on a non-`localhost` CDN/base URL** — iOS `APIConfig.baseURL` is `http://localhost:8000`; device builds need a real CDN/host configuration.
+
+### Guidance for future sessions
+
+- **Do not reopen these three cleanup passes** unless a real regression is found. The frozen tags (`false-doors-cleanup-complete`, `identity-truth-cleanup-complete`, `local-only-honesty-cleanup-complete`) all remain valid and pushed to origin.
+- **Do not reintroduce** false doors, fake identities (`@athlete1`, "User a1b2c3d4"), fabricated stats, overclaimed local-only behavior, or paywall-as-management surfaces. Each of these patterns has a tagged removal commit; reintroducing one is a regression, not a feature.
+- **Prefer honest narrowing or removal** of misleading affordances over decorative or partially-fake UI. If an affordance can't complete its implied purpose, label it "Coming Soon" / disable it / remove it rather than leaving it lit and unresponsive.
+- **When adding any UI that surfaces a stat, identity, or persistence claim**, route it through real backend data — or be explicit about it being local/offline/estimated.
+
+---
+
+## Prior Checkpoint — Video Upload / Playback E2E Frozen
 
 - **Phase frozen:** Video Upload / Playback E2E Validation
 - **Branch:** `current-state-stabilization-checkpoint`
