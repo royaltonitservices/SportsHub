@@ -131,17 +131,41 @@ struct BadgeSystemView: View {
     }
     
     private func loadBadges() {
-        allBadges = Badge.badgesForSport(sport)
-        
+        let catalog = Badge.badgesForSport(sport)
+        allBadges = catalog
+
         // Fetch earned badges from API
         Task {
             do {
                 let earnedBadges = try await APIClient.shared.getMyBadges()
-                let sportBadgeNames = Set(earnedBadges
-                    .filter { $0.sport.lowercased() == sport.rawValue.lowercased() }
-                    .map { $0.name })
-                
-                unlockedBadges = allBadges.filter { sportBadgeNames.contains($0.name) }
+                let sportEarned = earnedBadges.filter {
+                    $0.sport.lowercased() == sport.rawValue.lowercased()
+                }
+
+                // Catalog drift safety: when the backend reports an earned
+                // badge whose name isn't in our hardcoded local catalog, mint
+                // a synthetic Badge from the payload so the user actually
+                // sees what they earned. Previously these silently disappeared
+                // because the unlocked filter only matched against `allBadges`.
+                let catalogNames = Set(catalog.map { $0.name })
+                let unknownEarned: [Badge] = sportEarned
+                    .filter { !catalogNames.contains($0.name) }
+                    .map { earned in
+                        Badge(
+                            name: earned.name,
+                            description: earned.description,
+                            icon: earned.icon,
+                            category: BadgeCategory(rawValue: earned.category.capitalized) ?? .milestones,
+                            rarity: BadgeRarity(rawValue: earned.rarity.capitalized) ?? .common,
+                            requirement: nil,
+                            sport: sport
+                        )
+                    }
+
+                allBadges = catalog + unknownEarned
+
+                let earnedNames = Set(sportEarned.map { $0.name })
+                unlockedBadges = allBadges.filter { earnedNames.contains($0.name) }
             } catch {
                 unlockedBadges = []
                 loadError = "Couldn't load your badges. Pull to refresh."

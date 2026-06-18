@@ -76,9 +76,9 @@ struct DailyReadinessView: View {
                     .foregroundColor(.appPrimary)
                 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("AI Readiness Coach")
+                    Text("Daily Readiness")
                         .font(.headline)
-                    Text("Powered by your wearable data")
+                    Text("Based on your wearable recovery signals")
                         .font(.caption)
                         .foregroundColor(.appSecondary)
                 }
@@ -199,17 +199,20 @@ struct DailyReadinessView: View {
             }
             
             Divider()
-            
-            // AI reasoning
+
+            // Readiness reasoning. Reasoning strings are deterministic per
+            // readiness tier — see generateRecommendation(from:) — not an AI
+            // generation, so the label is "Readiness Guidance" not "AI
+            // Recommendation" to stop overclaiming server intelligence.
             VStack(alignment: .leading, spacing: Spacing.sm) {
                 HStack {
-                    Image(systemName: "brain.head.profile")
+                    Image(systemName: "heart.text.square")
                         .foregroundColor(.appPrimary)
-                    Text("AI Recommendation")
+                    Text("Readiness Guidance")
                         .font(.subheadline)
                         .fontWeight(.semibold)
                 }
-                
+
                 Text(recommendation.reasoning)
                     .font(.body)
                     .foregroundColor(.primary)

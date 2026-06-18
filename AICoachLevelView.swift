@@ -14,6 +14,10 @@ struct AICoachLevelView: View {
     @State private var currentLevel: AICoachLevel = .basic
     @State private var trustScore: Int = 0
     @State private var insightsReceived: Int = 0
+    /// True when `trustScore` came from a local heuristic (insights × 3) because
+    /// the backend trust-score fetch failed. Surfaces an honest "offline estimate"
+    /// disclosure so the number doesn't masquerade as a server-graded value.
+    @State private var trustScoreIsLocalEstimate: Bool = false
     @State private var insightsActedOn: Int = 0
     
     var body: some View {
@@ -46,9 +50,15 @@ struct AICoachLevelView: View {
                             Text("Trust Score")
                                 .font(.subheadline)
                                 .fontWeight(.semibold)
-                            
+
+                            if trustScoreIsLocalEstimate {
+                                Text("· offline estimate")
+                                    .font(.caption2)
+                                    .foregroundStyle(Color.appTextSecondary)
+                            }
+
                             Spacer()
-                            
+
                             Text("\(trustScore)/100")
                                 .font(.subheadline)
                                 .foregroundStyle(Color.appPrimary)
@@ -210,9 +220,11 @@ struct AICoachLevelView: View {
         do {
             let response = try await APIClient.shared.getTrustScore()
             trustScore = Int(response.trustScore)
+            trustScoreIsLocalEstimate = false
         } catch {
             // Fall back to deriving trust score from insights count
             trustScore = min(100, max(5, localInsights * 3))
+            trustScoreIsLocalEstimate = true
         }
 
         // Determine level from trust score

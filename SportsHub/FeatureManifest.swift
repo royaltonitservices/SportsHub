@@ -254,13 +254,10 @@ enum FeatureManifest {
         notes: "Only local UNUserNotificationCenter notifications exist (fire when app is open). Zero APNs infrastructure: no device token registration, no provider certificate, no server-side push calls, no backend fanout."
     )
 
-    static let conversationDelete = FeatureDefinition(
-        id: "conversation_delete",
-        name: "Conversation Delete",
-        status: .absent,
-        layers: FeatureLayerPresence(hasUI: false, hasViewModel: false, hasAPIClient: false, hasBackend: false),
-        notes: "Phase 1: dead swipe-to-delete action removed from MessagesListView. No backend DELETE /conversations endpoint exists."
-    )
+    // `conversationDelete` was removed: there was no UI calling it, no
+    // AppCapability gate was ever applied to the (already absent) swipe
+    // action, and no backend route exists. Keeping a registry entry for a
+    // feature with zero footprint was itself misleading.
 
     static let trainingPrograms = FeatureDefinition(
         id: "training_programs",
@@ -298,7 +295,6 @@ enum FeatureManifest {
         teamLobbyView,
         // Absent
         pushNotificationsAPNs,
-        conversationDelete,
         trainingPrograms,
     ]
 

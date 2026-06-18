@@ -35,6 +35,10 @@ struct TrainingSessionView: View {
     @State private var showImagePicker = false
     @State private var isLoading = false
     @State private var showSuccess = false
+    /// True when the backend `logTrainingSession` call succeeded for this save.
+    /// When false, the UI says the session is saved on this device only so the
+    /// success copy stops claiming a server-side log that didn't happen.
+    @State private var backendLogSucceeded = false
     @State private var errorMessage = ""
     @State private var showError = false
     @State private var showDrillSuggestions = false
@@ -112,12 +116,16 @@ struct TrainingSessionView: View {
                     }
                 ))
             }
-            .alert("Success", isPresented: $showSuccess) {
+            .alert("Saved", isPresented: $showSuccess) {
                 Button("OK") {
                     dismiss()
                 }
             } message: {
-                Text("Training session with \(drillEntries.count) drill(s) logged successfully!")
+                if backendLogSucceeded {
+                    Text("\(drillEntries.count) drill(s) logged to your account.")
+                } else {
+                    Text("\(drillEntries.count) drill(s) saved on this device. Server sync didn't complete — try again when you're back online to log it to your account.")
+                }
             }
             .alert("Error", isPresented: $showError) {
                 Button("OK") { }
@@ -549,6 +557,7 @@ struct TrainingSessionView: View {
         }
 
         // Step 2: Persist session + AI result to backend
+        var backendOK = false
         do {
             _ = try await APIClient.shared.logTrainingSession(
                 sport: sport,
@@ -556,12 +565,14 @@ struct TrainingSessionView: View {
                 notes: sessionNotes.isEmpty ? nil : sessionNotes,
                 aiAnalysis: aiResult
             )
+            backendOK = true
         } catch {
             print("Training session backend log failed: \(error)")
         }
 
         // Step 3: Always keep a local UserDefaults cache for offline resilience
         persistSessionLocally()
+        backendLogSucceeded = backendOK
         showSuccess = true
     }
     

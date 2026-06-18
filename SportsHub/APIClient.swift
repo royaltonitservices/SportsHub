@@ -667,10 +667,11 @@ extension APIClient {
         try await post("/challenges/\(challengeId)/decline", body: nil as String?)
     }
     
-    func submitResult(challengeId: String, request: SubmitResultRequest) async throws -> ChallengeResponse {
-        try await post("/challenges/\(challengeId)/result", body: request)
-    }
-    
+    // submitResult(challengeId:request:) was removed in the local-only honesty
+    // pass: it posted to /challenges/{id}/result, which doesn't exist on the
+    // backend (returns 404), and no view ever called it. The live result
+    // submission path is submitMatchResult below.
+
     func submitMatchResult(challengeId: String, winnerId: String, scoreData: String?) async throws -> SubmitMatchResultResponse {
         let request = SubmitMatchResultRequest(
             challengeId: challengeId,

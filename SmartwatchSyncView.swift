@@ -50,8 +50,12 @@ struct SmartwatchSyncView: View {
                     noDataAvailableCard
                 }
 
-                // Sync failure banner — shown when sync ran but hit an actual error
-                if case .syncFailed(let reason) = wearableManager.connectionState, localData == nil {
+                // Sync failure banner — shown when sync ran but hit an actual
+                // error. We surface this even when local HealthKit data is
+                // present, because suppressing it would let backend sync fail
+                // silently while the UI looked healthy. Local data still
+                // renders above; the banner is honest about the remote side.
+                if case .syncFailed(let reason) = wearableManager.connectionState {
                     syncFailedCard(reason: reason)
                 }
 

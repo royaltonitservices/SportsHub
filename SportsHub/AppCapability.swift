@@ -16,9 +16,6 @@ enum AppCapability: CaseIterable {
     /// Google Sign-In — OAuthManager.signInWithGoogle() always throws; no Google SDK integrated.
     case googleSignIn
 
-    /// Delete a direct-message conversation — no backend DELETE /conversations endpoint; empty closure in UI.
-    case conversationDelete
-
     /// General athlete/content search from HomeView search bar — currently opens AddFriendView (friend search only).
     case generalSearch
 
@@ -34,7 +31,6 @@ enum AppCapability: CaseIterable {
     var featureManifestId: String? {
         switch self {
         case .googleSignIn:       return "google_sign_in"
-        case .conversationDelete: return "conversation_delete"
         case .generalSearch:      return "general_search"
         case .trainingPrograms:   return "training_programs"
         case .evidenceFileUpload: return "evidence_upload"
@@ -65,7 +61,6 @@ enum CapabilityRegistry {
     static let statuses: [AppCapability: CapabilityStatus] = [
         // Phase 1 — identified as fake/dead/misleading in audit
         .googleSignIn:        .unavailableHidden,   // no SDK; always throws after 2s delay
-        .conversationDelete:  .unavailableHidden,   // no backend endpoint; empty action closure
         .generalSearch:       .unavailableHidden,   // opens friend search, not general search
         .trainingPrograms:    .unavailableHidden,   // no infrastructure; "coming soon" placeholder
         .evidenceFileUpload:  .available,            // real multipart upload (Phase 4b complete)

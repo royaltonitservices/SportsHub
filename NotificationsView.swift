@@ -48,6 +48,24 @@ struct NotificationsView: View {
     private var notificationsList: some View {
         ScrollView {
             LazyVStack(spacing: Spacing.sm) {
+                // Honest disclosure: SportsHub has no APNs infrastructure yet,
+                // so alerts only fire while the app is open. NotificationsView
+                // is the in-app activity feed — closed-app push isn't here.
+                HStack(spacing: Spacing.xs) {
+                    Image(systemName: "info.circle")
+                        .font(.caption2)
+                        .foregroundStyle(Color.appTextSecondary)
+                    Text("Alerts fire while the app is open. Closed-app push isn't supported yet.")
+                        .font(.caption2)
+                        .foregroundStyle(Color.appTextSecondary)
+                        .lineLimit(2)
+                    Spacer()
+                }
+                .padding(.horizontal, Spacing.sm)
+                .padding(.vertical, 6)
+                .background(Color.appSurface)
+                .clipShape(RoundedRectangle(cornerRadius: CornerRadius.sm))
+
                 ForEach(notifications) { notification in
                     NotificationRow(notification: notification)
                 }

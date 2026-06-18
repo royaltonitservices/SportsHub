@@ -214,15 +214,8 @@ struct ChallengeResponse: Codable, Identifiable {
     }
 }
 
-struct SubmitResultRequest: Codable {
-    let score: Int
-    let opponentScore: Int
-    
-    enum CodingKeys: String, CodingKey {
-        case score
-        case opponentScore = "opponent_score"
-    }
-}
+// SubmitResultRequest removed alongside the dead APIClient.submitResult.
+// The canonical result-submission body is SubmitMatchResultRequest below.
 
 struct SubmitMatchResultRequest: Codable {
     let challengeId: String
