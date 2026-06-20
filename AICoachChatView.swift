@@ -428,25 +428,42 @@ struct AICoachChatView: View {
         }
     }
 
-    // SYSTEM INTEGRATION: Connect AI Coach actions to Train and Session Logging
+    // Suggested-action chips below an assistant message are short-form quick
+    // replies (e.g. "About 20-30 minutes", "Around 45 minutes", "Tell me what
+    // to work on regardless"). The previous behavior routed everything not
+    // matching a narrow keyword list into `showDrillLibrary = true` — so
+    // tapping "Around 45 minutes" navigated to the drill library mid-chat.
+    //
+    // Default behavior now: treat the chip text as the user's next message
+    // and send it back into the conversation. Only chips with an explicit
+    // navigation phrase ("Open Drill Library", "Log Session", etc.) navigate.
     private func handleActionTap(_ action: String) {
         let actionLower = action.lowercased()
 
-        // Navigate to Train section / Drill Library
-        if actionLower.contains("train") || actionLower.contains("drill") {
+        let navigatesToDrills =
+            actionLower.contains("open drill library") ||
+            actionLower.contains("open drills") ||
+            actionLower.contains("browse drills") ||
+            actionLower.contains("show drills") ||
+            actionLower.contains("go to drills") ||
+            actionLower.contains("go to train")
+
+        let navigatesToSessionLog =
+            actionLower.contains("log session") ||
+            actionLower.contains("log a session") ||
+            actionLower.contains("log workout") ||
+            actionLower.contains("log this") ||
+            actionLower.contains("open session log") ||
+            actionLower.contains("track session")
+
+        if navigatesToDrills {
             showDrillLibrary = true
-        }
-        // Navigate to Session Logging
-        else if actionLower.contains("log") || actionLower.contains("session") || actionLower.contains("track") {
+        } else if navigatesToSessionLog {
             showSessionLog = true
-        }
-        // Open drill library for improvement-focused actions
-        else if actionLower.contains("improve") || actionLower.contains("recommended") {
-            showDrillLibrary = true
-        }
-        // Default: open drill library as most common action
-        else {
-            showDrillLibrary = true
+        } else {
+            // Treat as a conversational quick reply.
+            messageText = action
+            sendMessage()
         }
     }
 

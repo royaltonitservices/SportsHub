@@ -54,6 +54,19 @@ class SessionManager: ObservableObject {
         Task {
             await restoreSession()
         }
+
+        // Observe mid-session JWT expiry from APIClient. Without this, every
+        // authenticated screen surfaces its own "Couldn't reach / Failed to
+        // load" error after the 30-minute token TTL elapses, because none of
+        // them flagged the central auth state. We listen once and clear.
+        NotificationCenter.default.addObserver(
+            forName: .sportsHubSessionDidExpire,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self = self, self.isAuthenticated else { return }
+            Task { await self.clearSessionCompletely() }
+        }
     }
 
     // MARK: - Session Restoration

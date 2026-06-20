@@ -8,6 +8,16 @@
 
 import Foundation
 
+// MARK: - Session lifecycle notifications
+
+extension Notification.Name {
+    /// Posted by APIClient when any authenticated request returns 401.
+    /// SessionManager observes this and clears the session so the user is
+    /// bounced to AuthenticationView instead of seeing per-screen "Couldn't
+    /// reach / Failed to load" errors driven by an expired JWT.
+    static let sportsHubSessionDidExpire = Notification.Name("sportsHubSessionDidExpire")
+}
+
 // MARK: - API Configuration
 struct APIConfig {
     static let baseURL = "http://localhost:8000"
@@ -288,9 +298,14 @@ class APIClient {
             throw try extractServerError(from: data, fallback: "Bad request - invalid input")
             
         case 401:
-            // Unauthorized
+            // Unauthorized — JWT is missing, malformed, or (most commonly in
+            // dev) has expired after access_token_expire_minutes. Broadcast
+            // so SessionManager can clear the session and bounce the user to
+            // re-auth; before this hook, every authenticated screen surfaced
+            // a generic "Couldn't reach / Failed to load" error instead.
+            NotificationCenter.default.post(name: .sportsHubSessionDidExpire, object: nil)
             throw try extractServerError(from: data, fallback: APIError.unauthorized)
-            
+
         case 403:
             // Forbidden
             throw try extractServerError(from: data, fallback: APIError.forbidden)
@@ -739,6 +754,9 @@ extension APIClient {
         guard let httpResponse = response as? HTTPURLResponse else {
             throw APIError.invalidResponse
         }
+        if httpResponse.statusCode == 401 {
+            NotificationCenter.default.post(name: .sportsHubSessionDidExpire, object: nil)
+        }
         guard httpResponse.statusCode == 200 else {
             throw APIError.serverError("Evidence file upload failed (\(httpResponse.statusCode))")
         }
@@ -973,13 +991,16 @@ extension APIClient {
             throw APIError.invalidResponse
         }
         
+        if httpResponse.statusCode == 401 {
+            NotificationCenter.default.post(name: .sportsHubSessionDidExpire, object: nil)
+        }
         guard (200...299).contains(httpResponse.statusCode) else {
             if let errorResponse = try? JSONDecoder().decode(ErrorResponse.self, from: data) {
                 throw APIError.serverError(errorResponse.detail)
             }
             throw APIError.serverError("Upload failed with status \(httpResponse.statusCode)")
         }
-        
+
         return try JSONDecoder().decode(ClipResponse.self, from: data)
     }
     func uploadProfilePicture(imageData: Data) async throws -> String {
@@ -998,10 +1019,13 @@ extension APIClient {
         request.httpBody = body
         
         let (data, response) = try await URLSession.shared.data(for: request)
+        if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 401 {
+            NotificationCenter.default.post(name: .sportsHubSessionDidExpire, object: nil)
+        }
         guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
             throw APIError.serverError("Avatar upload failed")
         }
-        
+
         struct AvatarResponse: Decodable { let avatarUrl: String; enum CodingKeys: String, CodingKey { case avatarUrl = "avatar_url" } }
         let decoded = try JSONDecoder().decode(AvatarResponse.self, from: data)
         return decoded.avatarUrl
@@ -1112,6 +1136,9 @@ extension APIClient {
         request.timeoutInterval = 60
 
         let (data, response) = try await URLSession.shared.data(for: request)
+        if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 401 {
+            NotificationCenter.default.post(name: .sportsHubSessionDidExpire, object: nil)
+        }
         guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
             throw APIError.serverError("Media upload failed")
         }
