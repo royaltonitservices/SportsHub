@@ -21,8 +21,35 @@ struct AuthenticationView: View {
                 Color.appBackground.ignoresSafeArea()
                 
                 VStack(spacing: Spacing.xl) {
+                    // Session-expired notice — only shown after a mid-session
+                    // 401 bounce, never on a normal signed-out launch or a
+                    // failed login (those don't set sessionExpiredNotice).
+                    if let notice = sessionManager.sessionExpiredNotice {
+                        HStack(spacing: Spacing.sm) {
+                            Image(systemName: "clock.arrow.circlepath")
+                                .foregroundStyle(Color.appTextSecondary)
+                            Text(notice)
+                                .font(.caption)
+                                .foregroundStyle(Color.appTextPrimary)
+                            Spacer()
+                            Button {
+                                sessionManager.sessionExpiredNotice = nil
+                            } label: {
+                                Image(systemName: "xmark")
+                                    .font(.caption2)
+                                    .foregroundStyle(Color.appTextSecondary)
+                            }
+                        }
+                        .padding(.horizontal, Spacing.md)
+                        .padding(.vertical, Spacing.sm)
+                        .background(Color.appSurface)
+                        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.medium))
+                        .padding(.horizontal, Spacing.xl)
+                        .padding(.top, Spacing.md)
+                    }
+
                     Spacer()
-                    
+
                     // Logo / Branding
                     VStack(spacing: Spacing.md) {
                         Image(systemName: "trophy.circle.fill")

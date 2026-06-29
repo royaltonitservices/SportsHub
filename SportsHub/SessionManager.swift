@@ -31,6 +31,13 @@ class SessionManager: ObservableObject {
     /// Set when a background bio-sync to the backend fails; cleared after user dismisses alert.
     @Published var bioSyncError: String? = nil
 
+    /// Non-nil only when an authenticated request returned 401 mid-session and
+    /// the user was bounced back to AuthenticationView. Lets the auth screen
+    /// show a calm "your session expired" notice. Cleared on successful login
+    /// and on a normal signed-out launch, so wrong-password and first-launch
+    /// flows never display it.
+    @Published var sessionExpiredNotice: String? = nil
+
     /// Whether the backend server is currently reachable.
     /// Starts optimistic (true) to avoid flashing an offline banner before the first health check.
     /// Updated by checkBackendHealth() — called on launch, session restore, and foreground.
@@ -65,6 +72,10 @@ class SessionManager: ObservableObject {
             queue: .main
         ) { [weak self] _ in
             guard let self = self, self.isAuthenticated else { return }
+            // Set the notice BEFORE clearing so AuthenticationView can explain
+            // the bounce. Only this path sets it — first-launch and
+            // wrong-password flows never do.
+            self.sessionExpiredNotice = "Your session expired. Please sign in again."
             Task { await self.clearSessionCompletely() }
         }
     }
@@ -338,6 +349,8 @@ class SessionManager: ObservableObject {
         self.currentUser = user
         self.isAuthenticated = true
         self.isAdmin = isAdminUser
+        // Successful (re)authentication clears any session-expired notice.
+        self.sessionExpiredNotice = nil
 
         // Determine onboarding flow state.
         // Legacy accounts bypass both verification and survey.
