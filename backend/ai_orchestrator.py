@@ -25,6 +25,7 @@ import re
 from config import get_settings
 import models
 from models_premium import BiometricData, SportGoals, Subscription, SmartwatchConnection
+from ai_knowledge_base import retrieve_coach_sources
 
 # MARK: - Coaching Philosophy
 # Single source of truth for coaching identity — injected into every GPT system prompt.
@@ -1550,7 +1551,8 @@ FOLLOWUP: ONE natural follow-up question that moves the conversation forward. Ma
                 ),
                 "suggested_actions": ["Rest today", "Schedule a check-up if pain persists"],
                 "tone": "concerned",
-                "follow_up_questions": ["How long have you been feeling this?"]
+                "follow_up_questions": ["How long have you been feeling this?"],
+                "sources": retrieve_coach_sources(user_message, sport.value, intent="injury"),
             }
 
         # Schedule / multi-day plan request (check BEFORE single-workout check)
@@ -1619,9 +1621,10 @@ FOLLOWUP: ONE natural follow-up question that moves the conversation forward. Ma
 
             return {
                 "response": response,
-                "suggested_actions": ["View training drills", "Set a goal"],
+                "suggested_actions": ["Explain the first drill", "Show me another drill"],
                 "tone": "supportive",
-                "follow_up_questions": ["What feels most challenging for you?"]
+                "follow_up_questions": ["What feels most challenging for you?"],
+                "sources": retrieve_coach_sources(user_message, sport.value, intent="training"),
             }
 
         # Recovery/tiredness
@@ -1644,7 +1647,8 @@ FOLLOWUP: ONE natural follow-up question that moves the conversation forward. Ma
                 "response": response,
                 "suggested_actions": ["View recovery tips", "Track sleep"],
                 "tone": "concerned",
-                "follow_up_questions": ["How are you sleeping lately?"]
+                "follow_up_questions": ["How are you sleeping lately?"],
+                "sources": retrieve_coach_sources(user_message, sport.value, intent="recovery"),
             }
 
         # Match prep
@@ -2256,22 +2260,74 @@ FOLLOWUP: ONE natural follow-up question that moves the conversation forward. Ma
 - Complete stretching"""
 
     def _fallback_challenge(self, sport: models.Sport, challenge_type: str) -> Dict:
-        """Template-based challenge fallback"""
+        """Template-based challenge fallback — one concrete, scorable challenge per sport.
+
+        Each entry is a fully-specified practice challenge: what to do
+        (instructions = rules), and how it's judged (success_metric = scoring /
+        winner determination). These are real templated challenges, not AI-
+        generated copy — the iOS create flow presents them as such.
+        """
         challenges = {
             models.Sport.BASKETBALL: {
-                "title": "Shooting Streak Challenge",
-                "description": "Test your shooting consistency",
-                "goal": "Make 15 shots in a row from free throw line",
+                "title": "Free-Throw Streak Challenge",
+                "description": "Test your shooting consistency under fatigue.",
+                "goal": "Make 15 free throws in a row",
                 "difficulty": "intermediate",
                 "estimated_time": 20,
                 "reward_points": 50,
                 "instructions": [
-                    "Start at free throw line",
-                    "Make 15 consecutive shots",
-                    "Reset counter if you miss"
+                    "Start at the free-throw line",
+                    "Shoot until you make 15 in a row",
+                    "Reset your counter to 0 on any miss",
+                    "Record how many attempts it took to hit the streak",
                 ],
-                "success_metric": "15 consecutive made shots"
-            }
+                "success_metric": "Fewest total attempts to reach 15 consecutive makes",
+            },
+            models.Sport.FOOTBALL: {
+                "title": "Route & Catch Challenge",
+                "description": "Sharpen route running and hands.",
+                "goal": "Complete 20 clean catches across 4 route types",
+                "difficulty": "intermediate",
+                "estimated_time": 25,
+                "reward_points": 50,
+                "instructions": [
+                    "Run 5 reps each of slant, out, post, and go routes",
+                    "Have a partner or machine deliver the ball at the break",
+                    "A rep counts only on a clean catch with both hands",
+                    "Tally drops separately",
+                ],
+                "success_metric": "Most clean catches out of 20 (fewest drops wins ties)",
+            },
+            models.Sport.SOCCER: {
+                "title": "First-Touch & Finish Challenge",
+                "description": "Control under pressure, then finish.",
+                "goal": "Score 12 of 15 controlled-touch finishes",
+                "difficulty": "intermediate",
+                "estimated_time": 25,
+                "reward_points": 50,
+                "instructions": [
+                    "Receive a pass, take one controlling touch, then shoot",
+                    "Take 15 reps alternating left and right side",
+                    "A rep counts only if the first touch stays inside a 2-yard box",
+                    "Track goals scored on qualifying touches",
+                ],
+                "success_metric": "Most goals out of 15 qualifying first-touch finishes",
+            },
+            models.Sport.TENNIS: {
+                "title": "Serve Placement Challenge",
+                "description": "Build a repeatable, accurate serve.",
+                "goal": "Land 15 of 20 serves into target zones",
+                "difficulty": "intermediate",
+                "estimated_time": 20,
+                "reward_points": 50,
+                "instructions": [
+                    "Place a target in the wide and T corners of the service box",
+                    "Hit 10 serves to each target (20 total)",
+                    "A serve counts only if it lands in and hits the target zone",
+                    "Track first-serve makes vs. faults",
+                ],
+                "success_metric": "Most serves (of 20) landed in the target zones",
+            },
         }
 
         return challenges.get(sport, challenges[models.Sport.BASKETBALL])

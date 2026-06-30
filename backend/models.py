@@ -324,6 +324,11 @@ class Challenge(Base):
     accepted_at = Column(DateTime(timezone=True))
     completed_at = Column(DateTime(timezone=True))
 
+    # Read-only relationships for surfacing real participant identity in responses.
+    # One-directional (no back_populates) so they don't touch the User model.
+    challenger = relationship("User", foreign_keys=[challenger_id], viewonly=True)
+    opponent = relationship("User", foreign_keys=[opponent_id], viewonly=True)
+
 
 class Match(Base):
     """Match results for ELO tracking and leaderboards"""

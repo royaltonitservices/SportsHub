@@ -39,6 +39,21 @@ struct TeamLobbyView: View {
                 .padding(Spacing.md)
                 .background(Color.appBackground)
 
+                // Honest disclosure: teams can be formed and browsed, but
+                // team-vs-team matches aren't live yet. Don't imply a full 3v3/5v5
+                // competitive loop that the app can't complete.
+                HStack(alignment: .top, spacing: Spacing.sm) {
+                    Image(systemName: "info.circle")
+                        .foregroundStyle(Color.appSecondary)
+                    Text("You can form and browse teams here. Team-vs-team matches aren't live yet — for now, play 1v1 challenges from the Play tab.")
+                        .font(.caption)
+                        .foregroundStyle(Color.appTextSecondary)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, Spacing.md)
+                .padding(.bottom, Spacing.sm)
+                .background(Color.appBackground)
+
                 if selectedTab == .create {
                     createTeamView
                 } else {

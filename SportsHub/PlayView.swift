@@ -589,12 +589,15 @@ struct PlayView: View {
             
             Divider()
             
-            // Opponent info
+            // Opponent info — real identity when available, honest fallback otherwise
             HStack(spacing: Spacing.md) {
-                AvatarView(name: "Opponent", size: 40)
-                
+                let opponentName = challenge.otherParticipantName(
+                    currentUserId: sessionManager.currentUser?.id.uuidString
+                )
+                AvatarView(name: opponentName ?? "?", size: 40)
+
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Opponent")
+                    Text(opponentName ?? "Opponent pending")
                         .font(.subheadline)
                         .fontWeight(.medium)
                         .foregroundStyle(Color.appTextPrimary)

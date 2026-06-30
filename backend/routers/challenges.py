@@ -2,7 +2,7 @@
 Challenge system endpoints for competitive matches
 """
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import or_, and_
 from typing import List, Optional
 from uuid import UUID
@@ -254,7 +254,10 @@ async def get_my_challenges(
 ):
     """Get all challenges for current user"""
 
-    query = db.query(models.Challenge).filter(
+    query = db.query(models.Challenge).options(
+        joinedload(models.Challenge.challenger),
+        joinedload(models.Challenge.opponent),
+    ).filter(
         or_(
             models.Challenge.challenger_id == current_user.id,
             models.Challenge.opponent_id == current_user.id

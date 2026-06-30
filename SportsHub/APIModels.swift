@@ -198,6 +198,13 @@ struct ChallengeResponse: Codable, Identifiable {
 
     let winnerUserId: String?
 
+    // Real participant identity (when the backend loaded it). nil → degrade to
+    // honest copy, never a fabricated name.
+    let challengerUsername: String?
+    let challengerDisplayName: String?
+    let opponentUsername: String?
+    let opponentDisplayName: String?
+
     enum CodingKeys: String, CodingKey {
         case id
         case challengerId = "challenger_id"
@@ -211,6 +218,60 @@ struct ChallengeResponse: Codable, Identifiable {
         case acceptedAt = "accepted_at"
         case completedAt = "completed_at"
         case winnerUserId = "winner_user_id"
+        case challengerUsername = "challenger_username"
+        case challengerDisplayName = "challenger_display_name"
+        case opponentUsername = "opponent_username"
+        case opponentDisplayName = "opponent_display_name"
+    }
+
+    // Explicit init keeps existing call sites (previews/mocks) valid without
+    // passing the optional identity fields, while synthesized Codable still
+    // decodes them from the backend.
+    init(
+        id: String,
+        challengerId: String,
+        opponentId: String,
+        sport: String,
+        matchType: String,
+        status: String,
+        createdAt: String,
+        challengerSubmittedScore: String? = nil,
+        opponentSubmittedScore: String? = nil,
+        acceptedAt: String? = nil,
+        completedAt: String? = nil,
+        winnerUserId: String? = nil,
+        challengerUsername: String? = nil,
+        challengerDisplayName: String? = nil,
+        opponentUsername: String? = nil,
+        opponentDisplayName: String? = nil
+    ) {
+        self.id = id
+        self.challengerId = challengerId
+        self.opponentId = opponentId
+        self.sport = sport
+        self.matchType = matchType
+        self.status = status
+        self.createdAt = createdAt
+        self.challengerSubmittedScore = challengerSubmittedScore
+        self.opponentSubmittedScore = opponentSubmittedScore
+        self.acceptedAt = acceptedAt
+        self.completedAt = completedAt
+        self.winnerUserId = winnerUserId
+        self.challengerUsername = challengerUsername
+        self.challengerDisplayName = challengerDisplayName
+        self.opponentUsername = opponentUsername
+        self.opponentDisplayName = opponentDisplayName
+    }
+
+    /// The display name of the other participant relative to the current user,
+    /// or nil when the backend didn't supply identity (caller shows honest copy).
+    func otherParticipantName(currentUserId: String?) -> String? {
+        let amChallenger = (currentUserId != nil && currentUserId == challengerId)
+        let display = amChallenger ? opponentDisplayName : challengerDisplayName
+        let username = amChallenger ? opponentUsername : challengerUsername
+        if let d = display, !d.isEmpty { return d }
+        if let u = username, !u.isEmpty { return u }
+        return nil
     }
 }
 

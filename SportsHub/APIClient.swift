@@ -1926,19 +1926,55 @@ struct WearableContext: Codable {
     }
 }
 
+/// A curated source the coach actually retrieved for an answer. Present only
+/// when the backend returned one — never fabricated client-side.
+struct CoachSource: Codable, Hashable {
+    let sourceId: String
+    let title: String
+    let publisher: String
+    let url: String?
+
+    enum CodingKeys: String, CodingKey {
+        case sourceId = "source_id"
+        case title
+        case publisher
+        case url
+    }
+}
+
 struct CoachMessageResponse: Codable {
     let response: String
     let suggestedActions: [String]
     let tone: String
     let followUpQuestions: [String]
+    let sources: [CoachSource]?
     let timestamp: String
-    
+
     enum CodingKeys: String, CodingKey {
         case response
         case suggestedActions = "suggested_actions"
         case tone
         case followUpQuestions = "follow_up_questions"
+        case sources
         case timestamp
+    }
+
+    // Explicit init keeps existing call sites (which don't pass sources) valid
+    // while synthesized Codable still decodes the optional `sources` field.
+    init(
+        response: String,
+        suggestedActions: [String],
+        tone: String,
+        followUpQuestions: [String],
+        sources: [CoachSource]? = nil,
+        timestamp: String
+    ) {
+        self.response = response
+        self.suggestedActions = suggestedActions
+        self.tone = tone
+        self.followUpQuestions = followUpQuestions
+        self.sources = sources
+        self.timestamp = timestamp
     }
 }
 

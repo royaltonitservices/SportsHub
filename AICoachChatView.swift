@@ -523,6 +523,27 @@ struct AICoachMessageBubble: View {
                     .padding(.top, Spacing.xs)
                 }
 
+                // Sources (AI messages only) — shown ONLY when the backend actually
+                // retrieved curated guidance for this answer. No sources => no claim.
+                if !message.isUser, let sources = message.sources, !sources.isEmpty {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Label("Based on", systemImage: "book.closed")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundColor(.appTextSecondary)
+                        ForEach(sources, id: \.sourceId) { src in
+                            Text("• \(src.title) — \(src.publisher)")
+                                .font(.caption2)
+                                .foregroundColor(.appTextSecondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        Text("General guidance, not medical advice.")
+                            .font(.caption2)
+                            .italic()
+                            .foregroundColor(.appTextSecondary)
+                    }
+                    .padding(.top, Spacing.xs)
+                }
+
                 // Feedback row — thumbs up / down for AI messages only
                 if !message.isUser, let onFeedback = onFeedback {
                     HStack(spacing: Spacing.sm) {
@@ -1462,6 +1483,16 @@ enum PrePipelineIntent {
 /// Zero async, zero GPT, zero backend — this must complete in sub-millisecond time.
 struct PrePipelineClassifier {
 
+    /// Returns the single sport explicitly named in the message, or nil when
+    /// zero or more than one sport is named (ambiguous). Used to stop the coach
+    /// from answering in the wrong sport when the message names a sport other
+    /// than the coach's current one.
+    static func mentionedSport(in message: String) -> Sport? {
+        let low = message.lowercased()
+        let found = Sport.allCases.filter { low.contains($0.rawValue.lowercased()) }
+        return found.count == 1 ? found.first : nil
+    }
+
     static func classify(_ message: String, sport: Sport) -> PrePipelineIntent {
         let low = message.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
         guard !low.isEmpty else { return .unclear }
@@ -1509,8 +1540,16 @@ struct PrePipelineClassifier {
         }
 
         // Greeting prefix + pure social question — catches "Hi, how are you", "Hey, how's it going?"
+        // Includes common casual / txt-speak spellings ("how are u", "how r u", "how ya doin")
+        // so a friendly opener like "hi how are u today" isn't mis-routed to the unclear fallback.
         // Deliberately narrow: only unambiguous social questions that cannot be coaching queries.
-        let pureGreetingSocialQuestions = ["how are you", "how's it going", "how are things", "what's up", "whats up"]
+        let pureGreetingSocialQuestions = [
+            "how are you", "how are u", "how r you", "how r u", "how are ya",
+            "how's it going", "hows it going", "how is it going",
+            "how are things", "how's everything", "hows everything",
+            "how you doing", "how ya doing", "how you doin", "how ya doin",
+            "what's up", "whats up", "how have you been", "how you been"
+        ]
         if greetingPrefixes.contains(where: { low.hasPrefix($0) }),
            pureGreetingSocialQuestions.contains(where: { low.contains($0) }) { return true }
 
@@ -1734,14 +1773,18 @@ struct AICoachMessage: Identifiable, Codable {
     let timestamp: Date
     var suggestedActions: [String]
     var tone: String
-    
-    init(content: String, isUser: Bool, suggestedActions: [String] = [], tone: String = "supportive") {
+    // Curated sources the coach actually retrieved for this answer. Optional so
+    // previously-persisted messages (without the field) still decode.
+    var sources: [CoachSource]?
+
+    init(content: String, isUser: Bool, suggestedActions: [String] = [], tone: String = "supportive", sources: [CoachSource]? = nil) {
         self.id = UUID()
         self.content = content
         self.isUser = isUser
         self.timestamp = Date()
         self.suggestedActions = suggestedActions
         self.tone = tone
+        self.sources = sources
     }
 }
 
@@ -1888,6 +1931,24 @@ class AICoachChatViewModel: ObservableObject {
         messages.append(userMessage)
         saveMessages()
         
+        // ── SPORT-CONTEXT GUARD ────────────────────────────────────────────────────────
+        // The coach's sport is controlled by the app's selected sport (Home/Train), not by
+        // chat. If the user names a DIFFERENT sport than the coach is set to, we must not
+        // answer with the wrong sport (the old bug: "I'm in tennis mode" → football advice).
+        // Respond honestly and tell them how to switch.
+        // Safety wins: never let a sport-mention redirect swallow injury language
+        // (e.g. "my soccer ankle hurts" must still reach the safety path).
+        if !SafetyDetector.detectsInjury(in: content),
+           let mentioned = PrePipelineClassifier.mentionedSport(in: content), mentioned != sport {
+            CoachTelemetry.recordPrePipelineIntent(bucket: "sport_context_mismatch", sport: sport)
+            handlePrePipelineResponse(
+                "I'm set to \(sport.rawValue.capitalized) right now, so I won't give you \(mentioned.rawValue.capitalized) advice by mistake. To switch your coach to \(mentioned.rawValue.capitalized), change your sport on the Home or Train screen — then I'll tailor everything to \(mentioned.rawValue.capitalized).",
+                suggestedActions: ["What should I work on?", "Build me a session"]
+            )
+            return
+        }
+        // ── END SPORT-CONTEXT GUARD ─────────────────────────────────────────────────────
+
         // ── PRE-PIPELINE INTENT GATE (Phase 1) ─────────────────────────────────────────
         // Classifies the message before any coaching pipeline logic runs.
         // .greetingSocial / .arithmeticFactual / .offTopicRedirect / .unclear are handled
@@ -2260,11 +2321,15 @@ class AICoachChatViewModel: ObservableObject {
     
     /// Handle successful AI response
     private func handleSuccessResponse(_ response: CoachMessageResponse, source: ResponseSource) {
+        // Only attach sources for backend responses — the local coaching engine
+        // is a degraded, unsourced mode and must not claim source backing.
+        let messageSources = (source == .backend) ? response.sources : nil
         let aiMessage = AICoachMessage(
             content: response.response,
             isUser: false,
             suggestedActions: response.suggestedActions,
-            tone: response.tone
+            tone: response.tone,
+            sources: messageSources
         )
         messages.append(aiMessage)
         saveMessages()
@@ -2328,7 +2393,7 @@ class AICoachChatViewModel: ObservableObject {
     private func prePipelineUnclearResponse() -> (String, [String]) {
         let sportName = sport.rawValue.capitalized
         return (
-            "I'm not sure what you're looking for — I can help with your \(sportName) training, drills, game planning, or injury recovery. What do you want to work on?",
+            "Happy to help with your \(sportName) — tell me what's on your mind. I can build a session, break down a skill, plan for a game, or talk through recovery. Where do you want to start?",
             ["Build me a session", "Show me drills", "Help me improve a skill", "Check my readiness"]
         )
     }

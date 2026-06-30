@@ -23,6 +23,10 @@ struct ChallengeCreationView: View {
     @State private var errorMessage = ""
     @State private var showError = false
     @State private var showSuccess = false
+    // Solo: the generated challenge is shown to the user (its rules + scoring),
+    // not discarded behind a fake "created" alert.
+    @State private var generatedChallenge: AIChallengeResponse?
+    @State private var showGenerated = false
 
     var body: some View {
         NavigationStack {
@@ -56,7 +60,7 @@ struct ChallengeCreationView: View {
                     Text("Challenge Type")
                 } footer: {
                     Text(challengeType == .individual
-                         ? "Solo: the AI generates a personalised training challenge just for you."
+                         ? "Solo: generates a personal practice challenge with clear rules and a scoring metric. It's for your own practice — it isn't sent to anyone."
                          : "Group: sends a ranked or unranked match invite to selected friends.")
                         .font(.caption)
                         .foregroundStyle(Color.appTextSecondary)
@@ -70,7 +74,7 @@ struct ChallengeCreationView: View {
                                 Text(metric.rawValue).tag(metric)
                             }
                         }
-                        Text("The AI will generate a challenge focused on this metric.")
+                        Text("Your challenge will focus on this metric. You'll see the full rules and how it's scored on the next screen.")
                             .font(.caption)
                             .foregroundStyle(Color.appTextSecondary)
                     }
@@ -105,15 +109,20 @@ struct ChallengeCreationView: View {
                     .disabled(!isFormValid || isLoading)
                 }
             }
-            .alert("Challenge Created!", isPresented: $showSuccess) {
+            .alert("Invites Sent", isPresented: $showSuccess) {
                 Button("OK") { dismiss() }
             } message: {
-                Text("Your challenge has been created successfully!")
+                Text("Your match invite was sent to the selected friend\(inviteFriends.count > 1 ? "s" : "").")
             }
             .alert("Error", isPresented: $showError) {
                 Button("OK") {}
             } message: {
                 Text(errorMessage)
+            }
+            .sheet(isPresented: $showGenerated) {
+                if let challenge = generatedChallenge {
+                    GeneratedChallengeView(challenge: challenge, sport: sport) { dismiss() }
+                }
             }
         }
     }
@@ -149,14 +158,17 @@ struct ChallengeCreationView: View {
                     )
                     _ = try await APIClient.shared.createChallenge(request: request)
                 }
+                showSuccess = true
             } else {
-                // Solo: AI generates a sport-specific challenge based on metric category.
-                _ = try await APIClient.shared.generateChallenge(
+                // Solo: generate a sport-specific practice challenge and SHOW it to the
+                // user (rules + scoring), rather than discarding it behind a fake alert.
+                let challenge = try await APIClient.shared.generateChallenge(
                     sport: sport,
                     challengeType: selectedMetric.rawValue.lowercased()
                 )
+                generatedChallenge = challenge
+                showGenerated = true
             }
-            showSuccess = true
         } catch {
             errorMessage = "Couldn't create the challenge. Check your connection and try again."
             showError = true
@@ -291,6 +303,94 @@ struct FriendPreview: Identifiable {
     let id: String
     let name: String
     let username: String
+}
+
+// MARK: - Generated Challenge Detail
+
+/// Shows the full generated practice challenge: what it is, the rules, and how
+/// it's scored / who wins. This is the honest answer to "what is the challenge?"
+/// — the detail the create flow used to discard.
+struct GeneratedChallengeView: View {
+    @Environment(\.dismiss) var dismiss
+    let challenge: AIChallengeResponse
+    let sport: Sport
+    var onDone: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: Spacing.lg) {
+                    // Header
+                    VStack(alignment: .leading, spacing: Spacing.xs) {
+                        Text(challenge.title)
+                            .font(.title2.weight(.bold))
+                            .foregroundStyle(Color.appTextPrimary)
+                        Text(challenge.description)
+                            .font(.subheadline)
+                            .foregroundStyle(Color.appTextSecondary)
+                        HStack(spacing: Spacing.sm) {
+                            Label(challenge.difficulty.capitalized, systemImage: "chart.bar.fill")
+                            Label("\(challenge.estimatedTime) min", systemImage: "clock")
+                        }
+                        .font(.caption)
+                        .foregroundStyle(Color.appSecondary)
+                    }
+
+                    // Goal
+                    section(title: "Goal", systemImage: "target") {
+                        Text(challenge.goal)
+                            .foregroundStyle(Color.appTextPrimary)
+                    }
+
+                    // Rules / instructions
+                    section(title: "How to do it", systemImage: "list.number") {
+                        VStack(alignment: .leading, spacing: Spacing.xs) {
+                            ForEach(Array(challenge.instructions.enumerated()), id: \.offset) { idx, step in
+                                HStack(alignment: .top, spacing: Spacing.sm) {
+                                    Text("\(idx + 1).")
+                                        .fontWeight(.semibold)
+                                        .foregroundStyle(Color.appPrimary)
+                                    Text(step)
+                                        .foregroundStyle(Color.appTextPrimary)
+                                }
+                            }
+                        }
+                    }
+
+                    // Scoring / winner
+                    section(title: "How it's scored", systemImage: "trophy") {
+                        Text(challenge.successMetric)
+                            .foregroundStyle(Color.appTextPrimary)
+                    }
+
+                    Text("This is a personal practice challenge to try on your own. It isn't submitted or ranked.")
+                        .font(.caption)
+                        .foregroundStyle(Color.appTextSecondary)
+                }
+                .padding()
+            }
+            .navigationTitle("Your Challenge")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") {
+                        dismiss()
+                        onDone()
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func section<Content: View>(title: String, systemImage: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            Label(title, systemImage: systemImage)
+                .font(.headline)
+                .foregroundStyle(Color.appTextPrimary)
+            content()
+        }
+    }
 }
 
 #Preview {

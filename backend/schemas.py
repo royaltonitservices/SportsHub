@@ -204,9 +204,41 @@ class ChallengeResponse(BaseModel):
     challenger_confirmed: Optional[bool] = False
     opponent_confirmed: Optional[bool] = False
     created_at: datetime
+    # Real participant identity, when the challenger/opponent relationships are
+    # loaded. None when unavailable — clients degrade to honest copy, never a
+    # fabricated name.
+    challenger_username: Optional[str] = None
+    challenger_display_name: Optional[str] = None
+    opponent_username: Optional[str] = None
+    opponent_display_name: Optional[str] = None
 
     class Config:
         from_attributes = True
+
+    @model_validator(mode='before')
+    @classmethod
+    def attach_identity(cls, data):
+        # Only transform ORM Challenge objects; leave plain dicts untouched.
+        if not hasattr(data, '__dict__'):
+            return data
+        obj = data
+        challenger = getattr(obj, 'challenger', None)
+        opponent = getattr(obj, 'opponent', None)
+        return {
+            'id': obj.id,
+            'sport': obj.sport,
+            'match_type': obj.match_type,
+            'challenger_id': obj.challenger_id,
+            'opponent_id': obj.opponent_id,
+            'status': obj.status,
+            'challenger_confirmed': obj.challenger_confirmed,
+            'opponent_confirmed': obj.opponent_confirmed,
+            'created_at': obj.created_at,
+            'challenger_username': challenger.username if challenger else None,
+            'challenger_display_name': challenger.display_name if challenger else None,
+            'opponent_username': opponent.username if opponent else None,
+            'opponent_display_name': opponent.display_name if opponent else None,
+        }
 
 
 class SubmitMatchResult(BaseModel):

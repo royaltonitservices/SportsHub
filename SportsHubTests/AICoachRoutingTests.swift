@@ -369,6 +369,34 @@ struct ActionVerbOverrideTests {
     }
 }
 
+// MARK: - 11b. Casual / txt-speak greetings + cross-sport mention guard
+
+struct CasualGreetingAndSportMentionTests {
+
+    // Greeting robustness — the reported "Hi how are u today" → unclear failure.
+    @Test("'hi how are u today' → greeting/social (txt-speak), not unclear")
+    func testTxtSpeakGreeting() { #expect(isGreetingSocial("hi how are u today")) }
+
+    @Test("'hey how r u' → greeting/social")
+    func testHowRU() { #expect(isGreetingSocial("hey how r u")) }
+
+    @Test("'hi build me a session' is NOT greeting (coaching verb wins)")
+    func testGreetingPrefixWithCoachingVerb() { #expect(!isGreetingSocial("hi build me a session")) }
+
+    // Cross-sport mention detection — the reported "tennis mode" → football leak.
+    @Test("explicit 'tennis mode' resolves to .tennis")
+    func testMentionTennis() { #expect(PrePipelineClassifier.mentionedSport(in: "im in tennis mode") == .tennis) }
+
+    @Test("'football route drills' resolves to .football")
+    func testMentionFootball() { #expect(PrePipelineClassifier.mentionedSport(in: "i want football route drills") == .football) }
+
+    @Test("no sport named → nil")
+    func testMentionNone() { #expect(PrePipelineClassifier.mentionedSport(in: "help my left hand") == nil) }
+
+    @Test("two sports named → nil (ambiguous, no false redirect)")
+    func testMentionAmbiguous() { #expect(PrePipelineClassifier.mentionedSport(in: "is basketball better than soccer") == nil) }
+}
+
 // MARK: - 12. Phase 2 — Coaching-Adjacent Phase 1 Expressions
 
 struct CoachingAdjacentExpressionTests {

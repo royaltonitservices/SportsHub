@@ -28,12 +28,26 @@ class CoachMessageRequest(BaseModel):
     conversation_history: Optional[List[dict]] = None  # Prior messages [{role, content}]
 
 
+class CoachSource(BaseModel):
+    """A curated source the coach actually retrieved for this answer.
+
+    Only present when the orchestrator retrieved it from the internal knowledge
+    base. An empty `sources` list means the answer is general guidance with no
+    source-backed claim — clients must not fabricate a citation.
+    """
+    source_id: str
+    title: str
+    publisher: str
+    url: Optional[str] = None
+
+
 class CoachMessageResponse(BaseModel):
     """AI Coach response"""
     response: str
     suggested_actions: List[str] = []
     tone: str = "supportive"
     follow_up_questions: List[str] = []
+    sources: List[CoachSource] = []
     timestamp: str
 
 
@@ -172,6 +186,7 @@ async def send_message_to_coach(
         suggested_actions=response.get("suggested_actions", []),
         tone=response.get("tone", "supportive"),
         follow_up_questions=response.get("follow_up_questions", []),
+        sources=[CoachSource(**s) for s in response.get("sources", [])],
         timestamp=datetime.utcnow().isoformat()
     )
 
