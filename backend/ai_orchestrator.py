@@ -14,7 +14,6 @@ Architecture:
 - Backend orchestration (this file)
 - Deterministic rules (elo_service.py, ai_coach.py)
 """
-from openai import OpenAI
 from typing import Dict, List, Optional, Tuple
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
@@ -23,9 +22,23 @@ import json
 import re
 
 from config import get_settings
+from ai_provider import OpenAIProvider
+from ai_wearable import wearable_relevant, build_wearable_context, format_wearable_block
 import models
 from models_premium import BiometricData, SportGoals, Subscription, SmartwatchConnection
-from ai_knowledge_base import retrieve_coach_sources
+from ai_knowledge_base import retrieve_coach_sources, retrieve_coach_source_entries, public_source
+from ai_coach_pipeline import (
+    resolve_coach_context,
+    classify_coach_intent,
+    plan_retrieval,
+    plan_answer,
+    retrieve_sources,
+    build_coach_actions,
+    degraded_general_answer,
+    GENERAL_INTENTS,
+    INJURY_KEYWORDS,
+    HEAD_IMPACT_KEYWORDS,
+)
 
 # MARK: - Coaching Philosophy
 # Single source of truth for coaching identity — injected into every GPT system prompt.
@@ -108,21 +121,11 @@ _SPORT_SKILL_ALIASES: dict = {
     ],
 }
 
-# Injury keywords for backend safety detection
-_INJURY_KEYWORDS = [
-    "hurt", "hurts", "pain", "painful", "sore", "soreness",
-    "injury", "injured", "ache", "aching",
-    "sprain", "sprained", "strain", "strained", "pulled", "pull",
-    "tear", "torn", "swollen", "swelling", "bruised", "bruise",
-    "fracture", "fractured", "knee", "ankle", "shoulder", "wrist",
-    "elbow", "hip", "lower back", "back pain", "neck pain",
-    "hamstring", "quad", "quadricep", "calf", "shin splint",
-    "plantar", "tendon", "ligament", "tendinitis",
-    "tweak", "tweaked", "popped", "snap", "snapped",
-    "can't run", "can't play", "limping",
-    "concussion", "dizzy", "dizziness",
-    "hit in the head", "hit my head", "head impact",
-]
+# Safety keyword lists now live in the AI Coach pipeline (single source of truth),
+# imported here so the fallback templates and safety-prompt injection stay aligned
+# with the intent classifier.
+_INJURY_KEYWORDS = INJURY_KEYWORDS
+_HEAD_IMPACT_KEYWORDS = HEAD_IMPACT_KEYWORDS
 
 
 class AIOrchestrator:
@@ -141,23 +144,40 @@ class AIOrchestrator:
         self.db = db
         self.settings = get_settings()
 
-        # Make OpenAI client optional - gracefully degrade if no API key.
-        # Valid OpenAI keys start with "sk-" (both legacy sk-... and project sk-proj-... formats).
-        # Reject empty strings and placeholder values that don't have the sk- prefix.
-        try:
-            key = self.settings.openai_api_key or ""
-            if key.startswith("sk-"):
-                self.client = OpenAI(api_key=key)
-                self.has_openai = True
-                print(f"[AI Orchestrator] OpenAI initialized ({self.settings.openai_model})")
-            else:
-                self.client = None
-                self.has_openai = False
-                print("[AI Orchestrator] No valid OpenAI API key — using template-based coaching")
-        except Exception as e:
-            self.client = None
-            self.has_openai = False
-            print(f"[AI Orchestrator] OpenAI initialization failed: {e} — using template-based coaching")
+        # All provider/infra concerns (client creation, model selection, budgets,
+        # transport retries, usage) live behind the provider boundary. The
+        # orchestrator only decides SportsHub behavior. `has_openai` stays truthful:
+        # it is True only when a real client was constructed from an sk- key.
+        self.provider = OpenAIProvider(self.settings)
+        self.has_openai = self.provider.available
+        if self.has_openai:
+            print(f"[AI Orchestrator] OpenAI provider ready (default={self.settings.ai_default_model})")
+        else:
+            print("[AI Orchestrator] No valid OpenAI key — using template-based coaching")
+        # Per-turn usage accounting, reset at the start of each coach turn.
+        self._turn_calls = 0
+        self._turn_prompt_tokens = 0
+        self._turn_completion_tokens = 0
+
+    def _intent_llm_call(self, messages):
+        """Adapter handed to the pipeline's intent classifier so it can use the
+        model for semantic intent classification ONLY when the deterministic
+        classifier is uncertain. Returns raw text content; empty on failure."""
+        res = self.provider.chat("intent", messages, temperature=0.0)
+        if res.ok:
+            self._account(res)
+        return res.text
+
+    def _account(self, res) -> None:
+        """Accumulate per-turn provider usage for honest telemetry."""
+        self._turn_calls += 1
+        self._turn_prompt_tokens += getattr(res, "prompt_tokens", 0) or 0
+        self._turn_completion_tokens += getattr(res, "completion_tokens", 0) or 0
+
+    def _reset_turn_usage(self) -> None:
+        self._turn_calls = 0
+        self._turn_prompt_tokens = 0
+        self._turn_completion_tokens = 0
 
     # MARK: - Conversational AI Coach (Premium)
 
@@ -190,6 +210,9 @@ class AIOrchestrator:
                 "follow_up_questions": ["question1"]
             }
         """
+        # Reset per-turn usage accounting (honest call-count telemetry).
+        self._reset_turn_usage()
+
         # Update persistent coaching context from user message
         self._update_coach_context(user_id, sport, user_message)
 
@@ -204,8 +227,48 @@ class AIOrchestrator:
         if ios_context:
             self._merge_ios_context(context, ios_context)
 
-        # Build conversational prompt
-        system_prompt = self._build_coach_system_prompt(sport)
+        # ── Pipeline stage A+B: resolve sport context + classify intent ───────────────
+        # resolved_sport NEVER becomes football when the user explicitly said tennis/soccer.
+        coach_ctx = resolve_coach_context(user_message, sport.value)
+        try:
+            resolved_sport = models.Sport(coach_ctx["resolved_sport"]) if coach_ctx["resolved_sport"] else sport
+        except ValueError:
+            resolved_sport = sport
+        # Call-count discipline (Section 25): run the deterministic classifier
+        # first (zero model calls). Only spend a model call on classification when
+        # it is genuinely ambiguous, so the common turn is a SINGLE model call.
+        intent_result = classify_coach_intent(user_message, llm_call=None)
+        if self.has_openai and intent_result.get("intent") == "unclear":
+            intent_result = classify_coach_intent(user_message, llm_call=self._intent_llm_call)
+
+        # Build conversational prompt (in the resolved sport's context).
+        # Structured Outputs are used whenever the real model path is available.
+        use_structured = self.has_openai
+        system_prompt = self._build_coach_system_prompt(resolved_sport, structured=use_structured)
+
+        # ── General-assistant identity + answer plan (GPT prompt readiness) ───────────
+        # The coach is a capable GENERAL assistant with deep sports specialization —
+        # it must answer ordinary requests (arithmetic, writing, planning, casual talk,
+        # general questions) naturally and NOT force them back to sports.
+        answer_plan = plan_answer(intent_result)
+        system_prompt += (
+            "\n\n=== ASSISTANT IDENTITY & TURN PLAN ===\n"
+            "You are a capable general assistant with deep specialization in sports "
+            "coaching (basketball, football, soccer, tennis). Answer the user's ACTUAL "
+            "request first and naturally. Do NOT redirect ordinary questions "
+            "(math, writing, planning, casual conversation, general knowledge) back to "
+            "sports. Only bring in coaching when the user wants it.\n"
+            f"- Classified intent: {intent_result.get('intent')} "
+            f"(confidence {intent_result.get('confidence')})\n"
+            f"- Answer mode: {answer_plan['answer_mode']}\n"
+            f"- Resolved sport (use unless the user changes it): {resolved_sport.value}\n"
+            "- Never invent sources, studies, citations, URLs, or publishers.\n"
+            "- Never diagnose. For injury/head-impact that is severe, worsening, or "
+            "neurological, tell them to stop and see a medical professional.\n"
+            "- Respect stated time and injury constraints. Ask at most one clarifying "
+            "question, and only when genuinely necessary.\n"
+            "=== END IDENTITY & TURN PLAN ==="
+        )
 
         # ── Backend safety injection ──────────────────────────────────────────────────
         # If the user message contains injury language, append the safety constraint block
@@ -222,14 +285,56 @@ class AIOrchestrator:
                 "SAFETY TAKES ABSOLUTE PRIORITY OVER ANY TRAINING GOAL."
             )
 
+        # ── Relevance-based wearable/HealthKit context ────────────────────────────────
+        # Only retrieve real synced wearable data when the request plausibly benefits
+        # (recovery/readiness/tiredness/recent-training questions). Irrelevant turns
+        # (greetings, arithmetic, generic drills) get NO wearable data attached, and any
+        # unconditionally-aggregated wearable fields are stripped so nothing leaks.
+        wearable_used = False
+        if wearable_relevant(user_message, intent_result.get("intent")):
+            wctx = build_wearable_context(self.db, user_id)
+            system_prompt += "\n\n" + format_wearable_block(wctx)
+            wearable_used = wctx.get("data_available", False) or bool(wctx.get("recent_training"))
+        else:
+            for _k in ("recovery_score", "sleep_quality", "hrv", "sleep_duration", "fatigue_level"):
+                context.pop(_k, None)
+
+        # ── Pipeline stage C+D: plan retrieval + retrieve curated sources ─────────────
+        # Only retrieve when the intent benefits from evidence. Sources found are given
+        # to GPT with strict citation rules AND attached to the response, so the client
+        # cites only what the model was actually given — never invented.
+        retrieval_plan = plan_retrieval(intent_result)
+        if retrieval_plan["needs_sources"]:
+            source_entries, retrieved_sources = retrieve_sources(
+                user_message, resolved_sport.value, retrieval_plan["retrieval_intent"]
+            )
+        else:
+            source_entries, retrieved_sources = [], []
+        if source_entries:
+            snippet_block = "\n".join(
+                f"- [{e['source_id']}] {e['title']} ({e['publisher']}): {e['summary']}"
+                for e in source_entries
+            )
+            system_prompt += (
+                "\n\n=== RETRIEVED REFERENCE MATERIAL (cite ONLY these) ===\n"
+                f"{snippet_block}\n"
+                "RULES FOR USING THIS MATERIAL:\n"
+                "1. You MAY reference the guidance above when relevant; cite it by title.\n"
+                "2. Do NOT invent any other source, study, URL, or organization.\n"
+                "3. Separate evidence-informed guidance from your own assumptions — say which is which.\n"
+                "4. Do NOT diagnose. For injury/head-impact symptoms that are severe, worsening, "
+                "or involve the head, advise stopping and seeing a medical professional.\n"
+                "=== END REFERENCE MATERIAL ==="
+            )
+
         # ── Constrained mode injection ────────────────────────────────────────────────
         # Triggered by iOS when the first GPT response failed post-response contract validation.
         # Adds strict per-rule requirements to the system prompt before the second (final) attempt.
         if ios_context and ios_context.get("constrained_mode", False):
-            sport_label = sport.value.title()
+            sport_label = resolved_sport.value.title()
             football_note = (
                 "All activities MUST be team-based — never suggest 1v1, solo-match, or individual-opponent drills. "
-            ) if sport == models.Sport.FOOTBALL else ""
+            ) if resolved_sport == models.Sport.FOOTBALL else ""
             system_prompt += (
                 f"\n\n=== CONSTRAINED RESPONSE MODE — SECOND AND FINAL ATTEMPT ===\n"
                 f"Your previous response violated the coaching contract. This is your FINAL attempt.\n"
@@ -241,7 +346,7 @@ class AIOrchestrator:
                 f"5. Return valid JSON matching the required schema.\n"
                 f"=== END CONSTRAINED MODE ==="
             )
-            print(f"[AI Coach] 🔒 Constrained mode active for {sport.value} — strict contract injected into system prompt")
+            print(f"[AI Coach] 🔒 Constrained mode active for {resolved_sport.value} — strict contract injected into system prompt")
 
         messages = self._build_conversation_messages(
             system_prompt=system_prompt,
@@ -250,35 +355,93 @@ class AIOrchestrator:
             history=conversation_history
         )
 
-        # Use OpenAI if available, otherwise use intelligent templates
-        if self.has_openai and self.client:
-            try:
-                # Call GPT-4 — 30s timeout prevents indefinite hang on slow API
-                response = self.client.chat.completions.create(
-                    model=self.settings.openai_model,
-                    messages=messages,
-                    max_tokens=self.settings.openai_max_tokens,
-                    temperature=self.settings.openai_temperature,
-                    timeout=30
-                )
+        # ── Pipeline stage E: generate (GPT with snippets, or safe degraded fallback) ─
+        # Model routing lives in the provider. Detailed training/drill turns get a
+        # larger output budget; a constrained-mode second attempt or high-severity
+        # safety reasoning escalates to the stronger model (bounded, not default).
+        used_fallback = False
+        safety = intent_result.get("safety_level", "none")
+        prior_failure = bool(ios_context and ios_context.get("constrained_mode", False))
+        detailed = intent_result.get("intent") in (
+            "training_plan", "drill_request", "drill_explanation", "drill_modification",
+        )
+        task = "coach_response_detailed" if detailed else "coach_response"
+        complexity = "high" if (prior_failure or safety == "high") else "normal"
 
-                coach_response = response.choices[0].message.content
+        retrieved_ids = [e["source_id"] for e in source_entries]
+        if self.has_openai:
+            schema = self._coach_response_schema(retrieved_ids)
+            parsed_json, res = self.provider.chat_structured(
+                task, messages, schema,
+                safety_level=safety, complexity=complexity, prior_failure=prior_failure,
+            )
+            if res.ok and parsed_json is not None:
+                self._account(res)
+                parsed = self._map_structured_response(parsed_json, retrieved_ids)
+                parsed = self._normalize_gpt_response(parsed, sport=resolved_sport, user_message=user_message)
 
-                # Parse structured response
-                parsed = self._parse_coach_response(coach_response)
-
-                # Normalize to guarantee structural completeness (actions, follow-up, tone)
-                parsed = self._normalize_gpt_response(parsed, sport=sport, user_message=user_message)
-
-                return parsed
-
-            except Exception as e:
-                print(f"[AI Orchestrator] GPT-4.1 call failed: {e}")
-                # Fallback to template-based response
-                return self._fallback_coach_response(user_message, context, sport)
+                # ── Server-side semantic repair (Section 6/8): at most ONE bounded
+                # repair for a repairable contract violation, escalated model. Serious
+                # safety and provider/transport failures are NOT repaired here.
+                violations = self._validate_coach_contract(parsed, resolved_sport, retrieved_ids)
+                if violations:
+                    print(f"[AI Coach] contract violations {violations} — one server-side repair")
+                    repair_messages = messages + [{
+                        "role": "system",
+                        "content": ("Your previous JSON reply violated the coaching contract: "
+                                    + "; ".join(violations)
+                                    + ". Return a corrected reply that fixes ONLY these issues, "
+                                    "stays in the same sport, and cites only the provided source IDs."),
+                    }]
+                    rparsed_json, rres = self.provider.chat_structured(
+                        task, repair_messages, schema,
+                        safety_level=safety, complexity="high", prior_failure=True,
+                    )
+                    if rres.ok and rparsed_json is not None:
+                        self._account(rres)
+                        rparsed = self._map_structured_response(rparsed_json, retrieved_ids)
+                        rparsed = self._normalize_gpt_response(rparsed, sport=resolved_sport, user_message=user_message)
+                        if not self._validate_coach_contract(rparsed, resolved_sport, retrieved_ids):
+                            parsed = rparsed
+                        else:
+                            print("[AI Coach] repair still invalid — deterministic fallback")
+                            parsed = self._degraded_response(user_message, context, resolved_sport, intent_result)
+                            used_fallback = True
+                    else:
+                        parsed = self._degraded_response(user_message, context, resolved_sport, intent_result)
+                        used_fallback = True
+                result = parsed
+            else:
+                print(f"[AI Orchestrator] coach model call degraded ({res.error}) — using template fallback")
+                result = self._degraded_response(user_message, context, resolved_sport, intent_result)
+                used_fallback = True
         else:
-            # No OpenAI available - use intelligent template-based coaching
-            return self._fallback_coach_response(user_message, context, sport)
+            # No OpenAI available - degraded mode: general intents answered honestly
+            # (no sports-forcing), sport intents via the template coach.
+            result = self._degraded_response(user_message, context, resolved_sport, intent_result)
+            used_fallback = True
+
+        # ── Pipeline stage F: structured enrichment (single source of truth) ──────────
+        # Sources are authoritative from retrieval — overrides any per-branch guess.
+        # Honest by construction: no retrieval => [] => client shows no "Based on" block.
+        result["sources"] = retrieved_sources
+        result["resolved_sport"] = resolved_sport.value
+        result["intent"] = intent_result.get("intent")
+        result["confidence"] = intent_result.get("confidence")
+        result["safety_level"] = intent_result.get("safety_level")
+        result["is_degraded_fallback"] = used_fallback
+        result["needs_followup"] = bool(result.get("follow_up_questions")) or intent_result.get("needs_clarification", False)
+        result["actions"] = build_coach_actions(intent_result.get("intent"), result.get("suggested_actions", []))
+
+        # Privacy-safe telemetry (Section 33): metadata only — no conversation content,
+        # no identity, no key. Aids cost/latency/call-count observability.
+        print(
+            f"[AI Coach telemetry] intent={intent_result.get('intent')} "
+            f"sport={resolved_sport.value} safety={safety} model_calls={self._turn_calls} "
+            f"tokens_in={self._turn_prompt_tokens} tokens_out={self._turn_completion_tokens} "
+            f"sources={len(retrieved_sources)} wearable={wearable_used} degraded={used_fallback}"
+        )
+        return result
 
     async def generate_proactive_checkin(
         self,
@@ -338,30 +501,29 @@ Examples of the RIGHT tone:
 - "Saw you've been putting in the work. How's the {top_weakness or 'training'} feel coming along?"
 """
 
-        try:
-            if not self.has_openai or not self.client:
-                raise RuntimeError("OpenAI not available")
-            response = self.client.chat.completions.create(
-                model=self.settings.openai_model,
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=80,
+        # Check-in uses the cheap check-in model with a small budget (Section 28).
+        if self.has_openai:
+            res = self.provider.chat(
+                "checkin",
+                [{"role": "user", "content": prompt}],
+                max_output_tokens=150,
                 temperature=0.85,
-                timeout=15
             )
-            return response.choices[0].message.content.strip()
+            if res.ok:
+                self._account(res)
+                return res.text.strip()
+            print(f"[AI Orchestrator] Proactive check-in degraded ({res.error}) — using template")
 
-        except Exception as e:
-            print(f"[AI Orchestrator] Proactive check-in failed: {e}")
-            # Fallback — use athlete's known gap if available, not generic
-            if top_gap:
-                return f"How's the body feeling today? You've had {top_gap} on the agenda — where are you at with it?"
-            elif top_weakness:
-                return f"How's the training going? I want to talk about your {top_weakness} when you're ready."
-            if trigger == "low_recovery":
-                return "Recovery score is looking low — how's the body feeling? Be honest with me."
-            elif trigger == "recent_match":
-                return "How did that last match go? Walk me through it."
-            return "How's the training going? What did you work on last?"
+        # Deterministic fallback — use athlete's known gap if available, not generic.
+        if top_gap:
+            return f"How's the body feeling today? You've had {top_gap} on the agenda — where are you at with it?"
+        elif top_weakness:
+            return f"How's the training going? I want to talk about your {top_weakness} when you're ready."
+        if trigger == "low_recovery":
+            return "Recovery score is looking low — how's the body feeling? Be honest with me."
+        elif trigger == "recent_match":
+            return "How did that last match go? Walk me through it."
+        return "How's the training going? What did you work on last?"
 
     # MARK: - Regular AI - Drill Generation (All Users)
 
@@ -432,14 +594,15 @@ Return as JSON:
 """
 
         try:
-            response = self.client.chat.completions.create(
-                model=self.settings.openai_model,
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=800,
-                temperature=0.9  # Higher creativity for drill generation
+            res = self.provider.chat(
+                "drill",
+                [{"role": "user", "content": prompt}],
+                temperature=0.9,  # Higher creativity for drill generation
             )
+            if not res.ok:
+                raise RuntimeError(res.error or "provider_unavailable")
 
-            drill_json = response.choices[0].message.content
+            drill_json = res.text
             # Extract JSON from markdown code blocks if present
             if "```json" in drill_json:
                 drill_json = drill_json.split("```json")[1].split("```")[0].strip()
@@ -512,14 +675,15 @@ Return as JSON:
 """
 
         try:
-            response = self.client.chat.completions.create(
-                model=self.settings.openai_model,
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=600,
-                temperature=0.85
+            res = self.provider.chat(
+                "challenge",
+                [{"role": "user", "content": prompt}],
+                temperature=0.85,
             )
+            if not res.ok:
+                raise RuntimeError(res.error or "provider_unavailable")
 
-            challenge_json = response.choices[0].message.content
+            challenge_json = res.text
             if "```json" in challenge_json:
                 challenge_json = challenge_json.split("```json")[1].split("```")[0].strip()
             elif "```" in challenge_json:
@@ -588,14 +752,15 @@ Return as JSON:
 """
 
         try:
-            response = self.client.chat.completions.create(
-                model=self.settings.openai_model,
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=600,
-                temperature=0.7
+            res = self.provider.chat(
+                "analysis",
+                [{"role": "user", "content": prompt}],
+                temperature=0.7,
             )
+            if not res.ok:
+                raise RuntimeError(res.error or "provider_unavailable")
 
-            analysis_json = response.choices[0].message.content
+            analysis_json = res.text
             if "```json" in analysis_json:
                 analysis_json = analysis_json.split("```json")[1].split("```")[0].strip()
 
@@ -978,8 +1143,12 @@ Return as JSON:
         if ios_context.get('survey_strengths') and not context.get('survey_strengths'):
             context['survey_strengths'] = ios_context['survey_strengths']
 
-    def _build_coach_system_prompt(self, sport: models.Sport) -> str:
-        """Build comprehensive system prompt for conversational AI Coach"""
+    def _build_coach_system_prompt(self, sport: models.Sport, structured: bool = False) -> str:
+        """Build comprehensive system prompt for conversational AI Coach.
+
+        When `structured` is True, the output-format section describes the JSON
+        fields the schema-constrained response must fill (Structured Outputs),
+        instead of the legacy [ACTIONS]/[FOLLOWUP] tag convention."""
 
         sport_expertise = {
             models.Sport.BASKETBALL: """
@@ -1023,6 +1192,25 @@ Return as JSON:
             f"- {k}: expert knowledge in technique, conditioning, and competition strategy"
             for k in ["Technical skills", "Physical conditioning", "Mental game", "Match preparation"]
         )
+
+        if structured:
+            output_section = """## Structured Output (REQUIRED)
+Your reply is returned as a schema-constrained JSON object. Fill these fields:
+- "message": your full coaching reply text (no markdown tags like [ACTIONS]).
+- "tone": one of supportive | motivating | concerned | celebratory.
+- "suggested_actions": 2–3 short in-app action labels relevant to what you just discussed
+  (e.g. "Log training session", "View drill library", "Check recovery score"). Empty if none fit.
+- "follow_up_questions": ONE natural coach-style follow-up question (as a single-item list).
+- "sources_used": ONLY source IDs from the RETRIEVED REFERENCE MATERIAL block, if any were provided.
+  If no reference material was provided, return an empty list. NEVER invent a source ID, URL, or publisher."""
+        else:
+            output_section = """## Structured Output (REQUIRED)
+Every single response MUST end with exactly these two lines:
+[ACTIONS: action1, action2]
+[FOLLOWUP: one natural follow-up question]
+
+ACTIONS (2–3 max): specific in-app actions like "Log training session", "View drill library", "Check recovery score", "Set a goal", "Browse challenges", "Open train tab". Only include actions relevant to what you just discussed.
+FOLLOWUP: ONE natural follow-up question that moves the conversation forward. Make it sound like a real coach, not a quiz."""
 
         return f"""You are a premium AI sports coach specializing in {sport.value}. You have deep expertise in technique, training science, sports psychology, and athletic development for young athletes.
 
@@ -1110,13 +1298,7 @@ You are a coach, not an assistant. Coaches have a point of view. They decide wha
 - Dump every possible app feature — only mention what is genuinely relevant to what was just discussed
 - Ask "what do you want to work on?" when ATHLETE BASELINE already tells you
 
-## Structured Output (REQUIRED)
-Every single response MUST end with exactly these two lines:
-[ACTIONS: action1, action2]
-[FOLLOWUP: one natural follow-up question]
-
-ACTIONS (2–3 max): specific in-app actions like "Log training session", "View drill library", "Check recovery score", "Set a goal", "Browse challenges", "Open train tab". Only include actions relevant to what you just discussed.
-FOLLOWUP: ONE natural follow-up question that moves the conversation forward. Make it sound like a real coach, not a quiz.
+{output_section}
 
 ## Coaching Philosophy
 {COACHING_PHILOSOPHY}
@@ -1348,6 +1530,60 @@ FOLLOWUP: ONE natural follow-up question that moves the conversation forward. Ma
             "follow_up_questions": follow_up_questions
         }
 
+    # ── Structured Outputs (schema-constrained coach response) ──────────────────
+
+    def _coach_response_schema(self, retrieved_ids: List[str]) -> Dict:
+        """Canonical schema for the coach model output. `sources_used` is
+        enum-constrained to the actually-retrieved source IDs so the model
+        CANNOT invent a citation; when nothing was retrieved it must be empty."""
+        src_items = ({"type": "string", "enum": retrieved_ids}
+                     if retrieved_ids else {"type": "string"})
+        return {
+            "type": "object",
+            "properties": {
+                "message": {"type": "string"},
+                "tone": {"type": "string",
+                         "enum": ["supportive", "motivating", "concerned", "celebratory"]},
+                "suggested_actions": {"type": "array", "items": {"type": "string"}},
+                "follow_up_questions": {"type": "array", "items": {"type": "string"}},
+                "sources_used": {"type": "array", "items": src_items},
+            },
+            "required": ["message", "tone", "suggested_actions",
+                         "follow_up_questions", "sources_used"],
+            "additionalProperties": False,
+        }
+
+    def _map_structured_response(self, data: Dict, retrieved_ids: List[str]) -> Dict:
+        """Map schema-constrained JSON into the internal `parsed` shape that
+        _normalize_gpt_response and enrichment expect. Keeps `_sources_used` for
+        server-side validation (dropped before returning to the client)."""
+        return {
+            "response": (data.get("message") or "").strip(),
+            "suggested_actions": [a for a in (data.get("suggested_actions") or [])
+                                  if isinstance(a, str) and a.strip()][:3],
+            "tone": data.get("tone") or "supportive",
+            "follow_up_questions": [q for q in (data.get("follow_up_questions") or [])
+                                    if isinstance(q, str) and q.strip()][:2],
+            "_sources_used": [s for s in (data.get("sources_used") or []) if isinstance(s, str)],
+        }
+
+    def _validate_coach_contract(self, parsed: Dict, sport: models.Sport,
+                                 retrieved_ids: List[str]) -> List[str]:
+        """Return a list of repairable product-contract violations (empty = valid).
+
+        Serious safety and provider errors are handled elsewhere — this only flags
+        semantic/contract issues that a single bounded repair can fix."""
+        violations = []
+        msg = (parsed.get("response") or "").strip()
+        if len(msg) < 20:
+            violations.append("message_empty_or_too_short")
+        used = parsed.get("_sources_used", [])
+        if any(s not in retrieved_ids for s in used):
+            violations.append("invented_source_reference")
+        if sport == models.Sport.FOOTBALL and self._detect_football_violation(msg):
+            violations.append("football_solo_or_1v1_framing")
+        return violations
+
     def _detect_injury_context(self, user_message: str) -> bool:
         """Returns True if the user message contains injury or pain language."""
         lowered = user_message.lower()
@@ -1530,6 +1766,17 @@ FOLLOWUP: ONE natural follow-up question that moves the conversation forward. Ma
 
     # MARK: - Fallback Responses
 
+    def _degraded_response(self, user_message: str, context: Dict, sport: models.Sport, intent_result: Dict) -> Dict:
+        """Degraded-mode router: general-assistant intents get an honest general
+        answer (never forced into sports); sport-coaching intents use the template
+        coach. Keeps benign questions out of the workout templates."""
+        intent = intent_result.get("intent", "unclear")
+        if intent in GENERAL_INTENTS:
+            general = degraded_general_answer(intent, user_message)
+            if general is not None:
+                return general
+        return self._fallback_coach_response(user_message, context, sport)
+
     def _fallback_coach_response(self, user_message: str, context: Dict, sport: models.Sport) -> Dict:
         """Intelligent template-based coaching when OpenAI unavailable"""
         msg_lower = user_message.lower()
@@ -1538,6 +1785,28 @@ FOLLOWUP: ONE natural follow-up question that moves the conversation forward. Ma
         # "I twisted my ankle during practice" contains "practice" which would otherwise
         # trigger the workout path and return a training plan instead of a safety warning.
         if any(kw in msg_lower for kw in _INJURY_KEYWORDS):
+            # Head-impact language escalates: do NOT return to play same day,
+            # watch for symptoms, get evaluated. Never a diagnosis.
+            if any(kw in msg_lower for kw in _HEAD_IMPACT_KEYWORDS):
+                return {
+                    "response": (
+                        "A hit to the head is something to take seriously — please stop "
+                        "playing right now.\n\n"
+                        "• Do NOT return to play today, even if you feel okay\n"
+                        "• Watch for headache, dizziness, confusion, nausea, blurred vision, "
+                        "or sensitivity to light\n"
+                        "• Tell a coach, parent, or another adult what happened\n"
+                        "• Get checked by a medical professional before any return to activity\n\n"
+                        "If symptoms get worse, or you have repeated vomiting, worsening headache, "
+                        "trouble staying awake, or confusion, seek urgent medical care. "
+                        "I'm a coaching tool, not a medical resource — I can't diagnose this, "
+                        "and your safety comes first."
+                    ),
+                    "suggested_actions": ["Stop and rest", "Get checked by a professional"],
+                    "tone": "concerned",
+                    "follow_up_questions": ["Are you having any headache, dizziness, or nausea right now?"],
+                    "sources": retrieve_coach_sources(user_message, sport.value, intent="injury"),
+                }
             return {
                 "response": (
                     "That sounds uncomfortable — please stop any activity that causes pain.\n\n"

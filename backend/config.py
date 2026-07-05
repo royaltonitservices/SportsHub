@@ -2,6 +2,7 @@
 Configuration management for SportsHub API
 """
 from pydantic_settings import BaseSettings
+from pydantic import Field
 from functools import lru_cache
 
 
@@ -26,9 +27,26 @@ class Settings(BaseSettings):
 
     # OpenAI — set OPENAI_API_KEY in .env
     openai_api_key: str = ""  # Required: set in .env
-    openai_model: str = "gpt-4-turbo-preview"  # GPT-4.1 equivalent
+
+    # Centralized AI model selection (Section 9). Model IDs live ONLY here — do not
+    # scatter them through the code. Override per-environment via the env vars below.
+    #   default   — routine chat, questions, arithmetic, writing, planning, normal coaching
+    #   escalation— bounded hard cases: semantic repair, high-severity safety, complex turns
+    #   checkin   — cheap proactive check-in path
+    ai_default_model: str = Field(default="gpt-5.4-mini", validation_alias="SPORTSHUB_AI_DEFAULT_MODEL")
+    ai_escalation_model: str = Field(default="gpt-5.5", validation_alias="SPORTSHUB_AI_ESCALATION_MODEL")
+    ai_checkin_model: str = Field(default="gpt-5.4-mini", validation_alias="SPORTSHUB_AI_CHECKIN_MODEL")
+
+    # Legacy field retained for backward compatibility with any external reference;
+    # the orchestrator now routes through the provider's select_model() instead.
+    openai_model: str = "gpt-5.4-mini"
     openai_max_tokens: int = 2000
     openai_temperature: float = 0.7
+
+    # AI Coach usage policy — the ONLY quota: Premium users get this many
+    # user-visible AI Coach messages per UTC calendar day. No burst/window/
+    # concurrency/free-tier quotas.
+    ai_daily_message_limit: int = Field(default=200, validation_alias="SPORTSHUB_AI_DAILY_MESSAGE_LIMIT")
 
     class Config:
         env_file = ".env"

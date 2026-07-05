@@ -215,7 +215,7 @@ enum FeatureManifest {
         name: "AI Coach GPT Post-Response Validation",
         status: .partial,
         layers: FeatureLayerPresence(hasUI: false, hasViewModel: true, hasAPIClient: false, hasBackend: true),
-        notes: "Phase 13: Constrained retry added. Flow: first GPT response fails → recordConstrainedRetryStarted → second GPT call with constrainedMode=true in CoachContext → backend injects strict per-sport contract block into system prompt → if second response passes validation → show response; if second fails or network error → recordConstrainedRetryFailed → handleWithLocalCoaching (guaranteed no loop). Backend football hard-stop also added: _normalize_gpt_response() on repair failure now replaces with safe team-context fallback and returns immediately — never returns unrepaired 1v1 response to client."
+        notes: "Semantic repair is now backend-owned. The backend uses schema-constrained Structured Outputs (chat.completions response_format json_schema) and performs at most ONE bounded server-side repair (escalation model) before returning a validated, product-safe response. The client no longer issues a second model request for contract failures: on a residual critical violation it falls back to local coaching directly (handleWithLocalCoaching), guaranteeing no loop. Backend football hard-stop still applies: _normalize_gpt_response() replaces an unrepairable 1v1 framing with a safe team-context fallback and never returns it to the client. The vestigial CoachContext.constrainedMode field remains for backward compatibility and is ignored server-side."
     )
 
     static let coachTelemetry = FeatureDefinition(

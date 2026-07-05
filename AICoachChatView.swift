@@ -46,7 +46,7 @@ struct AICoachChatView: View {
                         ForEach(viewModel.messages) { message in
                             AICoachMessageBubble(
                                 message: message,
-                                onActionTap: { action in handleActionTap(action) },
+                                onActionTap: { action in handleActionTap(action, in: message) },
                                 onFeedback: message.isUser ? nil : { helpful in
                                     let focus = viewModel.sessionInsight?.primaryFocus
                                     CoachFeedbackStore.record(CoachFeedbackEntry(
@@ -437,31 +437,23 @@ struct AICoachChatView: View {
     // Default behavior now: treat the chip text as the user's next message
     // and send it back into the conversation. Only chips with an explicit
     // navigation phrase ("Open Drill Library", "Log Session", etc.) navigate.
-    private func handleActionTap(_ action: String) {
-        let actionLower = action.lowercased()
-
-        let navigatesToDrills =
-            actionLower.contains("open drill library") ||
-            actionLower.contains("open drills") ||
-            actionLower.contains("browse drills") ||
-            actionLower.contains("show drills") ||
-            actionLower.contains("go to drills") ||
-            actionLower.contains("go to train")
-
-        let navigatesToSessionLog =
-            actionLower.contains("log session") ||
-            actionLower.contains("log a session") ||
-            actionLower.contains("log workout") ||
-            actionLower.contains("log this") ||
-            actionLower.contains("open session log") ||
-            actionLower.contains("track session")
-
-        if navigatesToDrills {
-            showDrillLibrary = true
-        } else if navigatesToSessionLog {
-            showSessionLog = true
+    private func handleActionTap(_ action: String, in message: AICoachMessage? = nil) {
+        // Prefer the backend's TYPED action (route by type, not label guessing).
+        // Fall back to label-based routing for older backends / pre-pipeline chips.
+        let destination: CoachChipDestination
+        if let typed = message?.actions?.first(where: { $0.label == action }) {
+            destination = CoachChipRouter.destination(forType: typed.type)
         } else {
-            // Treat as a conversational quick reply.
+            destination = CoachChipRouter.destination(for: action)
+        }
+        switch destination {
+        case .drillLibrary:
+            showDrillLibrary = true
+        case .sessionLog:
+            showSessionLog = true
+        case .conversation:
+            // Drill EXPLANATION chips ("Explain the first drill", "Show me another
+            // drill", "How do I do this drill?") land here and stay in chat.
             messageText = action
             sendMessage()
         }
@@ -1470,6 +1462,54 @@ enum PrePipelineIntent {
     }
 }
 
+/// Where a tapped suggested-action chip should route.
+enum CoachChipDestination: Equatable {
+    case drillLibrary   // explicit navigation to the drill library
+    case sessionLog     // explicit "log/track this session" navigation
+    case conversation   // everything else (incl. drill explanations) — stays in chat
+}
+
+/// Pure, testable router for suggested-action chips.
+///
+/// Policy (protects the reported bug where drill suggestions opened Add Drill / Log):
+///   • Navigation happens ONLY for explicit phrases ("Open Drill Library",
+///     "Log this session", "Track session", …).
+///   • Drill EXPLANATION chips ("Explain the first drill", "Show me another drill",
+///     "How do I do this drill?") are NOT navigation — they return .conversation and
+///     stay in chat as a follow-up message.
+struct CoachChipRouter {
+    static func destination(for action: String) -> CoachChipDestination {
+        let a = action.lowercased()
+
+        // Explicit drill-library navigation (checked first, matches prior behavior).
+        let drillLibraryPhrases = [
+            "open drill library", "open drills", "browse drills",
+            "show drills", "go to drills", "go to train",
+        ]
+        if drillLibraryPhrases.contains(where: { a.contains($0) }) { return .drillLibrary }
+
+        // Explicit session-log / add-to-session navigation ONLY.
+        let sessionLogPhrases = [
+            "log session", "log a session", "log workout", "log this",
+            "add to session", "open session log", "track session",
+        ]
+        if sessionLogPhrases.contains(where: { a.contains($0) }) { return .sessionLog }
+
+        return .conversation
+    }
+
+    /// Route by the backend pipeline's TYPED action. Only `open_drill_library` and
+    /// `log_session` navigate; everything else (incl. `explain_drill`,
+    /// `conversational_reply`, or unknown future types) stays in chat.
+    static func destination(forType type: String) -> CoachChipDestination {
+        switch type {
+        case "open_drill_library": return .drillLibrary
+        case "log_session":        return .sessionLog
+        default:                   return .conversation
+        }
+    }
+}
+
 /// Synchronous, keyword/pattern-based pre-pipeline classifier.
 ///
 /// Priority order (first match wins):
@@ -1776,8 +1816,11 @@ struct AICoachMessage: Identifiable, Codable {
     // Curated sources the coach actually retrieved for this answer. Optional so
     // previously-persisted messages (without the field) still decode.
     var sources: [CoachSource]?
+    // Typed actions from the backend pipeline. When present, chips route by type
+    // instead of label-substring guessing. Optional for backward compatibility.
+    var actions: [CoachActionDTO]?
 
-    init(content: String, isUser: Bool, suggestedActions: [String] = [], tone: String = "supportive", sources: [CoachSource]? = nil) {
+    init(content: String, isUser: Bool, suggestedActions: [String] = [], tone: String = "supportive", sources: [CoachSource]? = nil, actions: [CoachActionDTO]? = nil) {
         self.id = UUID()
         self.content = content
         self.isUser = isUser
@@ -1785,6 +1828,7 @@ struct AICoachMessage: Identifiable, Codable {
         self.suggestedActions = suggestedActions
         self.tone = tone
         self.sources = sources
+        self.actions = actions
     }
 }
 
@@ -2159,58 +2203,16 @@ class AICoachChatViewModel: ObservableObject {
                     }
                     CoachTelemetry.recordGPTValidationFail(sport: sport, violationCount: criticals.count)
 
-                    // ── CONSTRAINED RETRY ──────────────────────────────────────────────────────
-                    // One final GPT attempt with strict contract rules injected into the backend
-                    // system prompt (constrainedMode = true). If this also fails → local fallback.
-                    // Guaranteed no loop: constrainedMode retry never triggers another retry.
-                    print("🔄 [GPT Validator] Attempting constrained retry with strict contract injection...")
-                    CoachTelemetry.recordConstrainedRetryStarted(sport: sport)
-
-                    var constrainedCtx = promptCtx.apiContext
-                    constrainedCtx.constrainedMode = true
-
-                    let constrainedResult = await attemptSendMessage(
-                        apiClient:  apiClient,
-                        content:    content,
-                        context:    constrainedCtx,
-                        history:    promptCtx.conversationHistory
-                    )
-
-                    switch constrainedResult {
-                    case .success(let constrainedResponse):
-                        let constrainedViolations = GPTResponseValidator.validate(
-                            response: constrainedResponse, sport: sport, message: content
-                        )
-                        if GPTResponseValidator.isFallbackRequired(constrainedViolations) {
-                            // Second failure — now fall back to local (guaranteed stop, no loop)
-                            print("❌ [GPT Validator] Constrained retry also failed — falling back to local path")
-                            CoachTelemetry.recordConstrainedRetryFailed(sport: sport)
-                            CoachTelemetry.recordGPTFallbackToLocal(sport: sport, reason: "constrained_retry_failed")
-                            handleWithLocalCoaching(promptContext: promptCtx,
-                                failureReason: .serverError("GPT constrained retry violated contract"))
-                            isLoading = false
-                            return
-                        }
-                        // Constrained retry succeeded
-                        print("✅ [GPT Validator] Constrained retry succeeded")
-                        CoachTelemetry.recordConstrainedRetrySucceeded(sport: sport)
-                        let constrainedFormatted = ResponseFormatter.format(
-                            constrainedResponse, context: promptCtx,
-                            drillProvider: localDetailedDrillsForFocusArea
-                        )
-                        handleSuccessResponse(constrainedFormatted, source: .backend)
-                        storeRefinementContext(from: promptCtx)
-                        isLoading = false
-                        return
-                    case .failure:
-                        // Network failure on constrained retry → local fallback
-                        CoachTelemetry.recordConstrainedRetryFailed(sport: sport)
-                        CoachTelemetry.recordGPTFallbackToLocal(sport: sport, reason: "constrained_retry_network_failure")
-                        handleWithLocalCoaching(promptContext: promptCtx,
-                            failureReason: .serverError("Constrained retry network failure"))
-                        isLoading = false
-                        return
-                    }
+                    // Semantic repair is now owned by the backend: it uses schema-
+                    // constrained Structured Outputs and performs at most ONE bounded
+                    // server-side repair before returning. The client therefore does
+                    // NOT issue a second model request — on a residual critical
+                    // violation we fall back to local coaching directly (no loop).
+                    CoachTelemetry.recordGPTFallbackToLocal(sport: sport, reason: "contract_violation")
+                    handleWithLocalCoaching(promptContext: promptCtx,
+                        failureReason: .serverError("GPT response violated contract"))
+                    isLoading = false
+                    return
                 }
 
                 // Attempt inline repair for football 1v1 violations before showing the response
@@ -2324,12 +2326,16 @@ class AICoachChatViewModel: ObservableObject {
         // Only attach sources for backend responses — the local coaching engine
         // is a degraded, unsourced mode and must not claim source backing.
         let messageSources = (source == .backend) ? response.sources : nil
+        // Typed actions are only meaningful from the backend pipeline; the local
+        // coaching engine routes chips by label via CoachChipRouter.
+        let messageActions = (source == .backend) ? response.actions : nil
         let aiMessage = AICoachMessage(
             content: response.response,
             isUser: false,
             suggestedActions: response.suggestedActions,
             tone: response.tone,
-            sources: messageSources
+            sources: messageSources,
+            actions: messageActions
         )
         messages.append(aiMessage)
         saveMessages()

@@ -395,6 +395,54 @@ struct CasualGreetingAndSportMentionTests {
 
     @Test("two sports named → nil (ambiguous, no false redirect)")
     func testMentionAmbiguous() { #expect(PrePipelineClassifier.mentionedSport(in: "is basketball better than soccer") == nil) }
+
+    // Explicit sport-context scenarios from the phase brief — no cross-sport leakage.
+    @Test("'I'm in soccer mode' resolves to .soccer (not football)")
+    func testMentionSoccer() { #expect(PrePipelineClassifier.mentionedSport(in: "i'm in soccer mode") == .soccer) }
+
+    @Test("'Help my basketball left hand' resolves to .basketball")
+    func testMentionBasketball() { #expect(PrePipelineClassifier.mentionedSport(in: "help my basketball left hand") == .basketball) }
+}
+
+// MARK: - 11c. Suggested-action chip routing (drill explanations stay in chat)
+
+struct CoachChipRoutingTests {
+
+    // Drill EXPLANATION chips must stay in chat — NOT route to Add Drill / Log.
+    @Test("'Explain the first drill' stays in chat")
+    func testExplainStaysInChat() { #expect(CoachChipRouter.destination(for: "Explain the first drill") == .conversation) }
+
+    @Test("'Show me another drill' stays in chat")
+    func testShowAnotherStaysInChat() { #expect(CoachChipRouter.destination(for: "Show me another drill") == .conversation) }
+
+    @Test("'How do I do this drill?' stays in chat")
+    func testHowToDoDrillStaysInChat() { #expect(CoachChipRouter.destination(for: "How do I do this drill?") == .conversation) }
+
+    // Explicit navigation chips still navigate.
+    @Test("'Open Drill Library' → drill library")
+    func testOpenDrillLibraryNavigates() { #expect(CoachChipRouter.destination(for: "Open Drill Library") == .drillLibrary) }
+
+    @Test("'Log this session' → session log")
+    func testLogThisSessionNavigates() { #expect(CoachChipRouter.destination(for: "Log this session") == .sessionLog) }
+
+    @Test("'Add to session' → session log")
+    func testAddToSessionNavigates() { #expect(CoachChipRouter.destination(for: "Add to session") == .sessionLog) }
+
+    // Backend TYPED action routing (preferred over label guessing).
+    @Test("type 'explain_drill' stays in chat")
+    func testTypeExplainDrill() { #expect(CoachChipRouter.destination(forType: "explain_drill") == .conversation) }
+
+    @Test("type 'conversational_reply' stays in chat")
+    func testTypeConversational() { #expect(CoachChipRouter.destination(forType: "conversational_reply") == .conversation) }
+
+    @Test("type 'open_drill_library' navigates")
+    func testTypeOpenLibrary() { #expect(CoachChipRouter.destination(forType: "open_drill_library") == .drillLibrary) }
+
+    @Test("type 'log_session' navigates")
+    func testTypeLogSession() { #expect(CoachChipRouter.destination(forType: "log_session") == .sessionLog) }
+
+    @Test("unknown future type stays in chat (no dead navigation)")
+    func testTypeUnknown() { #expect(CoachChipRouter.destination(forType: "open_readiness") == .conversation) }
 }
 
 // MARK: - 12. Phase 2 — Coaching-Adjacent Phase 1 Expressions

@@ -1942,12 +1942,26 @@ struct CoachSource: Codable, Hashable {
     }
 }
 
+/// A typed suggested-action chip from the backend pipeline. The client routes by
+/// `type`, not by guessing from the label. Backward-compatible: when the backend
+/// doesn't send `actions`, the client falls back to label-based routing.
+struct CoachActionDTO: Codable, Hashable {
+    let label: String
+    let type: String
+}
+
 struct CoachMessageResponse: Codable {
     let response: String
     let suggestedActions: [String]
     let tone: String
     let followUpQuestions: [String]
     let sources: [CoachSource]?
+    // Structured pipeline metadata (all optional — older backends omit them).
+    let actions: [CoachActionDTO]?
+    let resolvedSport: String?
+    let intent: String?
+    let safetyLevel: String?
+    let isDegradedFallback: Bool?
     let timestamp: String
 
     enum CodingKeys: String, CodingKey {
@@ -1956,17 +1970,27 @@ struct CoachMessageResponse: Codable {
         case tone
         case followUpQuestions = "follow_up_questions"
         case sources
+        case actions
+        case resolvedSport = "resolved_sport"
+        case intent
+        case safetyLevel = "safety_level"
+        case isDegradedFallback = "is_degraded_fallback"
         case timestamp
     }
 
-    // Explicit init keeps existing call sites (which don't pass sources) valid
-    // while synthesized Codable still decodes the optional `sources` field.
+    // Explicit init keeps existing call sites (which don't pass the new fields)
+    // valid while synthesized Codable still decodes the optional fields.
     init(
         response: String,
         suggestedActions: [String],
         tone: String,
         followUpQuestions: [String],
         sources: [CoachSource]? = nil,
+        actions: [CoachActionDTO]? = nil,
+        resolvedSport: String? = nil,
+        intent: String? = nil,
+        safetyLevel: String? = nil,
+        isDegradedFallback: Bool? = nil,
         timestamp: String
     ) {
         self.response = response
@@ -1974,6 +1998,11 @@ struct CoachMessageResponse: Codable {
         self.tone = tone
         self.followUpQuestions = followUpQuestions
         self.sources = sources
+        self.actions = actions
+        self.resolvedSport = resolvedSport
+        self.intent = intent
+        self.safetyLevel = safetyLevel
+        self.isDegradedFallback = isDegradedFallback
         self.timestamp = timestamp
     }
 }

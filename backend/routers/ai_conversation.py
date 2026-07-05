@@ -13,6 +13,8 @@ from database import get_db
 from dependencies import get_current_active_user, require_premium
 import models
 from ai_orchestrator import AIOrchestrator
+from ai_rate_limit import ai_daily_limiter
+from config import get_settings
 
 
 router = APIRouter(prefix="/ai/coach", tags=["ai-coach"])
@@ -41,13 +43,33 @@ class CoachSource(BaseModel):
     url: Optional[str] = None
 
 
+class CoachAction(BaseModel):
+    """A typed suggested-action chip. The client routes by `type`, not by guessing
+    from the label. Types: conversational_reply | explain_drill |
+    open_drill_library | log_session."""
+    label: str
+    type: str = "conversational_reply"
+
+
 class CoachMessageResponse(BaseModel):
-    """AI Coach response"""
+    """AI Coach response — structured, assistant-style envelope.
+
+    `suggested_actions` (plain strings) is retained for backward compatibility;
+    `actions` carries the typed equivalent. All structured fields are optional so
+    older clients keep decoding."""
     response: str
     suggested_actions: List[str] = []
     tone: str = "supportive"
     follow_up_questions: List[str] = []
     sources: List[CoachSource] = []
+    # Structured pipeline metadata (additive; safe for older clients to ignore).
+    actions: List[CoachAction] = []
+    resolved_sport: Optional[str] = None
+    intent: Optional[str] = None
+    confidence: Optional[float] = None
+    safety_level: Optional[str] = None
+    is_degraded_fallback: bool = False
+    needs_followup: bool = False
     timestamp: str
 
 
@@ -147,20 +169,42 @@ async def send_message_to_coach(
             detail=f"Invalid sport: {request.sport}"
         )
 
-    # Initialize AI orchestrator
-    orchestrator = AIOrchestrator(db)
+    # ── AI Coach daily allowance (the ONLY quota; checked BEFORE any model call) ───
+    # Premium users get N user-visible messages per UTC day. Message N+1 is rejected
+    # here with zero model calls. The slot is reserved now and released only if the
+    # request produces NO user-visible reply (so a full server error doesn't burn
+    # quota). One accepted message counts once regardless of internal retries/repair.
+    # (require_premium on this route already guarantees Premium entitlement.)
+    uid = str(current_user.id)
+    limit = get_settings().ai_daily_message_limit
+    decision = ai_daily_limiter.reserve(uid, limit)
+    if not decision.allowed:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="You've reached today's AI Coach limit. Your access resets tomorrow.",
+            headers={"Retry-After": str(decision.retry_after_s or 3600)},
+        )
 
-    # Use conversation history from iOS (client maintains history)
-    conversation_history = request.conversation_history or []
+    try:
+        # Initialize AI orchestrator
+        orchestrator = AIOrchestrator(db)
 
-    # Generate AI response with full context
-    response = await orchestrator.generate_coach_response(
-        user_id=current_user.id,
-        sport=sport,
-        user_message=request.message,
-        conversation_history=conversation_history,
-        ios_context=request.context
-    )
+        # Use conversation history from iOS (client maintains history)
+        conversation_history = request.conversation_history or []
+
+        # Generate AI response with full context
+        response = await orchestrator.generate_coach_response(
+            user_id=current_user.id,
+            sport=sport,
+            user_message=request.message,
+            conversation_history=conversation_history,
+            ios_context=request.context
+        )
+    except Exception:
+        # No user-visible reply was produced — release the reserved slot so this
+        # failed turn does not permanently consume the daily allowance.
+        ai_daily_limiter.release(uid)
+        raise
 
     # Persist both sides of the exchange for cross-device history
     try:
@@ -187,6 +231,13 @@ async def send_message_to_coach(
         tone=response.get("tone", "supportive"),
         follow_up_questions=response.get("follow_up_questions", []),
         sources=[CoachSource(**s) for s in response.get("sources", [])],
+        actions=[CoachAction(**a) for a in response.get("actions", [])],
+        resolved_sport=response.get("resolved_sport"),
+        intent=response.get("intent"),
+        confidence=response.get("confidence"),
+        safety_level=response.get("safety_level"),
+        is_degraded_fallback=response.get("is_degraded_fallback", False),
+        needs_followup=response.get("needs_followup", False),
         timestamp=datetime.utcnow().isoformat()
     )
 
