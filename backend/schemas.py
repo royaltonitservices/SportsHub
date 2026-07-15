@@ -26,6 +26,11 @@ class UserLogin(BaseModel):
 class Token(BaseModel):
     access_token: str
     token_type: str = "bearer"
+    # Optional, additive signup metadata (null for login). Tells the client whether
+    # email verification was bypassed (dev/beta), sent, or unavailable, plus the
+    # resulting account status. Older clients ignore these fields.
+    account_status: Optional[str] = None
+    email_verification: Optional[str] = None
 
 
 class TokenData(BaseModel):

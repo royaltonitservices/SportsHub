@@ -20,15 +20,52 @@ extension Notification.Name {
 
 // MARK: - API Configuration
 struct APIConfig {
-    static let baseURL = "http://localhost:8000"
+    /// Resolved backend base URL. Resolution order (first non-empty wins):
+    ///   1. `SPORTSHUB_API_BASE_URL` environment variable — set in the Xcode scheme
+    ///      (Run ▸ Arguments ▸ Environment Variables) for physical-device or staging dev,
+    ///      e.g. http://192.168.1.50:8000 (your Mac's LAN IP) or https://staging.example.com
+    ///   2. `APIBaseURL` in Info.plist — set via an .xcconfig per build configuration
+    ///      (recommended for staging/production release builds)
+    ///   3. Fallback:
+    ///        - DEBUG builds → http://localhost:8000 (simulator local dev)
+    ///        - RELEASE builds → "" (empty) so requests fail cleanly rather than
+    ///          silently talking to localhost in production. Production MUST set #1 or #2.
+    /// No LAN IP or production URL is hardcoded in source.
+    static let baseURL: String = {
+        func normalize(_ s: String) -> String { s.hasSuffix("/") ? String(s.dropLast()) : s }
+        if let env = ProcessInfo.processInfo.environment["SPORTSHUB_API_BASE_URL"], !env.isEmpty {
+            return normalize(env)
+        }
+        if let plist = Bundle.main.object(forInfoDictionaryKey: "APIBaseURL") as? String, !plist.isEmpty {
+            return normalize(plist)
+        }
+        #if DEBUG
+        return "http://localhost:8000"
+        #else
+        return ""  // production must configure a real base URL; empty → clean failure, never localhost
+        #endif
+    }()
+
     static let timeout: TimeInterval = 30.0
-    
+
     /// Whether to enable debug logging (disable in production)
     #if DEBUG
     static let enableDebugLogging = true
     #else
     static let enableDebugLogging = false
     #endif
+
+    /// Human-readable description of the active API environment (DEBUG diagnostics only).
+    /// Contains only the base URL — never tokens or secrets.
+    static var activeEnvironmentDescription: String {
+        let url = baseURL.isEmpty ? "(unset)" : baseURL
+        let env: String
+        if baseURL.isEmpty { env = "UNCONFIGURED" }
+        else if baseURL.contains("localhost") || baseURL.contains("127.0.0.1") { env = "LOCAL (simulator)" }
+        else if baseURL.hasPrefix("https://") { env = "REMOTE (staging/production)" }
+        else { env = "LAN/dev" }
+        return "\(env) → \(url)"
+    }
 }
 
 // MARK: - API Error
@@ -164,6 +201,10 @@ class APIClient {
         config.timeoutIntervalForRequest = APIConfig.timeout
         config.timeoutIntervalForResource = APIConfig.timeout
         self.session = URLSession(configuration: config)
+        #if DEBUG
+        // DEBUG-only diagnostic: which backend we're pointed at. No secrets/tokens.
+        print("🌐 [APIClient] API environment: \(APIConfig.activeEnvironmentDescription)")
+        #endif
     }
     
     func setAuthToken(_ token: String?) {

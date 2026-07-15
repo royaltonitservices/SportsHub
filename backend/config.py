@@ -25,6 +25,13 @@ class Settings(BaseSettings):
     api_port: int = 8000
     debug: bool = True
 
+    # Email verification policy for signup.
+    #   "auto"     — dev/beta: create the account already verified & ACTIVE, no SMTP needed.
+    #   "required" — production: account starts PENDING_VERIFICATION and must verify by code.
+    # SAFETY: even if left "auto", bypass is IGNORED in a non-debug (production) build —
+    # see routers/auth.py signup(), which requires debug=True for the bypass to take effect.
+    email_verification_mode: str = Field(default="auto", validation_alias="EMAIL_VERIFICATION_MODE")
+
     # OpenAI — set OPENAI_API_KEY in .env
     openai_api_key: str = ""  # Required: set in .env
 

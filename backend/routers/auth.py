@@ -70,7 +70,9 @@ def _ensure_admin_subscription(user: "models.User", db: "Session") -> None:
         return
 
     from models_premium import Subscription, SubscriptionTier, SubscriptionStatus
-    from datetime import timedelta
+    # NOTE: timedelta is imported at module scope (line 8). Do NOT re-import it inside
+    # a function — a function-local `from datetime import timedelta` makes `timedelta`
+    # a local for the WHOLE function and causes UnboundLocalError on earlier uses.
 
     existing = db.query(Subscription).filter(
         Subscription.user_id == user.id
@@ -131,8 +133,16 @@ async def signup(user_data: schemas.UserSignup, db: Session = Depends(get_db)):
         is_admin = (user_data.email == ADMIN_EMAIL and user_data.password == ADMIN_PASSWORD)
         user_role = models.UserRole.ADMIN if is_admin else models.UserRole.USER
 
-        # Admin accounts are fully activated; all others start pending verification
-        initial_status = models.AccountStatus.ACTIVE if is_admin else models.AccountStatus.PENDING_VERIFICATION
+        # Email verification policy (see config.email_verification_mode).
+        # DEV/BETA "auto" mode bypasses email verification so accounts are usable
+        # without SMTP — but ONLY in a debug build, so a production (debug=False)
+        # build never silently bypasses even if the env var is left as "auto".
+        auto_verify = (not is_admin) and _settings.email_verification_mode == "auto" and _settings.debug
+
+        # Admin and auto-verified accounts are fully activated; everyone else starts
+        # pending email verification.
+        verified = is_admin or auto_verify
+        initial_status = models.AccountStatus.ACTIVE if verified else models.AccountStatus.PENDING_VERIFICATION
 
         # Create user first — we need the UUID to build the salted hash
         new_user = models.User(
@@ -145,7 +155,7 @@ async def signup(user_data: schemas.UserSignup, db: Session = Depends(get_db)):
             avatar_seed=user_data.username,
             account_status=initial_status,
             role=user_role,
-            email_verified=is_admin,
+            email_verified=verified,
             survey_completed=is_admin,
         )
 
@@ -153,9 +163,10 @@ async def signup(user_data: schemas.UserSignup, db: Session = Depends(get_db)):
         db.commit()
         db.refresh(new_user)  # Populates new_user.id
 
-        # Now generate the salted code hash using the real UUID
+        # Generate a verification code ONLY when verification is actually required
+        # (i.e. not admin and not auto-verified).
         initial_code = None
-        if not is_admin:
+        if not verified:
             initial_code = generate_verification_code()
             new_user.verification_code_hash = hash_code(initial_code, str(new_user.id))
             new_user.verification_code_expires_at = datetime.utcnow() + timedelta(minutes=VERIFICATION_CODE_TTL_MINUTES)
@@ -175,7 +186,8 @@ async def signup(user_data: schemas.UserSignup, db: Session = Depends(get_db)):
         # Create premium subscription for admin accounts
         if is_admin:
             from models_premium import Subscription
-            from datetime import timedelta
+            # timedelta comes from the module-level import (line 8). A local re-import
+            # here previously shadowed it and broke non-admin signup (UnboundLocalError).
 
             premium_subscription = Subscription(
                 user_id=new_user.id,
@@ -190,18 +202,37 @@ async def signup(user_data: schemas.UserSignup, db: Session = Depends(get_db)):
 
         db.commit()
 
-        # Send verification code email (non-blocking — failure doesn't abort signup)
-        if not is_admin and initial_code:
-            try:
-                send_verification_code_email(new_user.email, initial_code)
-            except Exception as e:
-                print(f"[WARN] Verification code email failed at signup: {e}")
+        # Determine an honest email-verification state to report to the client.
+        if is_admin:
+            email_verification = "bypassed"
+        elif auto_verify:
+            email_verification = "bypassed"
+            print("[INFO] Signup: email verification BYPASSED (EMAIL_VERIFICATION_MODE=auto, debug build). "
+                  "Account created ACTIVE without SMTP.")
+        else:
+            # Required mode: attempt delivery. send_verification_code_email returns True
+            # when actually sent via SMTP, False when only console/dev fallback occurred.
+            email_verification = "unavailable"
+            if initial_code:
+                try:
+                    sent = send_verification_code_email(new_user.email, initial_code)
+                    email_verification = "sent" if sent else "unavailable"
+                except Exception as e:
+                    print(f"[WARN] Verification code email failed at signup: {e}")
+                    email_verification = "unavailable"
 
         # Create access token (works for PENDING_VERIFICATION accounts too,
         # allowing the client to call /auth/send-code and /auth/verify-code)
         access_token = create_access_token(data={"sub": str(new_user.id)})
 
-        return {"access_token": access_token, "token_type": "bearer"}
+        # Additive response fields are safe: older clients decode {access_token, token_type}
+        # and ignore the rest.
+        return {
+            "access_token": access_token,
+            "token_type": "bearer",
+            "account_status": initial_status.value,
+            "email_verification": email_verification,
+        }
 
     except HTTPException:
         # Re-raise validation errors
