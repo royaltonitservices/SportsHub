@@ -32,3 +32,6 @@ backend/sportshub.db
 *.log
 backend/uploads/
 backend/uploads/
+
+# Local dev backend runtime (dev_backend.sh): PID + logs
+backend/.local/
