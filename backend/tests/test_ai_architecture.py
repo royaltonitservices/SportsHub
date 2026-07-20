@@ -237,5 +237,37 @@ class WearableFormatTests(unittest.TestCase):
         self.assertIn("STALE", block)
 
 
+# ── Training profile summary (consolidated, honest, no fabrication) ─────────────
+
+class TrainingProfileSummaryTests(unittest.TestCase):
+    def setUp(self):
+        self.o = _OrchHelper.get()
+
+    def test_summary_uses_present_fields(self):
+        ctx = {"skill_level": "intermediate", "goals_summary": "improve shooting",
+               "combined_weak_points": ["left hand", "conditioning"],
+               "recent_training_sessions": ["Shooting (30min)"],
+               "available_time_minutes": 20}
+        s = self.o._format_context_for_prompt(ctx)
+        self.assertIn("TRAINING PROFILE SUMMARY", s)
+        self.assertIn("intermediate", s)
+        self.assertIn("improve shooting", s)
+        self.assertIn("left hand", s)
+        self.assertIn("Shooting (30min)", s)
+        self.assertIn("position", s.lower())  # explicit "does not capture position" note
+
+    def test_summary_is_honest_when_empty(self):
+        s = self.o._format_context_for_prompt({})
+        self.assertIn("TRAINING PROFILE SUMMARY", s)
+        self.assertIn("not set yet", s)        # goal
+        self.assertIn("none recorded yet", s)  # weaknesses
+        self.assertIn("none logged yet", s)    # recent training
+
+    def test_summary_no_fabricated_position(self):
+        s = self.o._format_context_for_prompt({"skill_level": "beginner"})
+        # Must never assert a concrete position; only the "not captured" disclaimer.
+        self.assertNotIn("Position:", s)
+
+
 if __name__ == "__main__":
     unittest.main()

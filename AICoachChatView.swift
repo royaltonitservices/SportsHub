@@ -22,6 +22,7 @@ struct AICoachChatView: View {
     @State private var showTrainSection = false
     @State private var showDrillLibrary = false
     @State private var showSessionLog = false
+    @State private var showAIDisclosure = false
     @FocusState private var isInputFocused: Bool
     @Environment(\.dismiss) private var dismiss
     
@@ -97,6 +98,9 @@ struct AICoachChatView: View {
                 sessionInsightBanner(insight)
             }
 
+            // Persistent honesty disclaimer — small, non-blocking, always visible.
+            aiDisclaimerFooter
+
             // Input bar
             inputBar
         }
@@ -115,6 +119,9 @@ struct AICoachChatView: View {
             }
             ToolbarItem(placement: .navigationBarTrailing) {
                 Menu {
+                    Button(action: { showAIDisclosure = true }) {
+                        Label("About AI Coach", systemImage: "info.circle")
+                    }
                     Button(role: .destructive, action: {
                         viewModel.clearConversation()
                     }) {
@@ -149,6 +156,30 @@ struct AICoachChatView: View {
         .sheet(isPresented: $showSessionLog) {
             TrainingSessionView(sport: sport)
         }
+        .sheet(isPresented: $showAIDisclosure) {
+            AICoachDisclosureSheet()
+        }
+    }
+
+    // MARK: - AI honesty disclaimer
+
+    /// Slim, always-visible footer. Tap opens the fuller disclosure sheet.
+    private var aiDisclaimerFooter: some View {
+        Button(action: { showAIDisclosure = true }) {
+            HStack(spacing: 4) {
+                Image(systemName: "info.circle")
+                    .font(.caption2)
+                Text("AI Coach can make mistakes and isn't medical advice. Tap for details.")
+                    .font(.caption2)
+                    .multilineTextAlignment(.center)
+            }
+            .foregroundStyle(Color.appTextSecondary)
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, 6)
+        }
+        .buttonStyle(.plain)
+        .background(Color.appBackground)
     }
     
     // MARK: - Welcome Message
@@ -699,6 +730,55 @@ struct SuggestionChip: View {
                 .padding(.vertical, Spacing.sm)
                 .background(Color.appPrimary.opacity(0.1))
                 .cornerRadius(20)
+        }
+    }
+}
+
+// MARK: - AI Coach Disclosure Sheet
+// Honest, pre-release disclosure of how the AI Coach behaves and what data it uses.
+// Not legal text; deliberately plain and non-alarming.
+struct AICoachDisclosureSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
+    private struct Row: Identifiable {
+        let id = UUID(); let icon: String; let title: String; let body: String
+    }
+
+    private let rows: [Row] = [
+        Row(icon: "exclamationmark.bubble", title: "AI can be wrong",
+            body: "Your AI Coach is helpful but not perfect. Double-check anything important before you act on it."),
+        Row(icon: "cross.case", title: "Not medical advice",
+            body: "Coaching and recovery tips are general guidance, not medical advice or diagnosis. For pain, injury, head impacts, or any worrying symptom, stop and see a qualified professional."),
+        Row(icon: "applewatch", title: "Wearable data",
+            body: "When it's relevant and you've connected and synced a fitness tracker, the coach may use a summary of your recovery, sleep, and heart data. It reads only what SportsHub has synced — it has no direct access to Apple Health, and it never invents numbers it doesn't have."),
+        Row(icon: "text.bubble", title: "What it sees",
+            body: "To coach you well, it may use your recent messages in this conversation, your sport, and your SportsHub training profile — skill level, goals, focus areas/weaknesses, and recent logged sessions. It only uses what SportsHub has stored, never invents details you haven't provided (it doesn't know your playing position), and doesn't see unrelated private data."),
+        Row(icon: "hammer", title: "Pre-release",
+            body: "SportsHub is in active development. Features and behavior may change, and this is not a final privacy or medical policy.")
+    ]
+
+    var body: some View {
+        NavigationStack {
+            List(rows) { r in
+                HStack(alignment: .top, spacing: Spacing.md) {
+                    Image(systemName: r.icon)
+                        .font(.system(size: 18))
+                        .foregroundStyle(Color.appPrimary)
+                        .frame(width: 26)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(r.title).font(.subheadline.weight(.semibold))
+                        Text(r.body).font(.caption).foregroundStyle(Color.appTextSecondary)
+                    }
+                }
+                .padding(.vertical, 4)
+            }
+            .navigationTitle("About AI Coach")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
         }
     }
 }

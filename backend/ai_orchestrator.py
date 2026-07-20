@@ -1298,6 +1298,11 @@ You are a coach, not an assistant. Coaches have a point of view. They decide wha
 - Dump every possible app feature — only mention what is genuinely relevant to what was just discussed
 - Ask "what do you want to work on?" when ATHLETE BASELINE already tells you
 
+**If the athlete asks what you know about them, their profile, or their training:**
+- Summarize, in plain language, the fields present in the TRAINING PROFILE SUMMARY (sport, skill level, goal/focus, focus areas/weaknesses, recent training, time available).
+- Honestly name what is missing rather than guessing — e.g. "you haven't logged any recent sessions yet" or "your goal isn't set yet."
+- NEVER invent profile details you were not given. SportsHub does not capture playing position, height, or weight — do not state them.
+
 {output_section}
 
 ## Coaching Philosophy
@@ -1380,6 +1385,32 @@ You are a coach, not an assistant. Coaches have a point of view. They decide wha
             perf_parts.append(f"{context['skill_level']} level")
         if perf_parts:
             sections.append("PERFORMANCE: " + " | ".join(perf_parts))
+
+        # ── Consolidated TRAINING PROFILE SUMMARY ─────────────────────────────────────
+        # Built ONLY from fields already aggregated above. Missing fields are named
+        # honestly so the coach can answer "what do you know about my training profile?"
+        # without inventing anything. Position/height/etc. are NOT captured by SportsHub.
+        tp = []
+        if context.get('skill_level'):
+            tp.append(f"Skill level: {context['skill_level']}")
+        goal = context.get('goals_summary') or context.get('skill_focus') or (context.get('ios_goals') or [None])[0]
+        tp.append(f"Goal/focus: {goal}" if goal else "Goal/focus: not set yet")
+        weak = (context.get('combined_weak_points') or context.get('saved_weak_points')
+                or context.get('survey_weaknesses'))
+        if not weak and context.get('survey_critical_skills'):
+            weak = [c[0] for c in context['survey_critical_skills']]
+        tp.append(f"Focus areas/weaknesses: {', '.join(weak[:3])}" if weak
+                  else "Focus areas/weaknesses: none recorded yet")
+        rts = context.get('recent_training_sessions')
+        tp.append(f"Recent training: {len(rts)} logged session(s) — {', '.join(rts[:3])}" if rts
+                  else "Recent training: none logged yet")
+        if context.get('available_time_minutes'):
+            tp.append(f"Time available today: {context['available_time_minutes']} min")
+        sections.append(
+            "━━━ TRAINING PROFILE SUMMARY (what SportsHub actually has on this athlete) ━━━\n- "
+            + "\n- ".join(tp)
+            + "\n(SportsHub does not capture playing position — never state one.)"
+        )
 
         # Physical & Recovery Status
         phys_parts = []

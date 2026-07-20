@@ -273,8 +273,18 @@ struct ClipCard: View {
                                         .foregroundStyle(.white.opacity(0.9))
                                         .shadow(radius: 4)
                                 }
+                            } else {
+                                // No attached video (e.g. seed/demo clips). Honest placeholder —
+                                // deliberately NO play affordance, so it reads as intentional.
+                                VStack(spacing: 6) {
+                                    Image(systemName: "video.slash")
+                                        .font(.system(size: 34))
+                                        .foregroundStyle(.white.opacity(0.6))
+                                    Text("No video available")
+                                        .font(.caption)
+                                        .foregroundStyle(.white.opacity(0.7))
+                                }
                             }
-                            // nil videoUrl: no overlay — thumbnail (or gray rect) is shown as-is
                         }
                 }
             }
