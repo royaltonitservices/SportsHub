@@ -98,13 +98,29 @@ class AICoachManager: ObservableObject {
 
 // MARK: - Floating AI Coach View
 
+/// Single source of truth for what the floating coach presents. Using ONE
+/// `.sheet(item:)` (instead of two competing `.sheet(isPresented:)` modifiers)
+/// guarantees exactly one modal owner and prevents the half-committed presentation
+/// that left an invisible touch-blocking layer over Home.
+private enum CoachSheet: Identifiable {
+    case chat(prompt: String?)
+    case premium
+
+    var id: String {
+        switch self {
+        case .chat(let prompt): return "chat:\(prompt ?? "")"
+        case .premium:          return "premium"
+        }
+    }
+}
+
 struct AICoachFloatingView: View {
     @StateObject private var coachManager = AICoachManager.shared
     @StateObject private var storeManager = StoreManager.shared
     @State private var panelPosition: CGPoint?
-    @State private var showingCoachChat = false
-    @State private var showPremiumUpgrade = false
-    @State private var initialPrompt: String?
+    // One modal owner — replaces the previous showingCoachChat / showPremiumUpgrade
+    // / initialPrompt trio that required a timer-delayed presentation.
+    @State private var activeSheet: CoachSheet?
     
     var body: some View {
         if coachManager.isVisible {
@@ -143,20 +159,18 @@ struct AICoachFloatingView: View {
                     }
                 }
             }
-            .sheet(isPresented: $showingCoachChat) {
-                NavigationStack {
-                    AICoachChatView(
-                        sport: Sport(rawValue: coachManager.currentSport) ?? .basketball,
-                        initialPrompt: initialPrompt
-                    )
+            .sheet(item: $activeSheet) { sheet in
+                switch sheet {
+                case .chat(let prompt):
+                    NavigationStack {
+                        AICoachChatView(
+                            sport: Sport(rawValue: coachManager.currentSport) ?? .basketball,
+                            initialPrompt: prompt
+                        )
+                    }
+                case .premium:
+                    PremiumSubscriptionView()
                 }
-                .onDisappear {
-                    // Clear initial prompt when sheet dismisses
-                    initialPrompt = nil
-                }
-            }
-            .sheet(isPresented: $showPremiumUpgrade) {
-                PremiumSubscriptionView()
             }
         }
     }
@@ -506,41 +520,20 @@ struct AICoachFloatingView: View {
     }
     
     private func openCoachChat(with prompt: String) {
-        // Don't show paywall while premium status is still loading
-        if storeManager.isPremium || storeManager.isLoading {
-            initialPrompt = prompt
-            withAnimation {
-                coachManager.isExpanded = false
-            }
-            // Small delay to let collapse animation finish
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                showingCoachChat = true
-            }
-        } else {
-            withAnimation {
-                coachManager.isExpanded = false
-            }
-            showPremiumUpgrade = true
-        }
+        present(storeManager.isPremium || storeManager.isLoading ? .chat(prompt: prompt) : .premium)
     }
-    
+
     private func openFullCoach() {
-        // Don't show paywall while premium status is still loading
-        if storeManager.isPremium || storeManager.isLoading {
-            initialPrompt = nil
-            withAnimation {
-                coachManager.isExpanded = false
-            }
-            // Small delay to let collapse animation finish
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                showingCoachChat = true
-            }
-        } else {
-            withAnimation {
-                coachManager.isExpanded = false
-            }
-            showPremiumUpgrade = true
-        }
+        present(storeManager.isPremium || storeManager.isLoading ? .chat(prompt: nil) : .premium)
+    }
+
+    /// Collapse the floating panel and present the destination in a SINGLE state
+    /// update — no timer delay, no competing sheet bindings. The sheet's modal
+    /// layer covers the collapsing panel cleanly, so there is no half-committed
+    /// presentation and no leftover touch-blocking layer over Home.
+    private func present(_ sheet: CoachSheet) {
+        coachManager.isExpanded = false   // panel collapse animates via the ZStack's .animation
+        activeSheet = sheet
     }
     
     // MARK: - Helper Functions
