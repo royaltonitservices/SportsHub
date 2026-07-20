@@ -193,6 +193,15 @@ class WearableRelevanceTests(unittest.TestCase):
         self.assertTrue(wearable_relevant("anything", "recovery"))
         self.assertTrue(wearable_relevant("anything", "progress_readiness"))
 
+    def test_fitness_tracker_and_synonyms_relevant(self):
+        # Regression: "fitness tracker" / "tracker" / brand names / strat / HRV /
+        # Apple Watch / smartwatch must all be treated as wearable-related.
+        for m in ["Like my fitness tracker", "Can you use my fitness tracker?",
+                  "do you know my tracker data?", "Use my Apple Watch data",
+                  "what does my smartwatch say?", "do you have my HRV?",
+                  "can you see my recovery score?", "what's my training strain?"]:
+            self.assertTrue(wearable_relevant(m, "general_conversation"), m)
+
     def test_irrelevant_prompts(self):
         for m in ["Hi", "What's 25 times 4?", "Why is the sky blue?",
                   "Help me text my coach", "What does consistency mean?",

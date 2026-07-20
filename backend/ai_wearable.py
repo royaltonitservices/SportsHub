@@ -33,6 +33,8 @@ _WEARABLE_PHRASES = [
     "this week", "last week", "recent training", "recent workouts", "how much have i trained",
     "how has my training", "training been", "trained recently", "overtrain", "overtrained",
     "my watch", "smartwatch", "apple watch", "wearable", "after practice",
+    "fitness tracker", "tracker", "fitbit", "garmin", "whoop", "oura",
+    "strain", "training strain", "activity tracker", "step count",
     "sleep", "slept", "resting heart", "heart rate", "hrv", "check my recent",
     "build today", "around my recovery", "based on my recovery",
 ]
