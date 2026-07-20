@@ -376,7 +376,10 @@ struct CreateHighlightView: View {
             let created = try await APIClient.shared.createHighlight(
                 mediaUrl: mediaUrl,
                 caption: caption.isEmpty ? nil : caption,
-                sport: selectedSport?.rawValue
+                // Backend Sport enum is lowercase ("basketball"); rawValue ("Basketball")
+                // caused a 422 on /highlights/create. Use apiValue like all other
+                // backend-bound sport params.
+                sport: selectedSport?.apiValue
             )
             // Best-effort visibility check: the highlight should land in the
             // feed within a moment. If we can confirm it's there before we
