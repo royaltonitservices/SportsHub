@@ -24,6 +24,9 @@ struct ForgotPasswordView: View {
     @State private var isLoading = false
     @State private var errorMessage: String? = nil
     @State private var successMessage: String? = nil
+    /// Delivery mode reported by the backend after requesting a code
+    /// ("dev_log" / "sent" / "unavailable"). Drives honest step-2 copy.
+    @State private var deliveryMode: String? = nil
 
     var body: some View {
         NavigationStack {
@@ -39,14 +42,14 @@ struct ForgotPasswordView: View {
                                 .foregroundStyle(Color.appPrimary)
                                 .padding(.top, 40)
 
-                            Text(step == .enterEmail ? "Reset Password" : "Check Your Email")
+                            Text(step == .enterEmail ? "Reset Password" : stepTwoTitle)
                                 .font(.title2)
                                 .fontWeight(.bold)
                                 .foregroundStyle(Color.appTextPrimary)
 
                             Text(step == .enterEmail
-                                 ? "Enter your email address and we'll send you a reset code."
-                                 : "Enter the 6-digit code sent to \(email) and choose a new password.")
+                                 ? "Enter your email address to get a 6-digit reset code."
+                                 : stepTwoSubtitle)
                                 .font(.subheadline)
                                 .foregroundStyle(Color.appTextSecondary)
                                 .multilineTextAlignment(.center)
@@ -239,6 +242,27 @@ struct ForgotPasswordView: View {
 
     // MARK: - Actions
 
+    // MARK: - Honest step-2 copy (driven by backend delivery mode)
+
+    private var stepTwoTitle: String {
+        switch deliveryMode {
+        case "dev_log":     return "Check the Backend Logs"
+        case "unavailable": return "Enter Your Reset Code"
+        default:            return "Check Your Email"   // "sent" or unknown
+        }
+    }
+
+    private var stepTwoSubtitle: String {
+        switch deliveryMode {
+        case "dev_log":
+            return "This is a development build, so no email was sent. Your 6-digit reset code was printed to the local backend logs. Enter it below and choose a new password."
+        case "unavailable":
+            return "Email delivery isn't set up yet. If an account exists for \(email), enter the 6-digit reset code and choose a new password."
+        default:
+            return "If an account exists for \(email), we've sent a 6-digit reset code. Enter it below and choose a new password."
+        }
+    }
+
     private var primaryDisabled: Bool {
         if step == .enterEmail { return email.trimmingCharacters(in: .whitespaces).isEmpty }
         return code.count < 6 || newPassword.count < 6 || confirmPassword.isEmpty
@@ -263,15 +287,18 @@ struct ForgotPasswordView: View {
         isLoading = true
         Task {
             do {
-                try await APIClient.shared.forgotPassword(email: trimmed)
+                let delivery = try await APIClient.shared.forgotPassword(email: trimmed)
                 await MainActor.run {
                     isLoading = false
+                    deliveryMode = delivery
                     withAnimation { step = .enterCode }
                 }
             } catch {
                 await MainActor.run {
                     isLoading = false
-                    // Always show generic message to prevent email enumeration
+                    // Advance regardless to prevent email enumeration. Delivery mode
+                    // is unknown here, so step-2 copy falls back to the neutral text.
+                    deliveryMode = nil
                     withAnimation { step = .enterCode }
                 }
             }
@@ -306,7 +333,14 @@ struct ForgotPasswordView: View {
             } catch let apiError as APIError {
                 await MainActor.run {
                     isLoading = false
-                    errorMessage = apiError.userFriendlyMessage
+                    // The reset endpoint returns a specific, user-safe 400 detail
+                    // ("Invalid or expired reset code.") which the generic
+                    // userFriendlyMessage would otherwise mask — surface it directly.
+                    if case .serverError(let detail) = apiError {
+                        errorMessage = detail
+                    } else {
+                        errorMessage = apiError.userFriendlyMessage
+                    }
                 }
             } catch {
                 await MainActor.run {

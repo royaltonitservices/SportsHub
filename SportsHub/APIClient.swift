@@ -2793,10 +2793,23 @@ extension APIClient {
 
     // MARK: - Password Reset
 
-    /// Request a 6-digit password reset code be sent to the given email.
-    func forgotPassword(email: String) async throws {
+    /// Request a 6-digit password reset code for the given email.
+    /// Returns the backend's delivery mode so the UI can show honest copy:
+    ///   "dev_log"     — dev/beta build; code was printed to the local backend logs
+    ///   "sent"        — a real reset email was sent
+    ///   "unavailable" — email delivery isn't configured yet
+    /// The response is identical for any email (enumeration-safe); nil if the
+    /// field is absent (older backend).
+    @discardableResult
+    func forgotPassword(email: String) async throws -> String? {
         struct ForgotBody: Encodable { let email: String }
-        let _: EmptyResponse = try await post("/auth/forgot-password", body: ForgotBody(email: email))
+        struct ForgotResponse: Decodable {
+            let message: String?
+            let emailDelivery: String?
+            enum CodingKeys: String, CodingKey { case message; case emailDelivery = "email_delivery" }
+        }
+        let response: ForgotResponse = try await post("/auth/forgot-password", body: ForgotBody(email: email))
+        return response.emailDelivery
     }
 
     /// Submit the reset code and new password.

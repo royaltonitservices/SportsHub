@@ -422,30 +422,53 @@ async def forgot_password(
     Send a 6-digit password reset code to the given email.
     Always returns 200 to prevent email enumeration.
     """
+    from email_service import smtp_configured
+
+    # Delivery mode is derived ONLY from build/config — never from whether the
+    # account exists — so the response is identical for any email (no enumeration).
+    #   debug (dev/beta, no SMTP)  → "dev_log": the code is printed to backend logs
+    #   production + SMTP          → "sent":    a real email is (attempted) sent
+    #   production + no SMTP       → "unavailable": nothing sent, nothing leaked
+    debug = _settings.debug
+    if debug:
+        delivery = "dev_log"
+        message = ("If an account exists for that email, the reset code has been printed to the "
+                   "local backend logs (development build).")
+    elif smtp_configured():
+        delivery = "sent"
+        message = "If an account exists for that email, password reset instructions have been sent."
+    else:
+        delivery = "unavailable"
+        message = ("If an account exists for that email, password reset instructions will be sent "
+                   "once email delivery is configured.")
+
     user = db.query(models.User).filter(models.User.email == request.email.lower().strip()).first()
 
     if user:
         now = datetime.utcnow()
 
         # Rate-limit: don't resend within 60 seconds
+        skip_send = False
         if user.reset_code_expires_at:
             resend_cooldown = user.reset_code_expires_at - timedelta(
                 minutes=VERIFICATION_CODE_TTL_MINUTES - 1
             )
             if now < resend_cooldown:
-                # Still within cooldown — return success silently (don't leak timing)
-                return {"message": "If an account exists for that email, a reset code has been sent."}
+                # Still within cooldown — don't mint/send a new code (don't leak timing)
+                skip_send = True
 
-        code = generate_verification_code()
-        user.reset_code_hash = hash_code(code, str(user.id))
-        user.reset_code_expires_at = now + timedelta(minutes=VERIFICATION_CODE_TTL_MINUTES)
-        user.reset_code_used = False
-        db.commit()
+        if not skip_send:
+            code = generate_verification_code()
+            user.reset_code_hash = hash_code(code, str(user.id))
+            user.reset_code_expires_at = now + timedelta(minutes=VERIFICATION_CODE_TTL_MINUTES)
+            user.reset_code_used = False
+            db.commit()
 
-        send_password_reset_email(user.email, code)
+            # expose_dev_code is gated to debug builds so production never logs the code.
+            send_password_reset_email(user.email, code, expose_dev_code=debug)
 
-    # Always return success to prevent email enumeration
-    return {"message": "If an account exists for that email, a reset code has been sent."}
+    # Always return the same mode-based response to prevent email enumeration.
+    return {"message": message, "email_delivery": delivery}
 
 
 @router.post("/reset-password")

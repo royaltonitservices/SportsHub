@@ -23,6 +23,15 @@ VERIFICATION_CODE_TTL_MINUTES = 10
 _DEPLOY_SALT = os.environ.get("VERIFICATION_SECRET_SALT", "sportshub-dev-salt-change-in-production")
 
 
+def smtp_configured() -> bool:
+    """True when real SMTP delivery is configured (host + user + pass all set)."""
+    return bool(
+        os.environ.get("SMTP_HOST")
+        and os.environ.get("SMTP_USER")
+        and os.environ.get("SMTP_PASS")
+    )
+
+
 def generate_verification_code() -> str:
     """Generate a cryptographically random 6-digit numeric code."""
     return f"{secrets.randbelow(1_000_000):06d}"
@@ -104,10 +113,16 @@ def send_verification_code_email(email: str, code: str) -> bool:
     return False
 
 
-def send_password_reset_email(email: str, code: str) -> bool:
+def send_password_reset_email(email: str, code: str, expose_dev_code: bool = False) -> bool:
     """
     Send a password reset code email.
-    Returns True if sent via SMTP, False if console-only (dev mode).
+    Returns True if sent via SMTP, False if not delivered (no SMTP).
+
+    `expose_dev_code` controls the no-SMTP fallback: when True (debug/dev builds
+    only) the code is printed to the server console so a local tester can use it.
+    When False (production) the code is NEVER printed — only a safe warning that
+    delivery did not occur — so a mis-configured production deployment can't leak
+    reset codes into its logs.
     """
     subject = "Reset your SportsHub password"
     body = (
@@ -142,11 +157,18 @@ def send_password_reset_email(email: str, code: str) -> bool:
             print(f"[EMAIL] Password reset code sent to {email} via SMTP")
             return True
         except Exception as e:
-            print(f"[EMAIL] SMTP send failed: {e} — falling back to console")
+            print(f"[EMAIL] SMTP send failed: {e}")
 
-    print("\n" + "=" * 60)
-    print(f"[EMAIL DEV] TO: {email}")
-    print(f"[EMAIL DEV] SUBJECT: {subject}")
-    print(f"[EMAIL DEV] PASSWORD RESET CODE: {code}")
-    print("=" * 60 + "\n")
+    # No SMTP delivery happened.
+    if expose_dev_code:
+        # Dev/debug ONLY — surface the code locally for testing.
+        print("\n" + "=" * 60)
+        print(f"[EMAIL DEV] TO: {email}")
+        print(f"[EMAIL DEV] SUBJECT: {subject}")
+        print(f"[EMAIL DEV] PASSWORD RESET CODE: {code}")
+        print("=" * 60 + "\n")
+    else:
+        # Production with no/failed SMTP — never log the code; warn operators only.
+        print("[EMAIL] Password reset email NOT delivered (SMTP not configured); "
+              "reset code withheld from logs.")
     return False
