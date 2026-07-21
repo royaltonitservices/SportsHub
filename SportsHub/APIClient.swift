@@ -677,6 +677,14 @@ extension APIClient {
     func getTrustScore() async throws -> TrustScoreResponse {
         try await get("/users/me/trust-score")
     }
+
+    /// Permanently delete the current user's own account.
+    /// The backend uses only the authenticated user (no id is sent), removes
+    /// private/owned data, and detaches shared competitive history. On success
+    /// the JWT stops resolving server-side, so the caller must clear its session.
+    func deleteAccount() async throws {
+        let _: MessageResponse = try await delete("/users/me")
+    }
 }
 
 // MARK: - Sports API

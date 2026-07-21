@@ -16,6 +16,10 @@ struct SettingsView: View {
     @State private var showEditDisplayName = false
     @State private var showTrainingProfile = false
 
+    @State private var showDeleteConfirm = false
+    @State private var isDeletingAccount = false
+    @State private var deleteError: String?
+
     var body: some View {
         List {
             Section("Appearance") {
@@ -169,6 +173,26 @@ struct SettingsView: View {
                     }
                 }
             }
+
+            Section {
+                Button(role: .destructive) {
+                    showDeleteConfirm = true
+                } label: {
+                    HStack {
+                        if isDeletingAccount {
+                            ProgressView()
+                        } else {
+                            Image(systemName: "trash.fill")
+                        }
+                        Text("Delete Account")
+                    }
+                }
+                .disabled(isDeletingAccount)
+            } footer: {
+                Text("Permanently deletes your account and personal data. This can't be undone.")
+                    .font(.caption)
+                    .foregroundColor(Color.appTextSecondary)
+            }
         }
         .navigationTitle("Settings")
         .navigationBarTitleDisplayMode(.large)
@@ -177,6 +201,44 @@ struct SettingsView: View {
         }
         .sheet(isPresented: $showEditUsername) {
             EditUsernameSheet(currentUsername: sessionManager.currentUser?.username ?? "")
+        }
+        .alert("Delete Account?", isPresented: $showDeleteConfirm) {
+            Button("Cancel", role: .cancel) { }
+            Button("Delete", role: .destructive) { deleteAccount() }
+        } message: {
+            Text("This permanently deletes your account, profile, training data, posts, clips, and messages. Your match results stay in other players' history but are no longer linked to you. This can't be undone.")
+        }
+        .alert("Couldn't Delete Account", isPresented: Binding(
+            get: { deleteError != nil },
+            set: { if !$0 { deleteError = nil } }
+        )) {
+            Button("OK", role: .cancel) { deleteError = nil }
+        } message: {
+            Text(deleteError ?? "")
+        }
+    }
+
+    /// Delete the account, then clear the session so the app returns to sign-in.
+    /// On failure the user stays logged in and sees a clear error.
+    private func deleteAccount() {
+        guard sessionManager.backendAvailable else {
+            deleteError = "You appear to be offline. Reconnect and try again."
+            return
+        }
+        isDeletingAccount = true
+        deleteError = nil
+        Task {
+            do {
+                try await APIClient.shared.deleteAccount()
+                // Success: clear session/local state → view tree swaps to auth screen.
+                await sessionManager.completeAccountDeletion()
+            } catch {
+                await MainActor.run {
+                    isDeletingAccount = false
+                    deleteError = (error as? APIError)?.userFriendlyMessage
+                        ?? "We couldn't delete your account. Please try again."
+                }
+            }
         }
     }
 }

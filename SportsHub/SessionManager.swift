@@ -271,6 +271,18 @@ class SessionManager: ObservableObject {
         }
     }
 
+    // MARK: - Account Deletion
+
+    /// Called after the backend confirms the account was permanently deleted.
+    /// Clears all session + local state and returns the app to the auth screen.
+    /// Unlike an expiry, this is an intentional deletion, so it does NOT set
+    /// sessionExpiredNotice (the user shouldn't see "your session expired").
+    func completeAccountDeletion() async {
+        authTask?.cancel()
+        authTask = nil
+        await clearSessionCompletely()
+    }
+
     // MARK: - OAuth Support
 
     func updateUserFromOAuth(from response: UserResponse, token: String) {

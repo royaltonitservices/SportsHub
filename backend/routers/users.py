@@ -264,6 +264,42 @@ async def update_bio(
     return {"message": "Bio updated successfully"}
 
 
+@router.delete("/me")
+async def delete_my_account(
+    current_user: models.User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """Permanently delete the current user's own account.
+
+    Uses ONLY the authenticated user — no user_id is accepted from the client,
+    so a user can never delete anyone else. Private/owned data is hard-deleted;
+    shared competitive history is detached to a sentinel so other players'
+    records stay intact. After deletion the caller's JWT stops working (the user
+    row is gone → 401 on the next request), which is the client's signal to
+    clear its session.
+    """
+    # Admins are intentionally out of scope for self-deletion in this foundation:
+    # they anchor moderation/audit records and the seeded operator account.
+    if current_user.role == models.UserRole.ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin accounts cannot be self-deleted."
+        )
+
+    from account_deletion import delete_user_account
+    try:
+        delete_user_account(db, current_user)
+    except Exception:
+        # Never leak internals; the transaction already rolled back so the
+        # account is fully intact and the user stays logged in.
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="We couldn't delete your account. Please try again."
+        )
+
+    return {"message": "Your account has been permanently deleted."}
+
+
 @router.get("/me/trust-score")
 async def get_trust_score(
     current_user: models.User = Depends(get_current_active_user),
