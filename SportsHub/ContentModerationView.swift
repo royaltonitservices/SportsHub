@@ -355,7 +355,13 @@ struct ModerationFlagRowView: View {
     private func resolveFlag(action: String) {
         Task {
             do {
-                let _: MessageResponse = try await APIClient.shared.post("/moderation/flags/\(flag.id)/resolve?action=\(action)", body: nil as String?)
+                // "dismiss" persists a distinct dismissed state via the dedicated
+                // endpoint so the Dismissed filter tab reflects it. Other actions
+                // (e.g. "remove") go through /resolve, which marks the flag resolved.
+                let path = action == "dismiss"
+                    ? "/moderation/flags/\(flag.id)/dismiss"
+                    : "/moderation/flags/\(flag.id)/resolve?action=\(action)"
+                let _: MessageResponse = try await APIClient.shared.post(path, body: nil as String?)
                 onResolved()
             } catch {
                 print("Failed to resolve flag: \(error)")

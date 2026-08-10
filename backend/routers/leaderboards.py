@@ -89,15 +89,20 @@ async def get_ranked_leaderboard(
         if not user:
             continue
 
-        # Calculate stats
+        # Calculate stats — RANKED matches only. This is the ranked (ELO) board,
+        # so its win/loss must not include unranked play. The sibling
+        # /leaderboards/challenges board is the one that intentionally counts
+        # all match types.
         wins = db.query(models.Match).filter(
             models.Match.sport == sport_enum,
+            models.Match.match_type == models.MatchType.RANKED,
             models.Match.winner_id == profile.user_id,
             models.Match.status == "completed"
         ).count()
 
         total_matches = db.query(models.Match).filter(
             models.Match.sport == sport_enum,
+            models.Match.match_type == models.MatchType.RANKED,
             models.Match.status == "completed"
         ).filter(
             (models.Match.player1_id == profile.user_id) |
@@ -309,9 +314,10 @@ async def get_tournaments_leaderboard(
 # MARK: - Helper Functions
 
 def calculate_win_streak(user_id: UUID, sport: models.Sport, db: Session) -> int:
-    """Calculate current win streak"""
+    """Calculate current win streak on the ranked (ELO) board — RANKED matches only."""
     recent_matches = db.query(models.Match).filter(
         models.Match.sport == sport,
+        models.Match.match_type == models.MatchType.RANKED,
         models.Match.status == "completed"
     ).filter(
         (models.Match.player1_id == user_id) | (models.Match.player2_id == user_id)
