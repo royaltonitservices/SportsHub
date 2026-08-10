@@ -38,7 +38,16 @@ ALLOWED_MIME_TYPES = {
     "video/mp4":  ".mp4",
     "video/quicktime": ".mov",
 }
-MAX_FILE_SIZE = 50 * 1024 * 1024  # 50 MB
+# Canonical MIME chosen from the sniffed media kind (see upload_validation).
+_MIME_FOR_KIND = {
+    "jpeg": "image/jpeg",
+    "png":  "image/png",
+    "webp": "image/webp",
+    "gif":  "image/gif",
+    "mp4":  "video/mp4",
+    "mov":  "video/quicktime",
+}
+MAX_FILE_SIZE = 25 * 1024 * 1024  # 25 MB
 
 
 # ---------------------------------------------------------------------------
@@ -57,36 +66,29 @@ async def upload_evidence_file(
     The client then passes upload_id to POST /evidence/upload/{challenge_id}
     to associate the upload with a specific match.
     """
-    # Validate content type
-    content_type = file.content_type or ""
-    if content_type not in ALLOWED_MIME_TYPES:
-        raise HTTPException(
-            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail=f"Unsupported file type '{content_type}'. Allowed: {', '.join(ALLOWED_MIME_TYPES)}",
-        )
+    import upload_validation as uv
 
-    ext = ALLOWED_MIME_TYPES[content_type]
+    # Bounded read + validate by real content (magic bytes), not client MIME.
+    contents = await uv.read_upload_capped(file, MAX_FILE_SIZE, label="Evidence file")
+    kind, ext = uv.validate_media(
+        contents,
+        allowed=uv.IMAGE_KINDS_WITH_GIF | uv.VIDEO_KINDS,
+        max_bytes=MAX_FILE_SIZE,
+        label="Evidence file",
+    )
+    content_type = _MIME_FOR_KIND[kind]
+
     file_id = str(uuid_pkg.uuid4())
     filename = f"{file_id}{ext}"
-    storage_path = os.path.join(EVIDENCE_UPLOAD_DIR, filename)
 
-    # Read file bytes and enforce size limit
-    contents = await file.read()
-    if len(contents) == 0:
+    # Atomic write (temp + rename); leaves no partial file on failure.
+    try:
+        storage_path = uv.save_bytes_atomic(EVIDENCE_UPLOAD_DIR, filename, contents)
+    except OSError:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="File is empty",
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="We couldn't save the evidence file. Please try again.",
         )
-    if len(contents) > MAX_FILE_SIZE:
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail=f"File exceeds maximum size of {MAX_FILE_SIZE // (1024 * 1024)} MB",
-        )
-
-    # Write to disk
-    os.makedirs(EVIDENCE_UPLOAD_DIR, exist_ok=True)
-    with open(storage_path, "wb") as f:
-        f.write(contents)
 
     canonical_url = f"/cdn/evidence/{filename}"
 
@@ -100,8 +102,19 @@ async def upload_evidence_file(
         size_bytes=len(contents),
     )
     db.add(record)
-    db.commit()
-    db.refresh(record)
+    try:
+        db.commit()
+        db.refresh(record)
+    except Exception:
+        # Don't leave an orphan file if the DB write fails.
+        try:
+            os.remove(storage_path)
+        except OSError:
+            pass
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="We couldn't save the evidence file. Please try again.",
+        )
 
     return schemas.EvidenceFileUploadResponse(
         upload_id=str(record.id),

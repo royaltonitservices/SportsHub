@@ -281,29 +281,20 @@ async def upload_clip(
     - description: Optional description
     """
 
-    # Validate file size (max 500 MB)
-    MAX_SIZE = 500 * 1024 * 1024  # 500 MB
-    content = await video.read()
+    import upload_validation as uv
 
-    if len(content) > MAX_SIZE:
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail="Video file too large. Maximum size is 500MB"
-        )
+    # Bounded read (memory-safe up to the 100 MB cap) + content-based validation
+    # (magic bytes). iOS declares "video/mp4" even for QuickTime .mov, so we
+    # decide from the real bytes and store with the canonical detected extension.
+    content = await uv.read_upload_capped(video, 100 * uv.MB, label="Video")
+    _, ext = uv.validate_media(content, allowed=uv.VIDEO_KINDS, max_bytes=100 * uv.MB, label="Video")
 
-    # Validate file type
-    allowed_types = ["video/mp4", "video/quicktime", "video/x-msvideo"]
-    if video.content_type not in allowed_types:
-        raise HTTPException(
-            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail="Invalid video format. Supported: MP4, MOV"
-        )
-
+    video_id = None
     try:
-        # Upload to CDN
+        # Upload to CDN (canonical filename from detected bytes, not client name)
         video_url, video_id, thumbnail_url = await video_cdn.upload_video(
             file_content=content,
-            filename=video.filename,
+            filename=f"clip{ext}",
             user_id=str(current_user.id)
         )
 
@@ -328,8 +319,16 @@ async def upload_clip(
 
         return _build_clip_response(clip, set())
 
-    except Exception as e:
+    except HTTPException:
+        raise
+    except Exception:
+        # Don't leave an orphan video file if DB persistence failed after upload.
+        if video_id:
+            try:
+                await video_cdn.delete_video(video_id)
+            except Exception:
+                pass
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to upload video: {str(e)}"
+            detail="Failed to upload video. Please try again."
         )

@@ -10,6 +10,7 @@ from dependencies import get_current_active_user
 import models
 import schemas
 import os
+import upload_validation as uv
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -223,31 +224,33 @@ async def upload_avatar(
     db: Session = Depends(get_db)
 ):
     """Upload a profile picture for the current user"""
-    MAX_SIZE = 5 * 1024 * 1024  # 5 MB
-    content = await avatar.read()
+    # Bounded read (memory-safe) + content-based validation (magic bytes,
+    # not the client-declared MIME). Canonical extension comes from the bytes.
+    content = await uv.read_upload_capped(avatar, 5 * uv.MB, label="Image")
+    _, ext = uv.validate_media(content, allowed=uv.IMAGE_KINDS, max_bytes=5 * uv.MB, label="Image")
 
-    if len(content) > MAX_SIZE:
+    filename = f"{current_user.id}{ext}"
+    try:
+        save_path = uv.save_bytes_atomic("./uploads/avatars", filename, content)
+    except OSError:
         raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail="Image must be under 5 MB"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="We couldn't save your avatar. Please try again."
         )
-
-    allowed_types = {"image/jpeg", "image/jpg", "image/png", "image/webp"}
-    if avatar.content_type not in allowed_types:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Only JPEG, PNG, and WebP images are supported"
-        )
-
-    ext = avatar.filename.rsplit(".", 1)[-1].lower() if "." in (avatar.filename or "") else "jpg"
-    filename = f"{current_user.id}.{ext}"
-    save_path = os.path.join("./uploads/avatars", filename)
-
-    with open(save_path, "wb") as f:
-        f.write(content)
 
     current_user.avatar_url = f"/cdn/avatars/{filename}"
-    db.commit()
+    try:
+        db.commit()
+    except Exception:
+        # Don't leave an orphan file if the DB update fails.
+        try:
+            os.remove(save_path)
+        except OSError:
+            pass
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="We couldn't save your avatar. Please try again."
+        )
 
     return {"avatar_url": current_user.avatar_url}
 

@@ -21,32 +21,23 @@ async def upload_highlight_media(
     media: UploadFile = File(...),
     current_user: models.User = Depends(get_current_active_user)
 ):
-    """Upload media for a highlight (image up to 50MB, or short video)"""
-    MAX_SIZE = 50 * 1024 * 1024
-    content = await media.read()
+    """Upload media for a highlight (image or short MP4/MOV video, up to 50 MB)"""
+    import upload_validation as uv
 
-    if len(content) > MAX_SIZE:
+    # Bounded read + content-based validation (accepts real images + MP4/MOV).
+    content = await uv.read_upload_capped(media, 50 * uv.MB, label="Media")
+    _, ext = uv.validate_media(
+        content, allowed=uv.IMAGE_KINDS | uv.VIDEO_KINDS, max_bytes=50 * uv.MB, label="Media"
+    )
+
+    filename = f"{uuid_pkg.uuid4()}{ext}"
+    try:
+        uv.save_bytes_atomic("./uploads/highlights", filename, content)
+    except OSError:
         raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail="Media must be under 50MB"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="We couldn't save your highlight. Please try again."
         )
-
-    allowed_types = {
-        "image/jpeg", "image/jpg", "image/png", "image/webp",
-        "video/mp4", "video/quicktime"
-    }
-    if media.content_type not in allowed_types:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Only JPEG, PNG, WebP images and MP4/MOV videos are supported"
-        )
-
-    ext = media.filename.rsplit(".", 1)[-1].lower() if "." in (media.filename or "") else "jpg"
-    filename = f"{uuid_pkg.uuid4()}.{ext}"
-    save_path = os.path.join("./uploads/highlights", filename)
-
-    with open(save_path, "wb") as f:
-        f.write(content)
 
     return {"media_url": f"/cdn/highlights/{filename}"}
 

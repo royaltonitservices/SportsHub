@@ -53,9 +53,20 @@ class VideoCDNService:
         stored_filename = f"{video_id}{ext}"
         file_path = self.storage_path / stored_filename
 
-        # Save file locally (development)
-        async with aiofiles.open(file_path, 'wb') as f:
-            await f.write(file_content)
+        # Save file locally (development) — write to a temp path and rename into
+        # place so a failed/partial write never leaves a usable-looking file.
+        tmp_path = self.storage_path / f".{video_id}.part"
+        try:
+            async with aiofiles.open(tmp_path, 'wb') as f:
+                await f.write(file_content)
+            os.replace(tmp_path, file_path)
+        except Exception:
+            try:
+                if tmp_path.exists():
+                    tmp_path.unlink()
+            except OSError:
+                pass
+            raise
 
         # Generate URLs
         if self.cdn_enabled:
