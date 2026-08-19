@@ -22,7 +22,27 @@ struct ResultSubmissionView: View {
     @State private var evidenceRequirement: EvidenceRequirementResponse?
     @State private var showEvidenceUpload = false
     @State private var isCheckingRequirement = true
-    
+
+    // This screen is reached by BOTH the challenger and the opponent, so "I Won"
+    // must map to whoever is *currently* viewing — not always the challenger.
+    // Role is resolved case-insensitively (Swift UUID.uuidString is uppercase;
+    // backend IDs are lowercase).
+    private var amChallenger: Bool {
+        SessionManager.shared.isCurrentUser(challenge.challengerId)
+    }
+    private var myId: String { amChallenger ? challenge.challengerId : challenge.opponentId }
+    private var theirId: String { amChallenger ? challenge.opponentId : challenge.challengerId }
+    private var opponentName: String {
+        let display = amChallenger ? challenge.opponentDisplayName : challenge.challengerDisplayName
+        let username = amChallenger ? challenge.opponentUsername : challenge.challengerUsername
+        if let d = display, !d.isEmpty { return d }
+        if let u = username, !u.isEmpty { return u }
+        return "Opponent"
+    }
+    private var myName: String {
+        SessionManager.shared.currentUser?.displayName ?? "You"
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -100,25 +120,25 @@ struct ResultSubmissionView: View {
                     Text("You")
                         .font(.caption)
                         .foregroundStyle(Color.appTextSecondary)
-                    Text("Player 1")
+                    Text(myName)
                         .font(.subheadline)
                         .fontWeight(.medium)
                         .foregroundStyle(Color.appTextPrimary)
                 }
-                
+
                 Spacer()
-                
+
                 Text("vs")
                     .font(.headline)
                     .foregroundStyle(Color.appTextSecondary)
-                
+
                 Spacer()
-                
+
                 VStack(alignment: .trailing, spacing: 4) {
                     Text("Opponent")
                         .font(.caption)
                         .foregroundStyle(Color.appTextSecondary)
-                    Text("Player 2")
+                    Text(opponentName)
                         .font(.subheadline)
                         .fontWeight(.medium)
                         .foregroundStyle(Color.appTextPrimary)
@@ -140,8 +160,8 @@ struct ResultSubmissionView: View {
             }
             
             VStack(spacing: Spacing.sm) {
-                winnerButton(id: challenge.challengerId, label: "I Won", icon: "checkmark.circle.fill")
-                winnerButton(id: challenge.opponentId, label: "Opponent Won", icon: "xmark.circle.fill")
+                winnerButton(id: myId, label: "I Won", icon: "checkmark.circle.fill")
+                winnerButton(id: theirId, label: "Opponent Won", icon: "xmark.circle.fill")
             }
         }
         .padding(Spacing.md)
@@ -342,9 +362,11 @@ struct ResultSubmissionView: View {
             // "disputed" states, suppress the alert because no rating change
             // applies yet — surfacing a +15/-10 placeholder would be a lie.
             if response.status == "completed" {
-                let currentUserId = SessionManager.shared.currentUser?.id.uuidString ?? ""
-                let currentUserWon = !currentUserId.isEmpty && selectedWinner == currentUserId
-                let myDelta = currentUserId == challenge.challengerId
+                // selectedWinner and myId are both backend-style IDs, so this
+                // comparison is casing-safe (unlike comparing against the
+                // uppercase UUID.uuidString directly). Delta is chosen by role.
+                let currentUserWon = (selectedWinner == myId)
+                let myDelta = amChallenger
                     ? response.challengerRatingChange
                     : response.opponentRatingChange
                 NotificationManager.shared.scheduleResultNotification(
