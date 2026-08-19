@@ -614,21 +614,45 @@ async def get_leaderboard(
     users = db.query(models.User).filter(models.User.id.in_(user_ids)).all()
     user_dict = {u.id: u for u in users}
 
-    # Build leaderboard entries
+    # Ranked win/loss comes from canonical RANKED Match rows — NOT SportProfile's
+    # lifetime wins/losses (which also count unranked play). This is the ranked/ELO
+    # board, so its record must reflect only ranked results. Disputed/reversed
+    # results are already excluded because dispute-reverse deletes the Match row.
+    # One query for the whole sport, aggregated in memory — no per-player N+1.
+    ranked_wl: dict = {}  # user_id -> [wins, games]
+    ranked_matches = db.query(models.Match).filter(
+        and_(
+            models.Match.sport == sport,
+            models.Match.match_type == models.MatchType.RANKED,
+            models.Match.status == "completed",
+        )
+    ).all()
+    for m in ranked_matches:
+        for pid in (m.player1_id, m.player2_id):
+            rec = ranked_wl.setdefault(pid, [0, 0])
+            rec[1] += 1
+            if m.winner_id == pid:
+                rec[0] += 1
+
+    # Build leaderboard entries (ordering by ranked ELO is preserved above).
     leaderboard = []
-    for profile in profiles:
+    for rank, profile in enumerate(profiles, start=1):
         user = user_dict.get(profile.user_id)
         if user:
-            win_rate = (profile.wins / profile.games_played * 100) if profile.games_played > 0 else 0
+            wins, games = ranked_wl.get(profile.user_id, [0, 0])
+            losses = games - wins
+            win_rate = (wins / games * 100) if games > 0 else 0
             leaderboard.append(schemas.LeaderboardEntry(
+                rank=rank,
                 user_id=user.id,
                 username=user.username,
                 display_name=user.display_name,
+                full_name=user.display_name,
                 rating=profile.rating,
                 rank_tier=profile.rank_tier,
-                games_played=profile.games_played,
-                wins=profile.wins,
-                losses=profile.losses,
+                games_played=games,
+                wins=wins,
+                losses=losses,
                 win_rate=round(win_rate, 1)
             ))
 

@@ -453,15 +453,17 @@ class SearchQuery(BaseModel):
 
 # Leaderboard Schema
 class LeaderboardEntry(BaseModel):
+    rank: int
     user_id: UUID
     username: str
     display_name: str
+    full_name: str
     rating: int
     rank_tier: str
-    games_played: int
-    wins: int
-    losses: int
-    win_rate: float
+    games_played: int   # ranked games only — this is the ranked (ELO) board
+    wins: int           # ranked wins only
+    losses: int         # ranked losses only
+    win_rate: float     # ranked win rate
 
     class Config:
         from_attributes = True
