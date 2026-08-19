@@ -162,44 +162,23 @@ async def resolve_dispute(
     ).first()
 
     if resolution == "reverse":
-        # Reverse the match result
-        # Get sport profiles
-        challenger_profile = db.query(models.SportProfile).filter(
-            models.SportProfile.user_id == challenge.challenger_id,
-            models.SportProfile.sport == challenge.sport
-        ).first()
+        # Undo the applied competitive result exactly once. The helper is a no-op
+        # when no Match row exists (e.g. a score-mismatch dispute that never
+        # completed), so we never subtract W/L or ELO that was never applied — the
+        # root cause of the previous negative-stats / None-rating crash. It also
+        # deletes the Match so Challenge and Match agree and leaderboards stop
+        # counting the reversed result. Single source of truth: the Match row.
+        from routers.matchmaking import _reverse_competitive_result_once
+        _reverse_competitive_result_once(db, challenge)
 
-        opponent_profile = db.query(models.SportProfile).filter(
-            models.SportProfile.user_id == challenge.opponent_id,
-            models.SportProfile.sport == challenge.sport
-        ).first()
-
-        # Reverse ratings if it was a ranked match
-        if challenge.match_type == models.MatchType.RANKED:
-            challenger_profile.rating = challenge.challenger_rating_before
-            opponent_profile.rating = challenge.opponent_rating_before
-
-            # Update rank tiers
-            from elo_service import EloService
-            challenger_profile.rank_tier = EloService.calculate_rank_tier(challenger_profile.rating)
-            opponent_profile.rank_tier = EloService.calculate_rank_tier(opponent_profile.rating)
-
-        # Reverse win/loss statistics
-        old_winner_id = challenge.winner_id
-
-        if old_winner_id == challenge.challenger_id:
-            challenger_profile.wins -= 1
-            opponent_profile.losses -= 1
-        else:
-            opponent_profile.wins -= 1
-            challenger_profile.losses -= 1
-
-        # Mark challenge as resolved (no winner)
+        # No standing result after a reversal.
         challenge.winner_id = None
         challenge.status = models.ChallengeStatus.COMPLETED
 
     elif resolution == "uphold":
-        # Keep original result
+        # The existing result stands unchanged — including its canonical Match row
+        # if one exists. A mismatch-origin dispute has no agreed result, so uphold
+        # does NOT fabricate a winner/Match; it simply closes the dispute.
         challenge.status = models.ChallengeStatus.COMPLETED
     else:
         raise HTTPException(

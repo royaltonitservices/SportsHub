@@ -79,6 +79,75 @@ def _create_match_for_completed_challenge(db: Session, challenge: "models.Challe
     db.add(match)
 
 
+def _reverse_competitive_result_once(db: Session, challenge: "models.Challenge") -> bool:
+    """Undo the competitive effects of a completed challenge — exactly once.
+
+    The Match row is the single source of truth for "a result was applied": if no
+    Match exists (e.g. a score-mismatch dispute that never completed), nothing was
+    ever applied, so this is a no-op returning False. This is what prevents the old
+    dispute-reverse bug where W/L was decremented (→ negative) and ranked rating was
+    set to the never-recorded `challenger_rating_before` (None → crash).
+
+    When a Match exists, every field below was incremented exactly once at
+    application time, so a plain decrement is the exact inverse (no max()/clamp
+    needed — the Match guard is the correctness mechanism). ELO is restored from the
+    Match's recorded pre-match ratings, which is exact. Provisional state is
+    recomputed from the (decremented) provisional_games count, matching the forward
+    rule. The Match row is deleted so Challenge and Match agree (no standing result)
+    and Match-backed leaderboards stop counting it.
+
+    NOT inverted (the data model keeps no history to do so exactly): current_streak,
+    best_streak, trust_score. Documented limitation — these are not scoreboard/ELO
+    integrity fields.
+    """
+    match = db.query(models.Match).filter(
+        models.Match.challenge_id == challenge.id
+    ).first()
+    if match is None:
+        return False  # nothing was applied — do not touch any stats
+
+    cp = db.query(models.SportProfile).filter(
+        and_(models.SportProfile.user_id == challenge.challenger_id,
+             models.SportProfile.sport == challenge.sport)
+    ).first()
+    op = db.query(models.SportProfile).filter(
+        and_(models.SportProfile.user_id == challenge.opponent_id,
+             models.SportProfile.sport == challenge.sport)
+    ).first()
+    if cp is None or op is None:
+        return False
+
+    # Win/loss — undo based on the Match's recorded winner (the applied result).
+    if match.winner_id == challenge.challenger_id:
+        cp.wins -= 1
+        op.losses -= 1
+    elif match.winner_id == challenge.opponent_id:
+        op.wins -= 1
+        cp.losses -= 1
+    cp.games_played -= 1
+    op.games_played -= 1
+    cp.matches_completed -= 1
+    op.matches_completed -= 1
+
+    # ELO / ranked-only counters — restore exactly from the Match record.
+    if challenge.match_type == models.MatchType.RANKED:
+        if match.player1_elo_before is not None:
+            cp.rating = match.player1_elo_before
+        if match.player2_elo_before is not None:
+            op.rating = match.player2_elo_before
+        cp.rank_tier = EloService.calculate_rank_tier(cp.rating)
+        op.rank_tier = EloService.calculate_rank_tier(op.rating)
+        cp.ranked_games_played -= 1
+        op.ranked_games_played -= 1
+        cp.provisional_games -= 1
+        op.provisional_games -= 1
+        cp.is_provisional = cp.provisional_games < EloService.PROVISIONAL_GAMES_THRESHOLD
+        op.is_provisional = op.provisional_games < EloService.PROVISIONAL_GAMES_THRESHOLD
+
+    db.delete(match)
+    return True
+
+
 @router.post("/find-opponents", response_model=List[schemas.UserProfile])
 async def find_opponents(
     request: schemas.MatchmakingRequest,
