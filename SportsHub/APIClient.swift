@@ -909,6 +909,22 @@ extension APIClient {
         try await get("/friends/blocked")
     }
 
+    // Content moderation
+    /// Report a piece of content (post / clip / user) for moderation.
+    /// The backend binds content_type / content_id / reason as QUERY parameters
+    /// (not a JSON body), so they are sent in the query string with no body.
+    @discardableResult
+    func reportContent(contentType: String, contentId: String, reason: String) async throws -> MessageResponse {
+        var components = URLComponents()
+        components.queryItems = [
+            URLQueryItem(name: "content_type", value: contentType),
+            URLQueryItem(name: "content_id", value: contentId),
+            URLQueryItem(name: "reason", value: reason)
+        ]
+        let query = components.percentEncodedQuery ?? ""
+        return try await request("/moderation/report?\(query)", method: .POST)
+    }
+
     // Friend status
     func getFriendStatus(userId: String) async throws -> FriendStatusResponse {
         try await get("/friends/status/\(userId)")

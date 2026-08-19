@@ -14,7 +14,13 @@ struct PostDetailView: View {
     @State private var isPostingComment = false
     @State private var replyingTo: CommentResponse?
     @State private var showReactions = false
+    @State private var showReport = false
     @FocusState private var isCommentFocused: Bool
+
+    // A user can report someone else's post, never their own.
+    private var isOwnPost: Bool {
+        sessionManager.isCurrentUser(post.userId)
+    }
     
     var body: some View {
         NavigationStack {
@@ -57,9 +63,30 @@ struct PostDetailView: View {
                     }
                     .foregroundStyle(Color.appTextSecondary)
                 }
+                if !isOwnPost {
+                    ToolbarItem(placement: .primaryAction) {
+                        Menu {
+                            Button(role: .destructive) {
+                                showReport = true
+                            } label: {
+                                Label("Report Post", systemImage: "flag")
+                            }
+                        } label: {
+                            Image(systemName: "ellipsis.circle")
+                                .foregroundStyle(Color.appTextSecondary)
+                        }
+                    }
+                }
             }
             .safeAreaInset(edge: .bottom) {
                 commentInputBar
+            }
+            .sheet(isPresented: $showReport) {
+                ReportContentView(
+                    contentType: "post",
+                    contentId: post.id,
+                    contentPreview: post.content
+                )
             }
             .task {
                 await loadComments()

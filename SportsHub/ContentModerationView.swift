@@ -179,13 +179,13 @@ struct ReportContentView: View {
             do {
                 let finalReason = reason == .other && !customReason.isEmpty ? customReason : reason.rawValue
 
-                let params = [
-                    "content_type": contentType,
-                    "content_id": contentId,
-                    "reason": finalReason
-                ]
-
-                let _: MessageResponse = try await APIClient.shared.post("/moderation/report", body: params)
+                // Backend binds these as query params, not a JSON body (verified live:
+                // a JSON body returns 422). APIClient.reportContent sends them correctly.
+                try await APIClient.shared.reportContent(
+                    contentType: contentType,
+                    contentId: contentId,
+                    reason: finalReason
+                )
 
                 showingSuccess = true
             } catch {

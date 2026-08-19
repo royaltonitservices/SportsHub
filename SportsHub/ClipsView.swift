@@ -214,7 +214,13 @@ struct ClipCard: View {
     @State private var player: AVPlayer?
     @State private var playerLoadFailed = false
     @State private var isLoadingVideo = false
-    
+    @State private var showReport = false
+
+    // A user can report someone else's clip, never their own.
+    private var isOwnClip: Bool {
+        SessionManager.shared.isCurrentUser(clip.userId)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
             // Video player
@@ -313,12 +319,32 @@ struct ClipCard: View {
                             .foregroundStyle(Color.appTextSecondary)
                     }
                 }
-                
+
                 Spacer()
+
+                if !isOwnClip {
+                    Menu {
+                        Button(role: .destructive) {
+                            showReport = true
+                        } label: {
+                            Label("Report Clip", systemImage: "flag")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                            .foregroundStyle(Color.appTextSecondary)
+                    }
+                }
             }
         }
         .padding(Spacing.sm)
         .cardBackground()
+        .sheet(isPresented: $showReport) {
+            ReportContentView(
+                contentType: "clip",
+                contentId: clip.id,
+                contentPreview: clip.title
+            )
+        }
         .onDisappear {
             player?.pause()
             player = nil

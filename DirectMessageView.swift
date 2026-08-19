@@ -18,7 +18,14 @@ struct DirectMessageView: View {
     @State private var isLoading = false
     @State private var isSending = false
     @State private var errorMessage: String?
+    @State private var showReport = false
     @FocusState private var isTextFieldFocused: Bool
+
+    // You can report the person you're messaging, never yourself. (Messaging is
+    // friends-only, so this is the primary user-level abuse surface.)
+    private var isOwnUser: Bool {
+        sessionManager.isCurrentUser(friendId)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -39,6 +46,29 @@ struct DirectMessageView: View {
         }
         .navigationTitle(friendDisplayName)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if !isOwnUser {
+                ToolbarItem(placement: .primaryAction) {
+                    Menu {
+                        Button(role: .destructive) {
+                            showReport = true
+                        } label: {
+                            Label("Report User", systemImage: "flag")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                            .foregroundStyle(Color.appTextSecondary)
+                    }
+                }
+            }
+        }
+        .sheet(isPresented: $showReport) {
+            ReportContentView(
+                contentType: "user",
+                contentId: friendId,
+                contentPreview: "@\(friendUsername)"
+            )
+        }
         .task {
             loadMessages()
         }

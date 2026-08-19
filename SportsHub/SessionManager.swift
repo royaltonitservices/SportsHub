@@ -570,6 +570,20 @@ class SessionManager: ObservableObject {
     }
 }
 
+// MARK: - Identity Helpers
+
+extension SessionManager {
+    /// True when `id` refers to the signed-in user. Compares case-insensitively
+    /// because Swift's `UUID.uuidString` is uppercase while the backend serialises
+    /// IDs in lowercase — a naive `==` would wrongly treat your own content as
+    /// someone else's (and expose self-report). Single source of truth for the
+    /// ownership/self-report check used by content report guards.
+    func isCurrentUser(_ id: String?) -> Bool {
+        guard let id, let me = currentUser?.id.uuidString else { return false }
+        return id.caseInsensitiveCompare(me) == .orderedSame
+    }
+}
+
 // MARK: - User Model
 
 struct User: Identifiable, Codable, Equatable {
