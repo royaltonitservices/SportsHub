@@ -63,6 +63,18 @@ async def root():
 async def health_check():
     return {"status": "healthy"}
 
+
+@app.get("/config/public")
+async def public_config():
+    """Non-sensitive, unauthenticated client configuration.
+
+    `sample_data_environment` is config-driven (SAMPLE_DATA_ENVIRONMENT env var) and
+    defaults to false, so production never advertises sample data and the client
+    disclosure is NEVER inferred from seed usernames/IDs.
+    """
+    from config import get_settings
+    return {"sample_data_environment": get_settings().sample_data_environment}
+
 # Import routers
 from routers import (
     auth, users, sports, friends, messages, challenges, posts, clips,

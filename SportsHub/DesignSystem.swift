@@ -174,3 +174,30 @@ struct AvatarView: View {
         .frame(width: size, height: size)
     }
 }
+
+// MARK: - Sample Data Disclosure
+
+/// A lightweight, non-intrusive banner shown on community surfaces ONLY when the
+/// server reports a synthetic/demo environment (SessionManager.sampleDataEnvironment).
+/// Absent in production. Config-driven — never inferred from seeded usernames/IDs.
+struct SampleDataBanner: View {
+    var body: some View {
+        HStack(spacing: Spacing.sm) {
+            Image(systemName: "info.circle.fill")
+                .foregroundStyle(Color.appSecondary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Sample community data")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color.appTextPrimary)
+                Text("Activity shown in this environment is for testing and demonstration.")
+                    .font(.caption2)
+                    .foregroundStyle(Color.appTextSecondary)
+            }
+            Spacer()
+        }
+        .padding(Spacing.sm)
+        .background(Color.appSecondary.opacity(0.1))
+        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.sm))
+        .accessibilityElement(children: .combine)
+    }
+}

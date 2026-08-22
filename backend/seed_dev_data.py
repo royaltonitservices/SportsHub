@@ -249,7 +249,106 @@ def reset_seed_data(cur: sqlite3.Cursor) -> None:
 # Main
 # ---------------------------------------------------------------------------
 
-def run_seed(dry_run: bool = False, reset: bool = False) -> None:
+# Ranked/provisional threshold — mirrors EloService.PROVISIONAL_GAMES_THRESHOLD.
+PROVISIONAL_GAMES_THRESHOLD = 10
+
+# Every user the seed touches; ranked counters for these are DERIVED from Match rows.
+ALL_SEED_USER_IDS = [
+    TEST_USER_ID, SAM_ID, MAYA_ID, JJ_ID,
+    RJ_ID, DALE_ID, SASHA_ID, LEO_ID, KAI_ID, PRIYA_ID,
+]
+
+# Only these environments may ever hold synthetic community data. "production",
+# unset, or anything unknown is refused (fail-closed). "staging" is intentionally
+# NOT allowed — a production-like staging must be able to mirror prod without a
+# fake community; a synthetic showcase must set APP_ENV=demo explicitly.
+_ALLOWED_SEED_ENVS = {"development", "demo"}
+
+
+def _is_truthy(v: str) -> bool:
+    return v.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _demo_env_guard(confirm_demo_data: bool) -> tuple[bool, str]:
+    """Fail-closed gate for writing synthetic data. Returns (allowed, reason).
+
+    Requires ALL THREE so synthetic community data can NEVER be seeded in an
+    environment that does not also DISCLOSE it (SAMPLE_DATA_ENVIRONMENT drives the
+    /config/public banner). This makes seed authorization and the sample-data
+    disclosure impossible to drift apart:
+      1. APP_ENV in {development, demo}
+      2. SAMPLE_DATA_ENVIRONMENT truthy   (same flag that turns the banner on)
+      3. --confirm-demo-data
+    """
+    env = os.environ.get("APP_ENV", "").strip().lower()
+    if env not in _ALLOWED_SEED_ENVS:
+        return False, (
+            f"APP_ENV={env!r} is not an allowed synthetic-data environment "
+            f"(allowed: {sorted(_ALLOWED_SEED_ENVS)}). Refusing to seed."
+        )
+    if not _is_truthy(os.environ.get("SAMPLE_DATA_ENVIRONMENT", "")):
+        return False, (
+            "SAMPLE_DATA_ENVIRONMENT is not enabled. Refusing to seed synthetic "
+            "data into an environment that would not disclose it. "
+            "Set SAMPLE_DATA_ENVIRONMENT=true (this also drives the sample-data banner)."
+        )
+    if not confirm_demo_data:
+        return False, (
+            "Refusing to seed without explicit confirmation. Re-run with --confirm-demo-data."
+        )
+    return True, f"APP_ENV={env} + SAMPLE_DATA_ENVIRONMENT=true + --confirm-demo-data"
+
+
+def reconcile_ranked_counters(cur: sqlite3.Cursor, dry_run: bool) -> int:
+    """SINGLE SOURCE OF TRUTH: derive every seeded SportProfile's counters from
+    canonical completed Match rows, MIRRORING production semantics (see
+    routers/matchmaking.submit_match_result):
+
+      RANKED-only  (incremented only inside the `if match_type == RANKED` branch):
+        ranked_games_played, provisional_games, is_provisional
+      LIFETIME     (incremented for EVERY completed match, ranked OR unranked):
+        games_played, wins, losses, matches_completed
+
+    No independently hardcoded stats survive → eliminates drift (Group G Option A).
+    """
+    updated = 0
+    for uid in ALL_SEED_USER_IDS:
+        for (sport,) in cur.execute(
+            "SELECT sport FROM sport_profiles WHERE user_id = ?", (uid,)
+        ).fetchall():
+            # LIFETIME — all completed matches of any match_type.
+            life_games = cur.execute(
+                "SELECT COUNT(*) FROM matches WHERE (player1_id=? OR player2_id=?) "
+                "AND sport=? AND status='completed'", (uid, uid, sport),
+            ).fetchone()[0]
+            life_wins = cur.execute(
+                "SELECT COUNT(*) FROM matches WHERE winner_id=? AND sport=? "
+                "AND status='completed'", (uid, sport),
+            ).fetchone()[0]
+            life_losses = life_games - life_wins
+            # RANKED-only — competitive eligibility + provisional state.
+            ranked_games = cur.execute(
+                "SELECT COUNT(*) FROM matches WHERE (player1_id=? OR player2_id=?) "
+                "AND sport=? AND match_type='RANKED' AND status='completed'",
+                (uid, uid, sport),
+            ).fetchone()[0]
+            is_provisional = 1 if ranked_games < PROVISIONAL_GAMES_THRESHOLD else 0
+            print(f"  RECONCILE {uid[:8]}... {sport}: ranked={ranked_games} "
+                  f"lifetime={life_games} W/L={life_wins}/{life_losses} provisional={is_provisional}")
+            if not dry_run:
+                cur.execute(
+                    "UPDATE sport_profiles SET ranked_games_played=?, provisional_games=?, "
+                    "games_played=?, wins=?, losses=?, matches_completed=?, is_provisional=? "
+                    "WHERE user_id=? AND sport=?",
+                    (ranked_games, ranked_games, life_games, life_wins, life_losses,
+                     life_games, is_provisional, uid, sport),
+                )
+                updated += 1
+    return updated
+
+
+def run_seed(dry_run: bool = False, reset: bool = False,
+             confirm_demo_data: bool = False) -> None:
     print("=" * 60)
     print("SportsHub — Dev Seed Data  (LOCAL / DEV ONLY)")
     if dry_run:
@@ -259,6 +358,15 @@ def run_seed(dry_run: bool = False, reset: bool = False) -> None:
     else:
         print("Mode: IDEMPOTENT ADD — skips rows that already exist")
     print("=" * 60)
+
+    # Fail-closed environment guard — any write requires an allowed synthetic-data
+    # environment AND explicit confirmation. Dry-run may preview without writing.
+    if not dry_run:
+        allowed, reason = _demo_env_guard(confirm_demo_data)
+        if not allowed:
+            print(f"\nREFUSED: {reason}")
+            return
+        print(f"\n  Seed guard OK: {reason}")
 
     db_path = get_sqlite_path(DATABASE_URL)
     if not os.path.exists(db_path):
@@ -330,14 +438,15 @@ def run_seed(dry_run: bool = False, reset: bool = False) -> None:
     )
     if cur.fetchone():
         if not dry_run:
+            # Ranked counters (games/wins/losses/provisional) are DERIVED later by
+            # reconcile_ranked_counters — never hardcoded (Group G single source of truth).
             cur.execute("""
                 UPDATE sport_profiles
-                SET rating=1542, games_played=8, wins=5, losses=3,
-                    is_provisional=0, rank_tier='silver', matches_completed=8,
+                SET rating=1542, rank_tier='silver',
                     trust_score=96.0, trust_tier='trusted'
                 WHERE user_id = ? AND sport = 'BASKETBALL'
             """, (TEST_USER_ID,))
-        print("  UPDATE ak_hooper BASKETBALL → rating=1542, non-provisional")
+        print("  UPDATE ak_hooper BASKETBALL → rating=1542 (counters derived from Matches)")
     else:
         print("  WARN   ak_hooper basketball profile not found — skipping update")
 
@@ -358,7 +467,7 @@ def run_seed(dry_run: bool = False, reset: bool = False) -> None:
                          wins, losses, is_provisional, rank_tier, matches_completed,
                          trust_score, trust_tier)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 95.0, 'trusted')
-                """, (str(uuid_mod.uuid4()), uid, sport, rating, gp, gp, wins, losses, tier, gp))
+                """, (str(uuid_mod.uuid4()), uid, sport, rating, 0, 0, 0, 0, tier, 0))  # ranked counters derived by reconcile_ranked_counters
             add(f"sport_profile {uid[:8]}... {sport} rating={rating}", dry_run)
 
     # -----------------------------------------------------------------------
@@ -456,8 +565,8 @@ def run_seed(dry_run: bool = False, reset: bool = False) -> None:
     posts = [
         (
             POST_IDS[0], SAM_ID, "BASKETBALL",
-            "Just hit a 38-point game in pickup. New personal best — "
-            "fingers crossed the improvement sticks for the rated matches.",
+            "Sample post: working on finishing through contact at the rim. "
+            "What drills help you stay balanced on layups?",
             -4
         ),
         (
@@ -468,8 +577,8 @@ def run_seed(dry_run: bool = False, reset: bool = False) -> None:
         ),
         (
             POST_IDS[2], JJ_ID, "BASKETBALL",
-            "First week grinding ratings on SportsHub. Lost two, won two. "
-            "1395 and climbing.",
+            "Sample post: how do you warm up your handle before a session? "
+            "Looking for a quick routine.",
             -1
         ),
     ]
@@ -600,7 +709,7 @@ def run_seed(dry_run: bool = False, reset: bool = False) -> None:
                          wins, losses, is_provisional, rank_tier, matches_completed,
                          trust_score, trust_tier)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 94.0, 'trusted')
-                """, (str(uuid_mod.uuid4()), uid, sport, rating, gp, gp, wins, losses, tier, gp))
+                """, (str(uuid_mod.uuid4()), uid, sport, rating, 0, 0, 0, 0, tier, 0))  # ranked counters derived by reconcile_ranked_counters
             add(f"sport_profile {uid[:8]}... {sport} rating={rating}", dry_run)
 
     # -----------------------------------------------------------------------
@@ -624,7 +733,7 @@ def run_seed(dry_run: bool = False, reset: bool = False) -> None:
                          wins, losses, is_provisional, rank_tier, matches_completed,
                          trust_score, trust_tier)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 96.0, 'trusted')
-                """, (str(uuid_mod.uuid4()), TEST_USER_ID, sport, rating, gp, gp, wins, losses, tier, gp))
+                """, (str(uuid_mod.uuid4()), TEST_USER_ID, sport, rating, 0, 0, 0, 0, tier, 0))  # ranked counters derived by reconcile_ranked_counters
             add(f"test user {sport} profile rating={rating}", dry_run)
 
     # -----------------------------------------------------------------------
@@ -821,6 +930,12 @@ def run_seed(dry_run: bool = False, reset: bool = False) -> None:
             add(f"clip {cid[:8]}... {sport} '{title}' (no video_url)", dry_run)
 
     # -----------------------------------------------------------------------
+    # Reconcile ranked counters from canonical Match rows (single source of truth)
+    # -----------------------------------------------------------------------
+    print("\n[reconcile] Deriving seeded ranked counters from canonical Match rows")
+    reconcile_ranked_counters(cur, dry_run)
+
+    # -----------------------------------------------------------------------
     # Commit
     # -----------------------------------------------------------------------
     if not dry_run:
@@ -852,5 +967,8 @@ if __name__ == "__main__":
                         help="Preview changes without writing to DB")
     parser.add_argument("--reset", action="store_true",
                         help="Remove all seed data before seeding (DESTRUCTIVE)")
+    parser.add_argument("--confirm-demo-data", action="store_true",
+                        help="Required to write synthetic data (fail-closed with APP_ENV=development|demo)")
     args = parser.parse_args()
-    run_seed(dry_run=args.dry_run, reset=args.reset)
+    run_seed(dry_run=args.dry_run, reset=args.reset,
+             confirm_demo_data=args.confirm_demo_data)

@@ -43,6 +43,12 @@ class SessionManager: ObservableObject {
     /// Updated by checkBackendHealth() — called on launch, session restore, and foreground.
     @Published private(set) var backendAvailable: Bool = true
 
+    /// Server-config-driven (GET /config/public). When true, community surfaces show a
+    /// "Sample community data" disclosure. Defaults false and stays false on any error,
+    /// so production (and any unreachable/misconfigured server) never shows it. NEVER
+    /// inferred from seed usernames/IDs.
+    @Published private(set) var sampleDataEnvironment: Bool = false
+
     // MARK: - Private State
 
     private let apiClient = APIClient.shared
@@ -150,6 +156,14 @@ class SessionManager: ObservableObject {
         let reachable = await APIClient.shared.isBackendReachable()
         if reachable != backendAvailable {
             backendAvailable = reachable
+        }
+        // Refresh the sample-data disclosure flag from server config. Best-effort:
+        // any failure leaves it false, so production/unreachable never shows the banner.
+        if reachable {
+            let flag = (try? await APIClient.shared.getPublicConfig())?.sampleDataEnvironment ?? false
+            if flag != sampleDataEnvironment {
+                sampleDataEnvironment = flag
+            }
         }
     }
 

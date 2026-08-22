@@ -503,6 +503,13 @@ class APIClient {
         }
     }
 
+    /// Non-sensitive public config (unauthenticated). `sampleDataEnvironment` is
+    /// config-driven on the server (false in production) — the client shows a
+    /// "Sample community data" disclosure only when it is true.
+    func getPublicConfig() async throws -> PublicConfigResponse {
+        try await get("/config/public", requiresAuth: false)
+    }
+
     // MARK: - Convenience Methods
     func get<T: Decodable>(_ endpoint: String, requiresAuth: Bool = true) async throws -> T {
         try await request(endpoint, method: .GET, requiresAuth: requiresAuth)

@@ -19,6 +19,8 @@ struct PostsView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: Spacing.lg) {
+                    if sessionManager.sampleDataEnvironment { SampleDataBanner() }
+
                     // Sport Selector
                     sportSelector
 

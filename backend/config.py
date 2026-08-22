@@ -25,6 +25,16 @@ class Settings(BaseSettings):
     api_port: int = 8000
     debug: bool = True
 
+    # Deployment environment. Empty by default (fail-closed for the dev seed script).
+    # Only "development" / "demo" permit synthetic seed data + the sample-data disclosure.
+    # "production" (or unset/unknown) must never seed a fake community or show the banner.
+    app_env: str = Field(default="", validation_alias="APP_ENV")
+
+    # When true, the client shows a "Sample community data" disclosure on community
+    # surfaces. Config-driven ONLY — never inferred from seed usernames/IDs. Must be
+    # false in production. Defaults false; enable explicitly in dev/demo environments.
+    sample_data_environment: bool = Field(default=False, validation_alias="SAMPLE_DATA_ENVIRONMENT")
+
     # Email verification policy for signup.
     #   "auto"     — dev/beta: create the account already verified & ACTIVE, no SMTP needed.
     #   "required" — production: account starts PENDING_VERIFICATION and must verify by code.

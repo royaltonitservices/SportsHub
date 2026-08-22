@@ -144,6 +144,15 @@ struct OpponentResponse: Codable {
 }
 
 // MARK: - Leaderboard Models
+/// Non-sensitive client config from GET /config/public. `sampleDataEnvironment`
+/// is server-config-driven (false in production) and NEVER inferred from usernames.
+struct PublicConfigResponse: Codable {
+    let sampleDataEnvironment: Bool
+    enum CodingKeys: String, CodingKey {
+        case sampleDataEnvironment = "sample_data_environment"
+    }
+}
+
 struct LeaderboardEntry: Codable {
     let rank: Int
     let userId: String
