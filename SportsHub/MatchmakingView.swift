@@ -1071,8 +1071,9 @@ struct MatchmakingView: View {
             }
         }) {
             HStack(spacing: Spacing.md) {
-                // Get friend's user ID (the ID that isn't current user)
-                let friendUserId = friendship.userAId == sessionManager.currentUser?.id.uuidString ? friendship.userBId : friendship.userAId
+                // Display only; the actual challenge target is resolved + guarded in
+                // challengeFriend(). Unresolved degrades to empty text, not a wrong id.
+                let friendUserId = friendship.otherUserId(currentUserId: sessionManager.currentUser?.id.uuidString) ?? ""
                 
                 AvatarView(name: "Friend", size: 44)
                 
@@ -1189,8 +1190,9 @@ struct MatchmakingView: View {
     private func challengeFriend(_ friendship: FriendshipResponse) async {
         // Determine which user ID is the friend (not current user)
         guard let currentUserId = sessionManager.currentUser?.id.uuidString else { return }
-        let friendUserId = friendship.userAId == currentUserId ? friendship.userBId : friendship.userAId
-        
+        // Fail closed: never create a challenge for a guessed opponent.
+        guard let friendUserId = friendship.otherUserId(currentUserId: currentUserId) else { return }
+
         let generator = UINotificationFeedbackGenerator()
         generator.prepare()
         

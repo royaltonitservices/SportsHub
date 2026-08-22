@@ -275,7 +275,11 @@ struct ChallengeResponse: Codable, Identifiable {
     /// The display name of the other participant relative to the current user,
     /// or nil when the backend didn't supply identity (caller shows honest copy).
     func otherParticipantName(currentUserId: String?) -> String? {
-        let amChallenger = (currentUserId != nil && currentUserId == challengerId)
+        // Case-insensitive identity match via the canonical primitive: Swift's
+        // UUID.uuidString is uppercase while the backend serialises IDs lowercase,
+        // so a plain == would always resolve to the challenger's side (wrong name /
+        // current user shown as opponent).
+        let amChallenger = idsEqual(currentUserId, challengerId)
         let display = amChallenger ? opponentDisplayName : challengerDisplayName
         let username = amChallenger ? opponentUsername : challengerUsername
         if let d = display, !d.isEmpty { return d }
@@ -440,7 +444,7 @@ struct FriendshipResponse: Codable, Identifiable {
     /// relationship from `currentUserId`. Falls back to nil when the backend
     /// didn't enrich the row (older deployments).
     func otherSide(currentUserId: String) -> (username: String?, displayName: String?) {
-        if userAId == currentUserId {
+        if idsEqual(userAId, currentUserId) {
             return (userBUsername, userBDisplayName)
         } else {
             return (userAUsername, userADisplayName)

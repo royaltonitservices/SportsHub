@@ -216,7 +216,7 @@ struct PlayView: View {
         let seenKey = "seen_challenge_ids"
         let seen = Set(UserDefaults.standard.stringArray(forKey: seenKey) ?? [])
 
-        let incoming = challenges.filter { $0.status == "pending" && $0.opponentId == currentUserId }
+        let incoming = challenges.filter { $0.status == "pending" && idsEqual($0.opponentId, currentUserId) }
         let newOnes = incoming.filter { !seen.contains($0.id) }
 
         for challenge in newOnes {
@@ -713,7 +713,7 @@ struct PlayView: View {
     private func getSubmissionStatusBadge(for challenge: ChallengeResponse) -> some View {
         if challenge.status == "accepted" {
             let currentUserId = sessionManager.currentUser?.id.uuidString ?? ""
-        let isChallenger = challenge.challengerId == currentUserId
+        let isChallenger = idsEqual(challenge.challengerId, currentUserId)
         let userSubmitted = isChallenger ? challenge.challengerSubmittedScore != nil : challenge.opponentSubmittedScore != nil
         let opponentSubmitted = isChallenger ? challenge.opponentSubmittedScore != nil : challenge.challengerSubmittedScore != nil
         

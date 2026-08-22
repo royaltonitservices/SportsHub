@@ -85,7 +85,7 @@ struct DirectMessageView: View {
                         ForEach(messages) { message in
                             MessageBubbleView(
                                 message: message,
-                                isFromCurrentUser: message.senderId == sessionManager.currentUser?.id.uuidString
+                                isFromCurrentUser: idsEqual(message.senderId, sessionManager.currentUser?.id.uuidString)
                             )
                             .id(message.id)
                         }

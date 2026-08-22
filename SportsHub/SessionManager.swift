@@ -593,8 +593,7 @@ extension SessionManager {
     /// someone else's (and expose self-report). Single source of truth for the
     /// ownership/self-report check used by content report guards.
     func isCurrentUser(_ id: String?) -> Bool {
-        guard let id, let me = currentUser?.id.uuidString else { return false }
-        return id.caseInsensitiveCompare(me) == .orderedSame
+        idsEqual(id, currentUser?.id.uuidString)
     }
 }
 

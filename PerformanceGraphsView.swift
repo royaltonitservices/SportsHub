@@ -418,7 +418,7 @@ struct PerformanceGraphsView: View {
             // Build match stats from real data
             let isoFormatter = ISO8601DateFormatter()
             matchStats = recentMatches.prefix(10).compactMap { challenge in
-                let isWinner = challenge.winnerUserId == currentUserId
+                let isWinner = idsEqual(challenge.winnerUserId, currentUserId)
                 let matchDate: Date
                 if let completedAt = challenge.completedAt,
                    let parsed = isoFormatter.date(from: completedAt) {

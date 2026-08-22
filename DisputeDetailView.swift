@@ -366,7 +366,7 @@ struct DisputeDetailView: View {
 
     // MARK: - Computed Properties
     private var isChallenger: Bool {
-        sessionManager.currentUser?.id.uuidString == challenge.challengerId
+        idsEqual(sessionManager.currentUser?.id.uuidString, challenge.challengerId)
     }
 
     private var scoresMatch: Bool {

@@ -279,7 +279,10 @@ struct FriendSelectionView: View {
                 let friendships = try await APIClient.shared.getFriends()
                 let currentUserId = SessionManager.shared.currentUser?.id.uuidString ?? ""
                 friends = friendships.compactMap { friendship -> FriendPreview? in
-                    let friendId = friendship.userAId == currentUserId ? friendship.userBId : friendship.userAId
+                    // Fail closed: if we can't resolve who the friend is (current
+                    // user matches neither side), drop the row rather than target
+                    // the wrong / current user when a challenge is created.
+                    guard let friendId = friendship.otherUserId(currentUserId: currentUserId) else { return nil }
                     let side = friendship.otherSide(currentUserId: currentUserId)
                     // Refuse to invent a UUID-shaped "name" — if the backend can't
                     // tell us who this friend is, drop the row rather than show

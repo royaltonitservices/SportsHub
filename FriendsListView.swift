@@ -184,7 +184,7 @@ struct FriendsListView: View {
 
             friendships = try await friends
             let newReceived = try await received
-            pendingRequests = try await pending.filter { $0.userAId == sessionManager.currentUser?.id.uuidString }
+            pendingRequests = try await pending.filter { idsEqual($0.userAId, sessionManager.currentUser?.id.uuidString) }
             blockedUsers = try await blocked
 
             scheduleNotificationsForNewRequests(newReceived)
@@ -244,7 +244,11 @@ struct FriendsListView: View {
 
     private func unblockUser(_ block: FriendshipResponse) async {
         let currentUserId = sessionManager.currentUser?.id.uuidString ?? ""
-        let userId = block.userAId == currentUserId ? block.userBId : block.userAId
+        // Fail closed: never issue an unblock for a guessed user ID.
+        guard let userId = block.otherUserId(currentUserId: currentUserId) else {
+            errorMessage = "We couldn't identify this user to unblock."
+            return
+        }
         do {
             _ = try await APIClient.shared.unblockUser(userId: userId)
             await loadData()
@@ -260,8 +264,10 @@ struct FriendRowView: View {
     let currentUserId: String
     let onRemove: () -> Void
 
+    // Display only (initials + short id). Removal targets `friendship.id`, not this,
+    // so an unresolved value degrades to empty text rather than a wrong action.
     private var friendUserId: String {
-        friendship.userAId == currentUserId ? friendship.userBId : friendship.userAId
+        friendship.otherUserId(currentUserId: currentUserId) ?? ""
     }
 
     var body: some View {
@@ -430,8 +436,9 @@ struct BlockedUserRowView: View {
     let currentUserId: String
     let onUnblock: () async -> Void
 
+    // Display only. The unblock action resolves + guards the ID in unblockUser().
     private var blockedUserId: String {
-        block.userAId == currentUserId ? block.userBId : block.userAId
+        block.otherUserId(currentUserId: currentUserId) ?? ""
     }
 
     var body: some View {

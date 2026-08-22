@@ -271,8 +271,10 @@ struct CreateGroupView: View {
             let friendships = try await APIClient.shared.getFriends()
             let currentUserId = SessionManager.shared.currentUser?.id.uuidString ?? ""
             friends = friendships.compactMap { f -> User? in
-                let friendId = f.userAId == currentUserId ? f.userBId : f.userAId
-                guard let uuid = UUID(uuidString: friendId) else { return nil }
+                // Fail closed: unresolved friend (current user on neither side) is
+                // dropped, so a group member is never the wrong / current user.
+                guard let friendId = f.otherUserId(currentUserId: currentUserId),
+                      let uuid = UUID(uuidString: friendId) else { return nil }
                 return User(id: uuid, email: "", username: "User \(friendId.prefix(8))", displayName: "", role: .user)
             }
         } catch {
