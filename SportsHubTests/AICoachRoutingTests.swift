@@ -57,6 +57,7 @@
 //
 
 import Testing
+import Foundation
 @testable import SportsHub
 
 // MARK: - Helpers
@@ -1328,5 +1329,196 @@ struct RefinementDepthGuardTests {
     @Test("maxDepth == 3 (named tunable constant)")
     func testMaxDepthConstant() {
         #expect(RefinementDepthGuard.maxDepth == 3)
+    }
+}
+
+// MARK: - Clarification Continuity Fix (AI Coach) — regression suite
+//
+// Covers the fixed Phase-1 `.unclear` short-circuit of clarification answers, the
+// extended natural-duration parser, arithmetic/injury/greeting escapes, and Markdown
+// rendering. Pure/static coverage of every decision node; full VM sendMessage wiring is
+// carried to manual runtime QA (see phase report).
+
+private func minutes(_ s: String) -> Int? {
+    RefinementClassifier.extractExplicitMinutes(from: s.lowercased())
+}
+
+/// Minutes carried by a refinement of a gathering (.coachingConversational) turn, or nil.
+private func continuationMinutes(_ s: String) -> Int? {
+    let intent = RefinementClassifier.classify(
+        message: s, hasPriorAIResponse: true, priorMode: .coachingConversational)
+    if case .refine(let mods) = intent {
+        for m in mods { if case .shorterDuration(let mins) = m { return mins } }
+    }
+    return nil
+}
+
+private func isContinuation(_ s: String) -> Bool {
+    switch RefinementClassifier.classify(message: s, hasPriorAIResponse: true, priorMode: .coachingConversational) {
+    case .conversationalCompletion, .refine: return true
+    case .freshRequest, .convertGuidanceToSession: return false
+    }
+}
+
+struct DurationParserTests {
+    @Test("minutes forms") func mins() {
+        #expect(minutes("20 min") == 20)
+        #expect(minutes("20 mins") == 20)
+        #expect(minutes("20 minutes") == 20)
+        #expect(minutes("45 min") == 45)
+        #expect(minutes("60 minutes") == 60)
+        #expect(minutes("90 minutes") == 90)
+        #expect(minutes("around 45 minutes") == 45)
+        #expect(minutes("about 45 minutes") == 45)
+    }
+    @Test("hour forms → minutes") func hours() {
+        #expect(minutes("1 hour") == 60)
+        #expect(minutes("1 hr") == 60)
+        #expect(minutes("an hour") == 60)
+        #expect(minutes("one hour") == 60)
+        #expect(minutes("an hr") == 60)
+        #expect(minutes("half an hour") == 30)
+        #expect(minutes("hour and a half") == 90)
+        #expect(minutes("an hour and a half") == 90)
+        #expect(minutes("An hour or more") == 60)
+        #expect(minutes("I have an hr to train") == 60)
+    }
+    @Test("ranges take the unit-adjacent number") func ranges() {
+        #expect(minutes("20-30 minutes") == 30)
+        #expect(minutes("20\u{2013}30 minutes") == 30)   // en dash
+    }
+    @Test("false positives → nil (no time unit)") func falsePositives() {
+        #expect(minutes("I scored 30 points") == nil)
+        #expect(minutes("I did 10 reps") == nil)
+        #expect(minutes("I have 2 teammates") == nil)
+        #expect(minutes("I'm 16") == nil)
+        #expect(minutes("25 x 4") == nil)
+    }
+}
+
+struct ArithmeticEscapeTests {
+    @Test("'25 x 4' normalizes to multiplication → 100") func xOperator() {
+        #expect(arithmeticAnswer(for: "What's 25 x 4?") == "100")
+    }
+    @Test("existing operators still work") func others() {
+        #expect(arithmeticAnswer(for: "12 + 9") == "21")
+        #expect(arithmeticAnswer(for: "40 times 5") == "200")
+    }
+}
+
+struct ClarificationEscapeRoutingTests {
+    // Phase-1 routing for the messages that must escape BEFORE clarification continuity.
+    @Test("arithmetic escapes at Phase 1") func arith() {
+        #expect(arithmeticAnswer(for: "What's 25 x 4?") == "100")
+    }
+    @Test("greeting escapes at Phase 1") func greeting() {
+        #expect(isGreetingSocial("Hello"))
+    }
+    @Test("injury is detectable (routed to safety in .unclear branch)") func injury() {
+        #expect(SafetyDetector.detectsInjury(in: "My ankle hurts badly"))
+        #expect(isUnclear("My ankle hurts badly"))   // classify bucket; caller routes to safety
+    }
+    @Test("explicit other-sport switch is caught pre-pipeline") func sportSwitch() {
+        #expect(PrePipelineClassifier.mentionedSport(in: "Actually let's talk about soccer") == .soccer)
+    }
+}
+
+struct ClarificationContinuityTests {
+    // After a gathering (.coachingConversational) turn, these short answers must be
+    // treated as continuations carrying the right duration — not fresh/unclear.
+    @Test("typed hour answer continues with ~60 min") func typedHour() {
+        #expect(isContinuation("I have an hr to train"))
+        #expect(continuationMinutes("I have an hr to train") == 60)
+    }
+    @Test("'an hour' continues with 60") func anHour() {
+        #expect(continuationMinutes("an hour") == 60)
+    }
+    @Test("'1 hr' continues with 60") func oneHr() {
+        #expect(continuationMinutes("1 hr") == 60)
+    }
+    @Test("'60 minutes' continues with 60") func sixtyMin() {
+        #expect(continuationMinutes("60 minutes") == 60)
+    }
+    @Test("chip 'An hour or more' continues with 60 (chip/typed parity)") func chip() {
+        #expect(continuationMinutes("An hour or more") == 60)
+    }
+    @Test("'Around 45 minutes' continues with 45") func fortyFive() {
+        #expect(continuationMinutes("Around 45 minutes") == 45)
+    }
+    @Test("'20-30 minutes' continues with 30") func range() {
+        #expect(continuationMinutes("20-30 minutes") == 30)
+    }
+    @Test("explicit fresh topic ('what about …') is NOT a continuation") func freshNotContinued() {
+        #expect(!isContinuation("what about my jump shot"))
+    }
+    @Test("continuity only after a gather turn — not after a workout plan") func boundedToGather() {
+        // Same short answer, but prior mode was a completed plan → not a completion.
+        if case .conversationalCompletion = RefinementClassifier.classify(
+            message: "an hour", hasPriorAIResponse: true, priorMode: .workoutPlan) {
+            Issue.record("must not treat as conversational completion after a workoutPlan")
+        }
+    }
+}
+
+struct ExistingMultiTurnRegressionTests {
+    // Modification/refinement follow-ups must remain refinements (unbroken by the fix).
+    @Test("'make it harder' stays a refinement") func harder() {
+        if case .refine = RefinementClassifier.classify(
+            message: "make it harder", hasPriorAIResponse: true, priorMode: .workoutPlan) {} else {
+            Issue.record("'make it harder' should classify as .refine")
+        }
+    }
+    @Test("'make it easier on my ankle' stays a refinement") func easier() {
+        if case .refine = RefinementClassifier.classify(
+            message: "make it easier on my ankle", hasPriorAIResponse: true, priorMode: .workoutPlan) {} else {
+            Issue.record("'make it easier on my ankle' should classify as .refine")
+        }
+    }
+}
+
+struct CoachMarkdownRenderingTests {
+    @Test("bold markers do not leak as literal text") func bold() {
+        let a = AICoachMessageBubble.inlineMarkdown("**Readiness: High (70/100)**")
+        let plain = String(a.characters)
+        #expect(plain == "Readiness: High (70/100)")
+        #expect(!plain.contains("**"))
+    }
+    @Test("newlines and bullets preserved; inner bold stripped") func bullets() {
+        let raw = "Plan:\n\u{2022} Warm up\n\u{2022} **Left-hand dribbling**\n\u{2022} Cool down"
+        let plain = String(AICoachMessageBubble.inlineMarkdown(raw).characters)
+        #expect(plain.contains("\n"))
+        #expect(plain.contains("\u{2022} Warm up"))
+        #expect(plain.contains("Left-hand dribbling"))
+        #expect(!plain.contains("**"))
+    }
+    @Test("plain text unchanged") func plain() {
+        #expect(String(AICoachMessageBubble.inlineMarkdown("No markdown here.").characters) == "No markdown here.")
+    }
+    @Test("malformed markdown does not crash (returns text)") func malformed() {
+        let plain = String(AICoachMessageBubble.inlineMarkdown("Broken **bold and [a](").characters)
+        #expect(!plain.isEmpty)
+    }
+
+    // Markdown links must render as readable text but NEVER become tappable navigation
+    // (no accidental openURL capability for model-authored content).
+    @Test("http(s) links are inert — label kept, no link attribute") func httpsLinksInert() {
+        for (raw, label) in [("[Training](https://example.com)", "Training"),
+                             ("[Click here](http://example.com)", "Click here")] {
+            let a = AICoachMessageBubble.inlineMarkdown(raw)
+            #expect(String(a.characters).contains(label))
+            for run in a.runs { #expect(run.link == nil) }
+        }
+    }
+    @Test("custom-scheme links are inert") func customSchemeInert() {
+        let a = AICoachMessageBubble.inlineMarkdown("[Open](some-custom-scheme://value)")
+        #expect(String(a.characters).contains("Open"))
+        for run in a.runs { #expect(run.link == nil) }
+    }
+    @Test("bold still renders alongside a stripped link") func boldPlusLink() {
+        let a = AICoachMessageBubble.inlineMarkdown("**Bold** and [link](https://x.com)")
+        let plain = String(a.characters)
+        #expect(plain.contains("Bold") && plain.contains("link"))
+        #expect(!plain.contains("**"))
+        for run in a.runs { #expect(run.link == nil) }
     }
 }

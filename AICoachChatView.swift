@@ -515,6 +515,32 @@ struct AICoachMessageBubble: View {
 
     @State private var feedbackGiven: Bool? = nil
 
+    /// The bubble's text. AI messages are parsed as inline Markdown; user messages are
+    /// rendered verbatim so they never pick up Markdown semantics.
+    private var renderedContent: Text {
+        message.isUser ? Text(message.content) : Text(Self.inlineMarkdown(message.content))
+    }
+
+    /// Inline-only Markdown parse that preserves newlines/whitespace and bullet glyphs,
+    /// rendering **bold**/*italic* while showing raw text on any parse failure (never crashes).
+    ///
+    /// Formatting ONLY — never navigation: any `.link` attribute the parser produces from
+    /// model-authored `[text](url)` is stripped, so AI/OpenAI content can never become a
+    /// tappable external link through SwiftUI's default `openURL`. The visible label text
+    /// is preserved; only the link behavior is removed.
+    static func inlineMarkdown(_ raw: String) -> AttributedString {
+        let options = AttributedString.MarkdownParsingOptions(
+            allowsExtendedAttributes: false,
+            interpretedSyntax: .inlineOnlyPreservingWhitespace,
+            failurePolicy: .returnPartiallyParsedIfPossible
+        )
+        guard var parsed = try? AttributedString(markdown: raw, options: options) else {
+            return AttributedString(raw)
+        }
+        parsed.link = nil   // remove every link attribute across the whole string
+        return parsed
+    }
+
     var body: some View {
         HStack {
             if message.isUser {
@@ -522,8 +548,10 @@ struct AICoachMessageBubble: View {
             }
             
             VStack(alignment: message.isUser ? .trailing : .leading, spacing: Spacing.xs) {
-                // Message content
-                Text(message.content)
+                // Message content. AI responses embed inline Markdown (e.g. **bold**);
+                // render it as an AttributedString so markers don't leak as literal text.
+                // User messages stay plain — they must not gain Markdown semantics.
+                renderedContent
                     .padding(Spacing.md)
                     .background(message.isUser ? Color.appPrimary : Color(.systemGray5))
                     .foregroundColor(message.isUser ? .white : .primary)
@@ -1035,15 +1063,61 @@ struct RefinementClassifier {
     // MARK: - Helpers (internal for testability)
 
     /// Extracts an explicit session duration (5–180 min) from the message, if present.
+    ///
+    /// Recognizes minutes ("20 min", "45 minutes", "20–30 minutes" → last number) and
+    /// natural hour forms ("1 hour", "1 hr", "an hour", "one hour", "half an hour",
+    /// "hour and a half", "An hour or more"). Requires an explicit time-unit token so a
+    /// bare number is NEVER read as a duration — "I scored 30 points", "10 reps",
+    /// "2 teammates", "I'm 16", "25 x 4" all return nil.
     static func extractExplicitMinutes(from low: String) -> Int? {
-        let pattern = #"(\d{1,3})\s*(?:min(?:utes?)?)"#
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+        // Preserve the original contract: only accept a sane 5–180 min session; reject otherwise.
+        func clamp(_ m: Int) -> Int? { (5...180).contains(m) ? m : nil }
+
+        // Compound word forms first (most specific → avoids "half an hour" matching "an hour").
+        if low.contains("hour and a half") { return clamp(90) }
+        if low.contains("half an hour") || low.contains("half hour") { return clamp(30) }
+
+        // Numeric minutes: "45 min" / "45 minutes"; a range "20-30 minutes" yields the
+        // number adjacent to the unit (30), preserving prior behavior.
+        if let mins = Self.firstNumber(before: #"\s*min(?:ute)?s?\b"#, in: low) {
+            return clamp(mins)
+        }
+
+        // Numeric hours: "1 hour", "1 hr", "1.5 hours".
+        if let hrs = Self.firstDecimal(before: #"\s*h(?:ou)?rs?\b"#, in: low) {
+            return clamp(Int((hrs * 60).rounded()))
+        }
+
+        // Word-number hours with an explicit hour unit: "an hour", "one hour", "an hr",
+        // "two hours". The unit token is required, so bare numbers never qualify.
+        if let r = low.range(of: #"\b(an?|one|two|three)\s+h(?:ou)?rs?\b"#, options: .regularExpression) {
+            let word = low[r].split(separator: " ").first.map(String.init) ?? "an"
+            switch word {
+            case "a", "an", "one": return clamp(60)
+            case "two":            return clamp(120)
+            case "three":          return clamp(180)
+            default:               return clamp(60)
+            }
+        }
+        return nil
+    }
+
+    /// First integer immediately preceding `unitPattern` (e.g. "30" in "20-30 minutes").
+    private static func firstNumber(before unitPattern: String, in low: String) -> Int? {
+        guard let regex = try? NSRegularExpression(pattern: #"(\d{1,3})"# + unitPattern) else { return nil }
         let range = NSRange(low.startIndex..., in: low)
-        guard let match = regex.firstMatch(in: low, range: range),
-              let r = Range(match.range(at: 1), in: low),
-              let mins = Int(low[r]),
-              (5...180).contains(mins) else { return nil }
-        return mins
+        guard let m = regex.firstMatch(in: low, range: range),
+              let r = Range(m.range(at: 1), in: low) else { return nil }
+        return Int(low[r])
+    }
+
+    /// First decimal immediately preceding `unitPattern` (e.g. "1.5" in "1.5 hours").
+    private static func firstDecimal(before unitPattern: String, in low: String) -> Double? {
+        guard let regex = try? NSRegularExpression(pattern: #"(\d+(?:\.\d+)?)"# + unitPattern) else { return nil }
+        let range = NSRange(low.startIndex..., in: low)
+        guard let m = regex.firstMatch(in: low, range: range),
+              let r = Range(m.range(at: 1), in: low) else { return nil }
+        return Double(low[r])
     }
 
     private static func hasAnyModifierVocabulary(_ low: String) -> Bool {
@@ -1748,7 +1822,7 @@ struct PrePipelineClassifier {
         let wordOperators: [(String, String)] = [
             (" divided by ", "/"), (" multiplied by ", "*"),
             (" times ", "*"), (" plus ", "+"), (" minus ", "-"),
-            ("×", "*"), ("÷", "/")
+            (" x ", "*"), ("×", "*"), ("÷", "/")
         ]
         for (word, sym) in wordOperators {
             expr = expr.replacingOccurrences(of: word, with: sym)
@@ -2096,6 +2170,26 @@ class AICoachChatViewModel: ObservableObject {
             )
             return
         case .unclear:
+            // SAFETY FIRST: an injury message must never fall into the generic clarify
+            // fallback (nor be swallowed as a clarification answer). Route it straight to
+            // the safety response. (Injury that classifies as .coachingLikely is still
+            // handled downstream by the pipeline's SafetyModeClassifier, unchanged.)
+            if SafetyDetector.detectsInjury(in: content) {
+                CoachTelemetry.recordPrePipelineIntent(bucket: "safety_interrupt", sport: sport)
+                let keyword = SafetyDetector.firstMatchedKeyword(in: content) ?? "pain or discomfort"
+                let (safetyText, safetyActions) = SafetyInterruptClassifier.safetyResponse(for: keyword, sport: sport)
+                handlePrePipelineResponse(safetyText, suggestedActions: safetyActions)
+                return
+            }
+            // CLARIFICATION CONTINUITY: right after the coach asked a gathering question,
+            // a short answer (e.g. "I have an hr to train") would otherwise be misread as
+            // .unclear and reset the conversation. When an active gathering context exists
+            // and the refinement classifier recognizes this as an answer/refinement, fall
+            // through so Phase 3 can continue the coaching task with the retained focus.
+            if shouldContinueClarification(content) {
+                CoachTelemetry.recordPrePipelineIntent(bucket: "clarification_continuation", sport: sport)
+                break   // → safety / Phase 4 / Phase 3 continuity below
+            }
             let (text, actions) = prePipelineUnclearResponse()
             handlePrePipelineResponse(text, suggestedActions: actions)
             return
@@ -2473,6 +2567,34 @@ class AICoachChatViewModel: ObservableObject {
             "Got it. What do you want to work on for \(sportName)?",
             ["Build me a session", "Show me drills", "What's my weakness?"]
         )
+    }
+
+    /// True when a Phase-1 `.unclear` message should be allowed through to the Phase-3
+    /// refinement/continuity gate instead of the generic clarify fallback.
+    ///
+    /// Bounded deliberately so an active context can never become a trap for unrelated
+    /// future messages:
+    ///  - only fires immediately after a gathering question (`.coachingConversational`);
+    ///    after a normal plan the mode differs and this returns false;
+    ///  - requires a prior AI turn in the thread;
+    ///  - requires the refinement classifier to read the message as an answer
+    ///    (`.conversationalCompletion`) or a duration/constraint refinement (`.refine`).
+    ///    A `.freshRequest` (e.g. "what about …") is NOT continued.
+    /// Injury is handled by the caller before this is consulted, so safety always wins.
+    private func shouldContinueClarification(_ content: String) -> Bool {
+        guard let refCtx = activeRefinementContext,
+              messages.contains(where: { !$0.isUser }),
+              refCtx.outputMode == .coachingConversational else { return false }
+        switch RefinementClassifier.classify(
+            message: content,
+            hasPriorAIResponse: true,
+            priorMode: refCtx.outputMode
+        ) {
+        case .conversationalCompletion, .refine:
+            return true
+        case .freshRequest, .convertGuidanceToSession:
+            return false
+        }
     }
 
     /// Returns a sport-specific clarifying prompt for ambiguous/unclear messages.
