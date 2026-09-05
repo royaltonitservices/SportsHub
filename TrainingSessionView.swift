@@ -33,6 +33,7 @@ struct TrainingSessionView: View {
     @State private var selectedPhotos: [PhotosPickerItem] = []
     @State private var photoImages: [UIImage] = []
     @State private var showImagePicker = false
+    @State private var selectedPhotoItem: PhotosPickerItem?
     @State private var isLoading = false
     @State private var showSuccess = false
     /// True when the backend `logTrainingSession` call succeeded for this save.
@@ -106,15 +107,18 @@ struct TrainingSessionView: View {
             .sheet(isPresented: $showDrillSuggestions) {
                 DrillSuggestionsSheet(sport: sport, selectedDrill: $currentDrill.drillName)
             }
-            .sheet(isPresented: $showImagePicker) {
-                ImagePicker(selectedImage: $selectedPhotos.isEmpty ? .constant(nil) : Binding(
-                    get: { nil },
-                    set: { newImage in
-                        if let newImage = newImage {
-                            photoImages.append(newImage)
-                        }
+            // Privacy-preserving photo selection (PhotosPicker) — no broad photo-library
+            // authorization; the user explicitly picks one image per tap.
+            .photosPicker(isPresented: $showImagePicker, selection: $selectedPhotoItem, matching: .images)
+            .onChange(of: selectedPhotoItem) { _, item in
+                guard let item else { return }
+                Task {
+                    if let data = try? await item.loadTransferable(type: Data.self),
+                       let image = UIImage(data: data) {
+                        await MainActor.run { photoImages.append(image) }
                     }
-                ))
+                    await MainActor.run { selectedPhotoItem = nil }
+                }
             }
             .alert("Saved", isPresented: $showSuccess) {
                 Button("OK") {

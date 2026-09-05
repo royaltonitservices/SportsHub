@@ -8,6 +8,43 @@
 import SwiftUI
 import PhotosUI
 import AVKit
+import UniformTypeIdentifiers
+
+/// A video selected from PhotosPicker, copied to an app-owned temp file via a streamed
+/// FileRepresentation — the full video is never loaded into memory just to get a URL.
+struct PickedMovie: Transferable {
+    let url: URL
+    static var transferRepresentation: some TransferRepresentation {
+        FileRepresentation(contentType: .movie) { movie in
+            SentTransferredFile(movie.url)
+        } importing: { received in
+            // The system-provided file is temporary; copy it to our own uniquely-named
+            // temp file, preserving the real extension (never relabel MP4 as MOV).
+            let sourceExt = received.file.pathExtension.lowercased()
+            let ext = sourceExt.isEmpty ? "mov" : sourceExt
+            let dest = FileManager.default.temporaryDirectory
+                .appendingPathComponent("sportshub-evidence-\(UUID().uuidString)")
+                .appendingPathExtension(ext)
+            try? FileManager.default.removeItem(at: dest)
+            try FileManager.default.copyItem(at: received.file, to: dest)
+            return PickedMovie(url: dest)
+        }
+    }
+}
+
+/// Truthful MIME for an evidence video from its real file extension. Both values are
+/// accepted by the backend evidence upload (video/mp4, video/quicktime).
+func evidenceVideoMIMEType(forExtension ext: String) -> String {
+    switch ext.lowercased() {
+    case "mov", "qt":       return "video/quicktime"
+    case "mp4", "m4v":      return "video/mp4"
+    default:
+        if let ut = UTType(filenameExtension: ext), let mime = ut.preferredMIMEType, mime.hasPrefix("video/") {
+            return mime
+        }
+        return "video/mp4"
+    }
+}
 
 struct ProofSubmissionView: View {
     @Environment(\.dismiss) var dismiss
@@ -19,6 +56,7 @@ struct ProofSubmissionView: View {
     @State private var selectedMedia: [PhotosPickerItem] = []
     @State private var capturedPhotos: [UIImage] = []
     @State private var videoURL: URL?
+    @State private var selectedVideoItem: PhotosPickerItem?
     @State private var showCamera = false
     @State private var showVideoPicker = false
     @State private var notes = ""
@@ -283,8 +321,19 @@ struct ProofSubmissionView: View {
                     }
                 ), sourceType: .camera)
             }
-            .sheet(isPresented: $showVideoPicker) {
-                VideoPicker(videoURL: $videoURL)
+            // Privacy-preserving video selection (PhotosPicker) — no broad photo-library
+            // authorization; the user explicitly picks one video.
+            .photosPicker(isPresented: $showVideoPicker, selection: $selectedVideoItem, matching: .videos)
+            .onChange(of: selectedVideoItem) { _, item in
+                guard let item else { return }
+                Task {
+                    // File-backed copy — the picked video is streamed to an app-owned temp
+                    // file, not materialized as Data, and its real extension is preserved.
+                    if let movie = try? await item.loadTransferable(type: PickedMovie.self) {
+                        await MainActor.run { videoURL = movie.url }
+                    }
+                    await MainActor.run { selectedVideoItem = nil }
+                }
             }
             .alert("Proof Submitted!", isPresented: $showSuccess) {
                 Button("OK") {
@@ -340,10 +389,19 @@ struct ProofSubmissionView: View {
                 )
             }
 
-            // Upload video if present: read bytes → server upload → associate
+            // Upload video if present. The evidence API is byte/multipart based, so the
+            // file is read once here at upload time (not double-materialized during
+            // selection). MIME is derived truthfully from the real extension. Our temp
+            // copy is removed after the attempt — only the app-owned copy, never the
+            // user's original asset.
             if let videoURL = videoURL {
+                defer {
+                    try? FileManager.default.removeItem(at: videoURL)
+                    self.videoURL = nil
+                }
                 let videoData = try Data(contentsOf: videoURL)
-                let token = try await APIClient.shared.uploadEvidenceFile(data: videoData, mimeType: "video/mp4")
+                let mimeType = evidenceVideoMIMEType(forExtension: videoURL.pathExtension)
+                let token = try await APIClient.shared.uploadEvidenceFile(data: videoData, mimeType: mimeType)
                 _ = try await APIClient.shared.associateEvidence(
                     challengeId: challengeId,
                     uploadId: token.uploadId,
@@ -381,11 +439,13 @@ struct RequirementRow: View {
 
 // MARK: - Image Picker
 
+/// Camera-only capture wrapper. Photo/video *selection* uses SwiftUI PhotosPicker
+/// (no broad photo-library authorization); this exists solely for live camera capture.
 struct ProofImagePicker: UIViewControllerRepresentable {
     @Binding var selectedImage: UIImage?
     @Environment(\.dismiss) var dismiss
-    var sourceType: UIImagePickerController.SourceType = .photoLibrary
-    
+    var sourceType: UIImagePickerController.SourceType = .camera
+
     func makeUIViewController(context: Context) -> UIImagePickerController {
         let picker = UIImagePickerController()
         picker.delegate = context.coordinator
@@ -410,47 +470,6 @@ struct ProofImagePicker: UIViewControllerRepresentable {
         func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]) {
             if let image = info[.editedImage] as? UIImage ?? info[.originalImage] as? UIImage {
                 parent.selectedImage = image
-            }
-            parent.dismiss()
-        }
-        
-        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
-            parent.dismiss()
-        }
-    }
-}
-
-// MARK: - Video Picker
-
-struct VideoPicker: UIViewControllerRepresentable {
-    @Binding var videoURL: URL?
-    @Environment(\.dismiss) var dismiss
-    
-    func makeUIViewController(context: Context) -> UIImagePickerController {
-        let picker = UIImagePickerController()
-        picker.delegate = context.coordinator
-        picker.sourceType = .photoLibrary
-        picker.mediaTypes = ["public.movie"]
-        picker.videoMaximumDuration = 60 // 60 seconds max
-        return picker
-    }
-    
-    func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {}
-    
-    func makeCoordinator() -> Coordinator {
-        Coordinator(self)
-    }
-    
-    class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
-        let parent: VideoPicker
-        
-        init(_ parent: VideoPicker) {
-            self.parent = parent
-        }
-        
-        func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]) {
-            if let url = info[.mediaURL] as? URL {
-                parent.videoURL = url
             }
             parent.dismiss()
         }

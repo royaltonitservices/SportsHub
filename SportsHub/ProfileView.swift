@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import PhotosUI
 
 struct ProfileView: View {
     @EnvironmentObject var sessionManager: SessionManager
@@ -13,6 +14,7 @@ struct ProfileView: View {
     @State private var selectedSport: Sport = .basketball
     @State private var showImagePicker = false
     @State private var selectedImage: UIImage?
+    @State private var selectedPhotoItem: PhotosPickerItem?
     @State private var customProfilePicture: Image?
     @State private var showEditBio = false
     @State private var bioText = ""
@@ -204,8 +206,22 @@ struct ProfileView: View {
             .task(id: selectedSport) {
                 await loadSportProfile()
             }
-            .sheet(isPresented: $showImagePicker) {
-                ImagePicker(selectedImage: $selectedImage)
+            // Privacy-preserving avatar selection (PhotosPicker) — no broad photo-library
+            // authorization; the user explicitly picks one image. Reuses the existing
+            // selectedImage → onChange upload flow below.
+            .photosPicker(isPresented: $showImagePicker, selection: $selectedPhotoItem, matching: .images)
+            .onChange(of: selectedPhotoItem) { _, item in
+                guard let item else { return }
+                Task {
+                    if let data = try? await item.loadTransferable(type: Data.self),
+                       let image = UIImage(data: data) {
+                        // Parity with the legacy picker's allowsEditing square crop: the
+                        // uploaded avatar is a center-square image (the interactive
+                        // crop-region choice is the one behavior PhotosPicker can't offer).
+                        await MainActor.run { selectedImage = image.centerSquareCropped() }
+                    }
+                    await MainActor.run { selectedPhotoItem = nil }
+                }
             }
             .sheet(isPresented: $showEditBio) {
                 EditBioSheet(bioText: $bioText, onSave: {
@@ -605,42 +621,21 @@ struct StatCard: View {
     }
 }
 
-// MARK: - Image Picker
+// MARK: - Avatar Cropping
 
-struct ImagePicker: UIViewControllerRepresentable {
-    @Binding var selectedImage: UIImage?
-    @Environment(\.dismiss) var dismiss
-    
-    func makeUIViewController(context: Context) -> UIImagePickerController {
-        let picker = UIImagePickerController()
-        picker.delegate = context.coordinator
-        picker.sourceType = .photoLibrary
-        picker.allowsEditing = true
-        return picker
-    }
-    
-    func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {}
-    
-    func makeCoordinator() -> Coordinator {
-        Coordinator(self)
-    }
-    
-    class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
-        let parent: ImagePicker
-        
-        init(_ parent: ImagePicker) {
-            self.parent = parent
-        }
-        
-        func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
-            if let image = info[.editedImage] as? UIImage ?? info[.originalImage] as? UIImage {
-                parent.selectedImage = image
-            }
-            parent.dismiss()
-        }
-        
-        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
-            parent.dismiss()
+extension UIImage {
+    /// Center-crops the image to a square (largest centered square), preserving the
+    /// legacy avatar picker's square result. Orientation-safe (draws through UIImage).
+    func centerSquareCropped() -> UIImage {
+        let side = min(size.width, size.height)
+        guard side > 0, size.width != size.height else { return self }
+        let xOffset = (size.width - side) / 2
+        let yOffset = (size.height - side) / 2
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = scale
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: side, height: side), format: format)
+        return renderer.image { _ in
+            draw(in: CGRect(x: -xOffset, y: -yOffset, width: size.width, height: size.height))
         }
     }
 }
