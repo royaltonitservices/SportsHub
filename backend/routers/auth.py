@@ -5,11 +5,13 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 from datetime import datetime, timedelta
 from collections import defaultdict
 from database import get_db
 from auth import verify_password, get_password_hash, create_access_token
 from dependencies import get_current_user
+from identity import normalize_email, is_valid_signup_dob
 from email_service import generate_verification_code, hash_code, send_verification_code_email, send_password_reset_email, VERIFICATION_CODE_TTL_MINUTES
 from config import get_settings
 import models
@@ -111,7 +113,11 @@ async def signup(user_data: schemas.UserSignup, db: Session = Depends(get_db)):
     """Register a new user account"""
 
     try:
-        # Check if username already exists (email can be reused)
+        # Canonical email — one account per normalized email (DB-unique + persistence
+        # -boundary @validates). Pre-check is UX only; the DB constraint is authoritative.
+        norm_email = normalize_email(user_data.email)
+
+        # Check if username already exists
         existing_username = db.query(models.User).filter(models.User.username == user_data.username).first()
         if existing_username:
             raise HTTPException(
@@ -119,18 +125,23 @@ async def signup(user_data: schemas.UserSignup, db: Session = Depends(get_db)):
                 detail="Username already taken"
             )
 
-        # Verify age (must be 13+)
-        # Make date_of_birth timezone-naive for comparison
-        dob = user_data.date_of_birth.replace(tzinfo=None) if user_data.date_of_birth.tzinfo else user_data.date_of_birth
-        age = (datetime.now() - dob).days / 365.25
-        if age < 13:
+        # Reject a normalized-email duplicate up front (case/whitespace variants collapse).
+        existing_email = db.query(models.User).filter(models.User.email == norm_email).first()
+        if existing_email:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="An account with this email already exists"
+            )
+
+        # Verify age (must be 13+) via the shared gate (same boundary as OAuth onboarding).
+        if not is_valid_signup_dob(user_data.date_of_birth):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Must be at least 13 years old"
             )
 
         # Check if admin credentials (2-key system: BOTH email AND password must match)
-        is_admin = (user_data.email == ADMIN_EMAIL and user_data.password == ADMIN_PASSWORD)
+        is_admin = (normalize_email(ADMIN_EMAIL) == norm_email and user_data.password == ADMIN_PASSWORD)
         user_role = models.UserRole.ADMIN if is_admin else models.UserRole.USER
 
         # Email verification policy (see config.email_verification_mode).
@@ -146,7 +157,7 @@ async def signup(user_data: schemas.UserSignup, db: Session = Depends(get_db)):
 
         # Create user first — we need the UUID to build the salted hash
         new_user = models.User(
-            email=user_data.email,
+            email=norm_email,
             username=user_data.username,
             password_hash=get_password_hash(user_data.password),
             display_name=user_data.display_name,
@@ -237,6 +248,13 @@ async def signup(user_data: schemas.UserSignup, db: Session = Depends(get_db)):
     except HTTPException:
         # Re-raise validation errors
         raise
+    except IntegrityError:
+        # Concurrency: a unique constraint (normalized email or username) lost the race.
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="An account with this email or username already exists"
+        )
     except Exception as e:
         # Log and handle database/system errors
         print(f"[ERROR] Signup failed - {type(e).__name__}: {str(e)}")
@@ -254,15 +272,17 @@ async def login(
 ):
     """Login with email (sent as 'username') and password."""
 
-    email = form_data.username
+    email = normalize_email(form_data.username)
 
     # Rate limit: raises HTTP 429 if email is in a lockout window
     _check_login_rate_limit(email)
 
-    # Find user by email (username field in OAuth2 form is used for email)
+    # Find user by normalized email (username field in OAuth2 form is used for email)
     user = db.query(models.User).filter(models.User.email == email).first()
 
-    if not user or not verify_password(form_data.password, user.password_hash):
+    # Provider-only accounts have no local password (password_hash is NULL) and can
+    # never authenticate via password — fail closed identically to a wrong password.
+    if not user or not user.password_hash or not verify_password(form_data.password, user.password_hash):
         _record_failed_login(email)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -303,14 +323,15 @@ async def login(
 async def login_json(user_login: schemas.UserLogin, db: Session = Depends(get_db)):
     """Login with JSON body (for mobile apps)."""
 
-    email = user_login.email
+    email = normalize_email(user_login.email)
 
     # Rate limit: raises HTTP 429 if email is in a lockout window
     _check_login_rate_limit(email)
 
     user = db.query(models.User).filter(models.User.email == email).first()
 
-    if not user or not verify_password(user_login.password, user.password_hash):
+    # Provider-only accounts (NULL password_hash) cannot authenticate via password.
+    if not user or not user.password_hash or not verify_password(user_login.password, user.password_hash):
         _record_failed_login(email)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -442,7 +463,13 @@ async def forgot_password(
         message = ("If an account exists for that email, password reset instructions will be sent "
                    "once email delivery is configured.")
 
-    user = db.query(models.User).filter(models.User.email == request.email.lower().strip()).first()
+    user = db.query(models.User).filter(models.User.email == normalize_email(request.email)).first()
+
+    # Provider-only accounts (NULL password_hash) have no local credential to reset.
+    # Skip silently (identical mode-based response) so reset never becomes an implicit
+    # account-linking / password-creation path and account type is not revealed.
+    if user is not None and user.password_hash is None:
+        user = None
 
     if user:
         now = datetime.utcnow()
@@ -481,9 +508,14 @@ async def reset_password(
     """
     INVALID_MSG = "Invalid or expired reset code."
 
-    user = db.query(models.User).filter(models.User.email == request.email.lower().strip()).first()
+    user = db.query(models.User).filter(models.User.email == normalize_email(request.email)).first()
 
     if not user:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=INVALID_MSG)
+
+    # Provider-only accounts cannot establish a local password via reset (fail closed —
+    # no code was ever minted for them by forgot-password).
+    if user.password_hash is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=INVALID_MSG)
 
     # Check code exists, not already used, and not expired

@@ -1,9 +1,10 @@
 """
 SQLAlchemy database models for SportsHub
 """
-from sqlalchemy import Boolean, Column, Integer, String, DateTime, Float, ForeignKey, Text, Enum as SQLEnum, JSON, TypeDecorator, Index
+from sqlalchemy import Boolean, Column, Integer, String, DateTime, Float, ForeignKey, Text, Enum as SQLEnum, JSON, TypeDecorator, Index, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, validates
+from identity import normalize_email, canonical_provider
 from sqlalchemy.sql import func
 from database import Base
 import uuid as uuid_pkg
@@ -125,9 +126,14 @@ class User(Base):
     __tablename__ = "users"
 
     id = Column(UUID(), primary_key=True, default=uuid_pkg.uuid4)
-    email = Column(String(255), nullable=False, index=True)  # Removed unique constraint
+    # One account per normalized email. Uniqueness is enforced at the DB (below) and
+    # every stored value is canonicalized at the persistence boundary via @validates,
+    # so DB UNIQUE(email) == uniqueness of the NORMALIZED email even for ORM-created rows.
+    email = Column(String(255), unique=True, nullable=False, index=True)
     username = Column(String(50), unique=True, nullable=False, index=True)
-    password_hash = Column(String(255), nullable=False)
+    # Nullable: provider-only (OAuth/SIWA) users have NO local password credential.
+    # A fabricated placeholder is never stored.
+    password_hash = Column(String(255), nullable=True)
     display_name = Column(String(100))
     date_of_birth = Column(DateTime, nullable=False)
     avatar_seed = Column(String(100))
@@ -163,7 +169,48 @@ class User(Base):
     friendships_sent = relationship("Friendship", foreign_keys="Friendship.user_a_id", back_populates="user_a")
     friendships_received = relationship("Friendship", foreign_keys="Friendship.user_b_id", back_populates="user_b")
     onboarding_survey = relationship("OnboardingSurvey", back_populates="user", uselist=False, cascade="all, delete-orphan")
+    auth_identities = relationship("AuthIdentity", back_populates="user", cascade="all, delete-orphan")
     # subscription = relationship("Subscription", back_populates="user", uselist=False, cascade="all, delete-orphan")  # Defined in models_premium.py
+
+    @validates("email")
+    def _canonicalize_email(self, key, value):
+        # Persistence-boundary canonicalization: every write to User.email (from any
+        # code path, ORM-created or router) is normalized. Combined with the DB UNIQUE
+        # constraint this makes normalized-email uniqueness authoritative.
+        return normalize_email(value)
+
+
+class AuthIdentity(Base):
+    """A durable external authentication identity (e.g. Sign in with Apple).
+
+    The identity key is (provider, subject) — NEVER email. Returning OAuth logins
+    resolve by this pair, so a user is recognized even when the provider stops
+    returning an email. One row per external identity; a User may have several.
+    """
+    __tablename__ = "auth_identities"
+    __table_args__ = (UniqueConstraint("provider", "subject", name="uq_auth_identity_provider_subject"),)
+
+    id = Column(UUID(), primary_key=True, default=uuid_pkg.uuid4)
+    user_id = Column(UUID(), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    provider = Column(String(32), nullable=False)   # canonical, e.g. "apple", "google"
+    subject = Column(String(255), nullable=False)   # provider's stable subject (Apple `sub`)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    user = relationship("User", back_populates="auth_identities")
+
+    @validates("provider")
+    def _canonicalize_provider(self, key, value):
+        v = canonical_provider(value)
+        if not v:
+            raise ValueError("AuthIdentity.provider must be non-empty")
+        return v
+
+    @validates("subject")
+    def _validate_subject(self, key, value):
+        v = (value or "").strip()
+        if not v:
+            raise ValueError("AuthIdentity.subject must be non-empty")
+        return v
 
 
 class SportProfile(Base):

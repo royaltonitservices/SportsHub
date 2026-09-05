@@ -237,6 +237,10 @@ def delete_user_account(db, user) -> None:
 
         db.query(models.UserBadge).filter(models.UserBadge.user_id == user_id)\
             .delete(synchronize_session=False)
+        # External auth identities (Sign in with Apple, etc.) — explicit delete so no
+        # stale (provider, subject) row survives, independent of DB FK-cascade support.
+        db.query(models.AuthIdentity).filter(models.AuthIdentity.user_id == user_id)\
+            .delete(synchronize_session=False)
         db.query(models.SportProfile).filter(models.SportProfile.user_id == user_id)\
             .delete(synchronize_session=False)
         db.query(models.OnboardingSurvey).filter(models.OnboardingSurvey.user_id == user_id)\

@@ -14,6 +14,13 @@ struct AuthenticationView: View {
     @State private var showSignUp = false
     @State private var showError = false
     @State private var errorMessage = ""
+    // First-time Apple onboarding: the provider gave us a verified identity but we
+    // still need a real date of birth (age gate) before an account is created. The
+    // coordinator retains the first authorization result and re-uses it on completion
+    // (no second ASAuthorization) — see AppleOnboardingCoordinator.
+    @State private var appleOnboarding = AppleOnboardingCoordinator()
+    @State private var showAppleDOBSheet = false
+    @State private var onboardingDOB = Calendar.current.date(byAdding: .year, value: -16, to: Date()) ?? Date()
     
     var body: some View {
         NavigationStack {
@@ -153,6 +160,9 @@ struct AuthenticationView: View {
             .sheet(isPresented: $showSignUp) {
                 SignUpView()
             }
+            .sheet(isPresented: $showAppleDOBSheet) {
+                appleDOBOnboardingSheet
+            }
             .alert("Sign In Error", isPresented: $showError) {
                 Button("OK", role: .cancel) {}
             } message: {
@@ -161,6 +171,45 @@ struct AuthenticationView: View {
         }
     }
     
+    // ISO-8601 date-only formatter for the DOB sent to the backend age gate.
+    private static let dobFormatter: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withFullDate]
+        return f
+    }()
+
+    @ViewBuilder private var appleDOBOnboardingSheet: some View {
+        NavigationStack {
+            VStack(spacing: Spacing.lg) {
+                Text("One more step")
+                    .font(.title2).fontWeight(.bold)
+                    .foregroundStyle(Color.appTextPrimary)
+                Text("Enter your date of birth to finish setting up your SportsHub account. You must be at least 13.")
+                    .font(.subheadline)
+                    .foregroundStyle(Color.appTextSecondary)
+                    .multilineTextAlignment(.center)
+                DatePicker("Date of birth", selection: $onboardingDOB,
+                           in: ...Date(), displayedComponents: .date)
+                    .datePickerStyle(.wheel)
+                    .labelsHidden()
+                Button("Continue") {
+                    let iso = Self.dobFormatter.string(from: onboardingDOB)
+                    showAppleDOBSheet = false
+                    Task { await completeAppleOnboarding(dateOfBirth: iso) }
+                }
+                .primaryButton()
+                Spacer()
+            }
+            .padding(Spacing.lg)
+            .background(Color.appBackground)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { showAppleDOBSheet = false; appleOnboarding.cancel() }
+                }
+            }
+        }
+    }
+
     private func handleAppleSignIn() async {
         do {
             guard let window = UIApplication.shared.connectedScenes
@@ -168,15 +217,10 @@ struct AuthenticationView: View {
                 .first?.windows.first else {
                 return
             }
-            
+
             let result = try await oauthManager.signInWithApple(presentationAnchor: window)
-            let token = try await oauthManager.authenticateWithBackend(appleResult: result)
-            
-            // Set token and fetch user
-            APIClient.shared.setAuthToken(token)
-            let userResponse: UserResponse = try await APIClient.shared.getCurrentUser()
-            
-            sessionManager.updateUserFromOAuth(from: userResponse, token: token)
+            let outcome = try await oauthManager.authenticateWithBackend(appleResult: result)
+            try await handleAppleOutcome(outcome, result: result)
         } catch {
             if let apiError = error as? APIError {
                 errorMessage = apiError.userFriendlyMessage
@@ -194,6 +238,54 @@ struct AuthenticationView: View {
         }
     }
     
+    private func handleAppleOutcome(_ outcome: OAuthOutcome, result: AppleSignInResult) async throws {
+        switch appleOnboarding.stepForInitial(outcome, result: result) {
+        case .authenticated(let token):
+            try await finishAppleAuth(token: token)
+        case .needsDateOfBirth:
+            // First-time identity — collect a real DOB, then retry with the SAME result.
+            showAppleDOBSheet = true
+        case .accountConflict:
+            // Email already belongs to an account; we never auto-link.
+            errorMessage = "An account with this email already exists. Please sign in with your email and password instead."
+            showError = true
+        case .failed:
+            errorMessage = "We couldn't complete Apple Sign-In. Please try again."
+            showError = true
+        }
+    }
+
+    private func finishAppleAuth(token: String) async throws {
+        APIClient.shared.setAuthToken(token)
+        let userResponse: UserResponse = try await APIClient.shared.getCurrentUser()
+        sessionManager.updateUserFromOAuth(from: userResponse, token: token)
+    }
+
+    private func completeAppleOnboarding(dateOfBirth: String) async {
+        // Re-use the SAME retained authorization result — never a second ASAuthorization.
+        guard let result = appleOnboarding.resultForCompletion() else { return }
+        do {
+            let outcome = try await oauthManager.authenticateWithBackend(appleResult: result, dateOfBirth: dateOfBirth)
+            switch appleOnboarding.stepForCompletion(outcome) {
+            case .authenticated(let token):
+                try await finishAppleAuth(token: token)
+            case .accountConflict:
+                errorMessage = "An account with this email already exists. Please sign in with your email and password instead."
+                showError = true
+            case .needsDateOfBirth, .failed:
+                errorMessage = "We couldn't complete Apple Sign-In. Please try again."
+                showError = true
+            }
+        } catch {
+            // Expired token / 401 / network / under-13 (400): clear pending so a fresh
+            // authorization is required — an expiry is never treated as success.
+            appleOnboarding.completionFailed()
+            errorMessage = (error as? APIError)?.userFriendlyMessage
+                ?? "You must be at least 13 to use SportsHub."
+            showError = true
+        }
+    }
+
     private func handleGoogleSignIn() async {
         do {
             let result = try await oauthManager.signInWithGoogle()
