@@ -8,12 +8,14 @@ from uuid import UUID
 from pydantic import BaseModel
 
 from database import get_db
-from dependencies import get_current_active_user, require_premium
+from dependencies import get_current_active_user, require_premium, require_ai_enabled
 import models
 from ai_coach import AICoachService
 from models_premium import AICoachInsight, PerformancePrediction
 
-router = APIRouter(prefix="/ai-coach", tags=["ai-coach"])
+# v1: entire AI Coach surface disabled server-side until Gate 1.6 (router-level
+# kill-switch -> 503 for all callers, independent of premium/subscription/admin/age).
+router = APIRouter(prefix="/ai-coach", tags=["ai-coach"], dependencies=[Depends(require_ai_enabled)])
 
 
 # MARK: - Schemas

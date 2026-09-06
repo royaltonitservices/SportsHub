@@ -10,14 +10,18 @@ from uuid import UUID
 from datetime import datetime
 
 from database import get_db
-from dependencies import get_current_active_user, require_premium
+from dependencies import get_current_active_user, require_premium, require_ai_enabled
 import models
 from ai_orchestrator import AIOrchestrator
 from ai_rate_limit import ai_daily_limiter
 from config import get_settings
 
 
-router = APIRouter(prefix="/ai/coach", tags=["ai-coach"])
+# v1: the ENTIRE AI Coach surface is disabled server-side via a router-level
+# kill-switch (require_ai_enabled -> 503) until Gate 1.6. This blocks every route here
+# — including any that reach the OpenAI provider — for ALL callers regardless of
+# premium/subscription/admin/age. Premium status is NOT the safety gate.
+router = APIRouter(prefix="/ai/coach", tags=["ai-coach"], dependencies=[Depends(require_ai_enabled)])
 
 
 # MARK: - Schemas
@@ -279,7 +283,10 @@ async def get_proactive_checkin(
     )
 
 
-# MARK: - Regular AI Features (All Users)
+# MARK: - AI generation endpoints
+# These reach the OpenAI provider. In v1 the router-level require_ai_enabled kill-switch
+# (see router definition) returns 503 for ALL callers, so no minor — and no one else —
+# reaches OpenAI. The per-user tier (premium/age) is Gate 1.6's concern, not v1 safety.
 
 @router.post("/drill/generate", response_model=DrillResponse)
 async def generate_drill(
@@ -288,9 +295,9 @@ async def generate_drill(
     db: Session = Depends(get_db)
 ):
     """
-    Generate personalized AI drill (available to ALL users).
+    Generate a personalized AI drill.
 
-    This is Regular AI - not premium gated.
+    Reaches the OpenAI provider — blocked in v1 by the router-level AI kill-switch.
     Creates unique, sport-specific drills tailored to user's level.
 
     The AI considers:
@@ -327,8 +334,9 @@ async def generate_challenge(
     db: Session = Depends(get_db)
 ):
     """
-    Generate AI-powered challenge (available to ALL users).
+    Generate an AI-powered challenge.
 
+    Reaches the OpenAI provider — blocked in v1 by the router-level AI kill-switch.
     Creates engaging, gamified challenges that push users to improve.
     Considers user's current level and recent performance.
 

@@ -2,14 +2,6 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>NSHealthShareUsageDescription</key>
-	<string>SportsHub needs access to your health data to provide AI-powered recovery insights, performance predictions, and personalized training recommendations based on your biometric data.</string>
-	<key>NSHealthUpdateUsageDescription</key>
-	<string>SportsHub may update your health data with workout information.</string>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>SportsHub needs microphone access so you can talk to your AI Coach naturally, just like a real conversation.</string>
-	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>SportsHub uses speech recognition to transcribe your voice into text when talking to your AI Coach.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>SportsHub uses the camera so you can take a photo as evidence when submitting or disputing a match result.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>

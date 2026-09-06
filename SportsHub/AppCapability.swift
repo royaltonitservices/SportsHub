@@ -10,6 +10,22 @@
 
 import Foundation
 
+/// Version-1 shipping-surface flags (Milestone 2 de-scope). Single source of truth for
+/// which premium / AI / wearable / tournament surfaces are part of the v1 product.
+/// All are intentionally `false` for v1:
+///   - `premiumPurchaseEnabled` — NO purchasable Premium / StoreKit flow in v1.
+///   - `aiCoachEnabled` — AI Coach shipping entry point stays DISABLED until Gate 1.6
+///     implements safe age routing (13–17 deterministic-only, 18+ OpenAI with consent).
+///     Do NOT flip this on before Gate 1.6 — doing so would expose minors to OpenAI.
+///   - `wearableSyncEnabled` — no HealthKit / smartwatch sync in v1.
+///   - `tournamentsEnabled` — tournament surface is out of v1.
+enum V1 {
+    static let premiumPurchaseEnabled = false
+    static let aiCoachEnabled = false
+    static let wearableSyncEnabled = false
+    static let tournamentsEnabled = false
+}
+
 /// One case per feature that has a visible UI affordance.
 /// Never add a case here for a feature that is fully implemented and available to all users.
 enum AppCapability: CaseIterable {

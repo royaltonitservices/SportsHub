@@ -399,7 +399,15 @@ class StoreManager: ObservableObject {
         self.backendHasPremium = UserDefaults.standard.bool(forKey: "sportshub_backend_premium")
         self.backendSubscriptionTier = UserDefaults.standard.string(forKey: "sportshub_backend_tier") ?? "free"
         self.accountHasPremium = UserDefaults.standard.bool(forKey: "sportshub_account_premium")
-        
+
+        guard V1.premiumPurchaseEnabled else {
+            // v1 ships with NO purchasable Premium: perform ZERO StoreKit/subscription
+            // work at startup — no Transaction listener, no entitlement fetch, no
+            // /users/me/subscription call. (The cached reads above touch only
+            // UserDefaults; no StoreKit/network happens for a normal v1 launch.)
+            isLoading = false
+            return
+        }
         updateListenerTask = listenForTransactions()
         // Restore existing entitlements and sync backend status on launch
         Task { @MainActor in

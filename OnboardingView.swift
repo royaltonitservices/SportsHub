@@ -33,14 +33,14 @@ struct OnboardingView: View {
         ),
         OnboardingPage(
             icon: "figure.run",
-            title: "Train Like a Pro",
-            description: "Access AI-powered training plans, workout builders, and coaching",
+            title: "Train Your Game",
+            description: "Explore a sport-specific drill library, build workouts, and track your skills",
             color: .orange
         ),
         OnboardingPage(
             icon: "trophy.fill",
-            title: "Join Tournaments",
-            description: "Compete in leagues, climb leaderboards, and earn badges",
+            title: "Compete & Climb",
+            description: "Challenge players, climb the ranked leaderboards, and earn badges",
             color: .yellow
         )
     ]

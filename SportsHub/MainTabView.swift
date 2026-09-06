@@ -44,8 +44,14 @@ struct MainTabView: View {
         }
         .background(Color.appBackground)
         .overlay(
-            AICoachFloatingView()
-                .zIndex(999)
+            // AI Coach is disabled in v1 until Gate 1.6 implements safe age routing
+            // (13–17 deterministic-only, 18+ OpenAI). No shipping entry point until then.
+            Group {
+                if V1.aiCoachEnabled {
+                    AICoachFloatingView()
+                        .zIndex(999)
+                }
+            }
         )
         .onChange(of: sessionManager.backendAvailable) { _, isAvailable in
             // Reset dismiss state when server goes offline again

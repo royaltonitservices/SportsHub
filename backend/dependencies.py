@@ -99,3 +99,19 @@ async def require_premium(
         )
 
     return current_user
+
+
+def require_ai_enabled() -> None:
+    """v1 hard feature-disable for the AI Coach / LLM provider surface.
+
+    Raises 503 whenever AI is OFF (the v1 default) so NO shipping endpoint can invoke
+    the provider — independent of premium/subscription/admin/age. This is NOT a premium
+    or age gate; it is a surface kill-switch until Gate 1.6 implements safe age routing.
+    Applied at the AI router level so every current and future AI route is covered.
+    """
+    from feature_flags import AI_COACH_ENABLED
+    if not AI_COACH_ENABLED:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AI Coach is not available in this version.",
+        )

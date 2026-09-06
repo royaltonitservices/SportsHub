@@ -287,17 +287,22 @@ struct ProfileView: View {
     // MARK: - Premium Section
     
     private var premiumSection: some View {
-        VStack(spacing: 0) {
-            if storeManager.isPremium {
-                // Premium Active State
-                premiumActiveCard
-            } else {
-                // Premium Upgrade CTA
-                premiumUpgradeCard
+        // v1 ships with NO purchasable Premium: no upgrade CTA, no paywall, no
+        // restore-purchase. The whole section (and its purchase sheet) is absent until
+        // Premium is reintroduced in a later version with a verified StoreKit flow.
+        Group {
+            if V1.premiumPurchaseEnabled {
+                VStack(spacing: 0) {
+                    if storeManager.isPremium {
+                        premiumActiveCard
+                    } else {
+                        premiumUpgradeCard
+                    }
+                }
+                .sheet(isPresented: $showPremiumSheet) {
+                    PremiumSubscriptionView()
+                }
             }
-        }
-        .sheet(isPresented: $showPremiumSheet) {
-            PremiumSubscriptionView()
         }
     }
     

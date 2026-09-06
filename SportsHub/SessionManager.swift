@@ -135,8 +135,12 @@ class SessionManager: ObservableObject {
             self.isAuthenticated = true
             self.isAdmin = cachedUser.role == .admin
             
-            // Ensure account-level Premium entitlement is recognized from cache
-            StoreManager.shared.setAuthenticatedUser(email: cachedUser.email)
+            // Ensure account-level Premium entitlement is recognized from cache.
+            // v1 has no purchasable Premium, so this (and any StoreKit/subscription
+            // work) is skipped — a normal v1 restore does zero payment work.
+            if V1.premiumPurchaseEnabled {
+                StoreManager.shared.setAuthenticatedUser(email: cachedUser.email)
+            }
         } else {
             // No cached user AND server unreachable — can't restore
             clearSessionState()
@@ -400,12 +404,13 @@ class SessionManager: ObservableObject {
             UserDefaults.standard.set(encoded, forKey: cachedUserKey)
         }
 
-        // Recognize account-level Premium entitlement by email
-        StoreManager.shared.setAuthenticatedUser(email: response.email)
-
-        // Sync Premium subscription status from backend
-        Task {
-            await StoreManager.shared.syncBackendSubscription()
+        // Recognize account-level Premium entitlement + sync subscription from backend
+        // — only when Premium ships. v1 performs NO /users/me/subscription fetch at login.
+        if V1.premiumPurchaseEnabled {
+            StoreManager.shared.setAuthenticatedUser(email: response.email)
+            Task {
+                await StoreManager.shared.syncBackendSubscription()
+            }
         }
     }
 

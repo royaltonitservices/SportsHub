@@ -51,14 +51,19 @@ struct SettingsView: View {
 
             }
 
-            Section("Health & Fitness") {
-                NavigationLink {
-                    SmartwatchSyncView()
-                } label: {
-                    HStack {
-                        Image(systemName: "figure.run.circle.fill")
-                            .foregroundColor(.appPrimary)
-                        Text("Connect Fitness Tracker")
+            // Smartwatch / HealthKit sync is out of v1 (no HealthKit access). The
+            // "Connect Fitness Tracker" entry point is removed until wearable support
+            // returns in a later version.
+            if V1.wearableSyncEnabled {
+                Section("Health & Fitness") {
+                    NavigationLink {
+                        SmartwatchSyncView()
+                    } label: {
+                        HStack {
+                            Image(systemName: "figure.run.circle.fill")
+                                .foregroundColor(.appPrimary)
+                            Text("Connect Fitness Tracker")
+                        }
                     }
                 }
             }

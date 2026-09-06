@@ -468,6 +468,8 @@ struct AdminSettingsView: View {
     }
     
     private func loadSubscriptionStatus() async {
+        // v1 has no purchasable Premium — skip the subscription fetch entirely.
+        guard V1.premiumPurchaseEnabled else { return }
         if let status = try? await APIClient.shared.getSubscriptionStatus() {
             subscriptionStatus = status
         }

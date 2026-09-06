@@ -105,8 +105,12 @@ app.include_router(teams.router)
 app.include_router(oauth.router)
 app.include_router(websocket.router)
 app.include_router(goals.router)
-app.include_router(smartwatch.router)
-app.include_router(tournaments.router)
+# v1 de-scope (Milestone 2): smartwatch/HealthKit sync and the tournament surface are
+# OUT of v1. Their routers are intentionally NOT registered so there is no active
+# HealthKit-ingestion path and no reachable tournament-creation/join API. Models remain
+# dormant (no migration churn); routes return 404. Re-register when the features return.
+# app.include_router(smartwatch.router)
+# app.include_router(tournaments.router)
 app.include_router(ai_coach.router)
 app.include_router(placement.router)
 app.include_router(leaderboards.router)

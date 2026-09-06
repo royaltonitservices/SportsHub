@@ -10,7 +10,21 @@
   Note: precise location is transmitted only to service the real-time
   nearby-tennis-court request and is not retained; it is declared here
   conservatively for App Functionality.
+  v1 de-scope (Milestone 2), source-level data audit (2026-09-05):
+   - Health REMOVED — not merely because HealthKit is gone, but because a code/backend
+     audit found NO specifically-requested structured health/medical field reachable in
+     v1: the only structured inputs are TrainingSession (duration, effort_rating, free
+     notes) and OnboardingSurvey (skill ratings, skill weaknesses, goals). All
+     injury/pain/readiness/HRV/sleep inputs lived in now-disabled DailyReadiness /
+     smartwatch / AI Coach. Per Apple's App Privacy guidance, a generic free-form field
+     (TrainingSession notes) that a user *might* use for health text is Other User
+     Content (already declared), not the Health category.
+   - PurchaseHistory REMOVED — no purchasable Premium in v1.
+   - Fitness RETAINED — v1 still collects self-entered training/workout/exercise data
+     (sessions, drills, saved workouts) sent to and retained by the backend.
+  Final authoritative privacy audit against the Release archive remains Gate 3.1.
 -->
+
 <plist version="1.0">
 <dict>
 	<key>NSPrivacyTracking</key>
@@ -81,18 +95,6 @@
 		</dict>
 		<dict>
 			<key>NSPrivacyCollectedDataType</key>
-			<string>NSPrivacyCollectedDataTypeHealth</string>
-			<key>NSPrivacyCollectedDataTypeLinked</key>
-			<true/>
-			<key>NSPrivacyCollectedDataTypeTracking</key>
-			<false/>
-			<key>NSPrivacyCollectedDataTypePurposes</key>
-			<array>
-				<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
-			</array>
-		</dict>
-		<dict>
-			<key>NSPrivacyCollectedDataType</key>
 			<string>NSPrivacyCollectedDataTypeFitness</string>
 			<key>NSPrivacyCollectedDataTypeLinked</key>
 			<true/>
@@ -106,18 +108,6 @@
 		<dict>
 			<key>NSPrivacyCollectedDataType</key>
 			<string>NSPrivacyCollectedDataTypePreciseLocation</string>
-			<key>NSPrivacyCollectedDataTypeLinked</key>
-			<true/>
-			<key>NSPrivacyCollectedDataTypeTracking</key>
-			<false/>
-			<key>NSPrivacyCollectedDataTypePurposes</key>
-			<array>
-				<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
-			</array>
-		</dict>
-		<dict>
-			<key>NSPrivacyCollectedDataType</key>
-			<string>NSPrivacyCollectedDataTypePurchaseHistory</string>
 			<key>NSPrivacyCollectedDataTypeLinked</key>
 			<true/>
 			<key>NSPrivacyCollectedDataTypeTracking</key>

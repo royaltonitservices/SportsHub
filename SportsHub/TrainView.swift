@@ -33,18 +33,20 @@ struct TrainView: View {
                     // Sport Selector
                     sportSelector
                     
-                    // Weekly AI Drills (Premium)
-                    if storeManager.isPremium {
+                    // Weekly AI Drills — AI feature, out of v1 until Gate 1.6.
+                    if V1.aiCoachEnabled {
                         weeklyDrillsCard
                     }
-                    
-                    // Daily Readiness Card (Premium)
-                    if storeManager.isPremium {
+
+                    // Daily Readiness — wearable/HealthKit feature, out of v1.
+                    if V1.wearableSyncEnabled {
                         dailyReadinessCard
                     }
-                    
-                    // AI Coach Chat (Visible to all, Premium-gated on tap)
-                    aiCoachChatCard
+
+                    // AI Coach Chat — disabled in v1 until Gate 1.6 safe age routing.
+                    if V1.aiCoachEnabled {
+                        aiCoachChatCard
+                    }
 
                     // Weakness / Focus Area Survey
                     weaknessSurveyCard
