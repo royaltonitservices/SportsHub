@@ -213,6 +213,36 @@ class AuthIdentity(Base):
         return v
 
 
+class AuthAttemptStatus(str, enum.Enum):
+    PENDING = "PENDING"            # server-issued; awaiting the first Apple submission
+    AWAITING_DOB = "AWAITING_DOB"  # Apple verified a NEW identity; awaiting DOB completion
+    CONSUMED = "CONSUMED"          # terminal — never redeemable again
+
+
+class AuthAttempt(Base):
+    """A server-bound, single-use, expiring authentication attempt for OAuth sign-in.
+
+    The server mints the attempt (unpredictable id + nonce) BEFORE Apple authorization,
+    so a valid Apple id_token alone is NOT sufficient proof: it must redeem a live,
+    unconsumed attempt whose nonce the token was bound to. Single-use is enforced by
+    guarded status transitions (PENDING -> CONSUMED, or PENDING -> AWAITING_DOB -> CONSUMED)
+    executed as WHERE-status-guarded UPDATEs so only one terminal transition can win.
+    Expired / consumed / unknown / cross-identity-substituted attempts are rejected
+    (fail-closed). Expired rows are pruned on each new attempt (bounded storage).
+    """
+    __tablename__ = "auth_attempts"
+
+    id = Column(UUID(), primary_key=True, default=uuid_pkg.uuid4)    # unpredictable attempt id
+    provider = Column(String(32), nullable=False)
+    nonce = Column(String(128), nullable=False)                     # server-issued raw nonce
+    status = Column(SQLEnum(AuthAttemptStatus), nullable=False,
+                    default=AuthAttemptStatus.PENDING)
+    subject = Column(String(255), nullable=True)                    # bound Apple `sub` (AWAITING_DOB)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    consumed_at = Column(DateTime(timezone=True), nullable=True)
+
+
 class SportProfile(Base):
     __tablename__ = "sport_profiles"
 

@@ -179,4 +179,140 @@ struct AppleOnboardingCoordinatorTests {
         #expect(step == .authenticated(token: "jwt"))
         #expect(c.resultForCompletion() == nil)
     }
+
+    @Test func dobCompletionRetainsTheCorrectAttempt() {
+        // Gate 1.3: the DOB completion must resubmit the SAME server-bound attempt + nonce
+        // captured in the first authorization — never a freshly minted one.
+        let c = AppleOnboardingCoordinator()
+        let result = AppleSignInResult(identityToken: "tok", userIdentifier: "u",
+                                       email: nil, fullName: nil,
+                                       nonce: "raw-nonce-9", attemptId: "attempt-9")
+        _ = c.stepForInitial(.dobRequired, result: result)
+        #expect(c.resultForCompletion()?.attemptId == "attempt-9")
+        #expect(c.resultForCompletion()?.nonce == "raw-nonce-9")
+    }
+}
+
+// Gate 1.3 — server-bound attempt ownership on the iOS side. Proves the overlap guard,
+// the isAuthenticating lifecycle, and per-attempt state reset directly against
+// OAuthManager.acquireAppleAttempt (isolated from Apple/UI via an injected provider).
+@MainActor
+struct OAuthAttemptOwnershipTests {
+
+    // Reference boxes so escaping-provider mutation is unambiguous under strict concurrency.
+    private final class IntBox { var n = 0 }
+    private final class FlagBox { var on: Bool; init(_ v: Bool) { on = v } }
+
+    @Test func acquireBindsAttemptAndHoldsOwnership() async throws {
+        let m = OAuthManager(testAttemptProvider: { ("attempt-1", "nonce-1") })
+        let a = try await m.acquireAppleAttempt()
+        #expect(a.attemptId == "attempt-1")
+        #expect(a.nonce == "nonce-1")
+        // The delegate callback reads these — they are bound to THIS acquired attempt.
+        #expect(m._testCurrentAttemptId == "attempt-1")
+        #expect(m._testCurrentNonce == "nonce-1")
+        #expect(m.isAuthenticating == true)   // ownership held until the delegate callback fires
+    }
+
+    @Test func overlappingLoginRejectedBeforeCreatingAnotherAttempt() async {
+        let calls = IntBox()
+        let m = OAuthManager(testAttemptProvider: { calls.n += 1; return ("id", "n") })
+        m.isAuthenticating = true            // an authorization is already in flight
+        var threw = false
+        do { _ = try await m.acquireAppleAttempt() }
+        catch { threw = true; #expect(error is OAuthError) }
+        #expect(threw)
+        #expect(calls.n == 0)                // no second attempt was minted
+        #expect(m._testCurrentAttemptId == nil)   // in-flight per-attempt state left untouched
+    }
+
+    @Test func attemptFetchFailureClearsStateAndReleasesOwnership() async {
+        struct Boom: Error {}
+        let m = OAuthManager(testAttemptProvider: { throw Boom() })
+        var threw = false
+        do { _ = try await m.acquireAppleAttempt() } catch { threw = true }
+        #expect(threw)
+        #expect(m.isAuthenticating == false)      // ownership released
+        #expect(m._testCurrentAttemptId == nil)   // no partial per-attempt state
+        #expect(m._testCurrentNonce == nil)
+    }
+
+    @Test func freshLoginSucceedsAfterAFailure() async throws {
+        let fail = FlagBox(true)
+        let m = OAuthManager(testAttemptProvider: {
+            if fail.on { struct E: Error {}; throw E() }
+            return ("attempt-2", "nonce-2")
+        })
+        do { _ = try await m.acquireAppleAttempt() } catch { /* expected first failure */ }
+        #expect(m.isAuthenticating == false)      // prior failure did not wedge ownership
+        fail.on = false
+        let a = try await m.acquireAppleAttempt()  // fresh login not blocked
+        #expect(a.attemptId == "attempt-2")
+        #expect(m._testCurrentAttemptId == "attempt-2")
+        #expect(m.isAuthenticating == true)
+    }
+}
+
+// Gate 1.3 — callback ownership. Each delegate callback is bound to its originating
+// authorization (token); a late/duplicate/superseded callback can neither resolve nor
+// clear a newer attempt. Drives the production dispatch (deliverAppleResult). Live
+// ASAuthorization delegate invocation remains manual/device (Gate 3.2).
+@MainActor
+struct OAuthCallbackOwnershipTests {
+
+    private final class IntBox { var n = 0 }
+
+    private func sample() -> AppleSignInResult {
+        AppleSignInResult(identityToken: "t", userIdentifier: "u", email: nil, fullName: nil)
+    }
+
+    @Test func lateCallbackFromSupersededAttemptDoesNotDisturbNewer() async {
+        let m = OAuthManager(testAttemptProvider: { ("id", "n") })
+        let aFired = IntBox(), bFired = IntBox()
+        let tokenA = m._testRegisterAuthorization { _ in aFired.n += 1 }
+        #expect(m.deliverAppleResult(token: tokenA, .failure(OAuthError.cancelled)) == true)
+        #expect(aFired.n == 1)
+        #expect(m._testIsAuthenticating == false)
+        // Attempt B begins after A resolved.
+        let tokenB = m._testRegisterAuthorization { _ in bFired.n += 1 }
+        // A late delivery from the superseded attempt A must be ignored — B stays intact.
+        #expect(m.deliverAppleResult(token: tokenA, .success(sample())) == false)
+        #expect(aFired.n == 1)                       // A did not fire again
+        #expect(bFired.n == 0)                       // B undisturbed
+        #expect(m._testHasPendingCompletion == true) // B's completion intact
+        #expect(m._testIsAuthenticating == true)
+        _ = tokenB
+    }
+
+    @Test func cancellationClearsStateAndPermitsFreshLogin() async throws {
+        let m = OAuthManager(testAttemptProvider: { ("id2", "n2") })
+        let t = m._testRegisterAuthorization { _ in }
+        #expect(m.deliverAppleResult(token: t, .failure(OAuthError.cancelled)) == true)
+        #expect(m._testIsAuthenticating == false)
+        #expect(m._testHasPendingCompletion == false)
+        let a = try await m.acquireAppleAttempt()    // fresh login not blocked by the cancel
+        #expect(a.attemptId == "id2")
+    }
+
+    @Test func duplicateCallbackCannotCompleteTwice() {
+        let m = OAuthManager(testAttemptProvider: { ("id", "n") })
+        let fired = IntBox()
+        let t = m._testRegisterAuthorization { _ in fired.n += 1 }
+        #expect(m.deliverAppleResult(token: t, .success(sample())) == true)
+        #expect(m.deliverAppleResult(token: t, .success(sample())) == false)  // second ignored
+        #expect(fired.n == 1)
+    }
+
+    @Test func successfulCallbackCarriesItsOwnAttemptIdAndNonce() async throws {
+        let m = OAuthManager(testAttemptProvider: { ("attempt-77", "nonce-77") })
+        _ = try await m.acquireAppleAttempt()        // binds per-attempt nonce + attemptId
+        var received: AppleSignInResult?
+        let t = m._testRegisterAuthorization { r in if case .success(let v) = r { received = v } }
+        // Build the result exactly as the delegate does, then dispatch it.
+        let built = m._testMakeAppleResult(identityToken: "tok", userIdentifier: "u",
+                                           email: nil, fullName: nil)
+        #expect(m.deliverAppleResult(token: t, .success(built)) == true)
+        #expect(received?.attemptId == "attempt-77")
+        #expect(received?.nonce == "nonce-77")
+    }
 }

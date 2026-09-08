@@ -16,37 +16,155 @@ class OAuthManager: NSObject, ObservableObject {
     @Published var isAuthenticating = false
     @Published var authError: String?
     
+    // Per-attempt state for the in-flight authorization. Set immediately before
+    // performRequests() and read once in the delegate callback; `isAuthenticating` gates
+    // against overlapping authorizations so these are never clobbered mid-flight.
     private var currentNonce: String?
+    private var currentAttemptId: String?
     private var appleSignInCompletion: ((Result<AppleSignInResult, Error>) -> Void)?
-    
+
+    // Each authorization gets a monotonically increasing token, and its controller is
+    // recorded. A delegate callback is honored only when it belongs to the CURRENT
+    // authorization — a late callback from a cancelled/superseded attempt can neither
+    // resolve nor clear a newer attempt's completion or state.
+    private var currentAuthToken: Int = 0
+    private weak var activeAuthController: ASAuthorizationController?
+
+    /// Fetches a server-bound attempt (id + raw nonce) before Apple authorization.
+    /// Injectable so the ownership/attempt lifecycle is unit-testable without a network; in
+    /// production it calls the backend `/auth/oauth/apple/attempt` endpoint.
+    private var attemptProvider: (() async throws -> (attemptId: String, nonce: String))!
+
     private override init() {
         super.init()
+        attemptProvider = { [weak self] in
+            guard let self else { throw OAuthError.authorizationInProgress }
+            return try await self.beginAppleAttempt()
+        }
     }
+
+    #if DEBUG
+    /// Test-only instance (NOT `shared`) with an injected attempt provider — lets tests
+    /// drive overlap/ownership/reset logic deterministically without Apple or the network.
+    init(testAttemptProvider: @escaping () async throws -> (attemptId: String, nonce: String)) {
+        super.init()
+        attemptProvider = testAttemptProvider
+    }
+
+    var _testCurrentAttemptId: String? { currentAttemptId }
+    var _testCurrentNonce: String? { currentNonce }
+    #endif
     
     // MARK: - Apple Sign In
     
     func signInWithApple(presentationAnchor: ASPresentationAnchor) async throws -> AppleSignInResult {
-        return try await withCheckedThrowingContinuation { continuation in
-            isAuthenticating = true
-            
-            let nonce = randomNonceString()
-            currentNonce = nonce
-            
-            let request = ASAuthorizationAppleIDProvider().createRequest()
-            request.requestedScopes = [.fullName, .email]
-            request.nonce = sha256(nonce)
-            
-            let controller = ASAuthorizationController(authorizationRequests: [request])
-            controller.delegate = self
-            controller.presentationContextProvider = self
-            
-            appleSignInCompletion = { result in
-                self.isAuthenticating = false
-                continuation.resume(with: result)
+        // Take exclusive authorization ownership + a fresh server-bound attempt (Gate 1.3).
+        let attempt = try await acquireAppleAttempt()
+        do {
+            return try await withCheckedThrowingContinuation { continuation in
+                let request = ASAuthorizationAppleIDProvider().createRequest()
+                request.requestedScopes = [.fullName, .email]
+                request.nonce = sha256(attempt.nonce)   // hash of the SERVER-issued nonce
+
+                let controller = ASAuthorizationController(authorizationRequests: [request])
+                controller.delegate = self
+                controller.presentationContextProvider = self
+
+                // Tag THIS authorization; the delegate delivers results keyed to this token so
+                // only the current authorization's callback can resolve the continuation.
+                currentAuthToken += 1
+                activeAuthController = controller
+                appleSignInCompletion = { result in continuation.resume(with: result) }
+                controller.performRequests()
             }
-            
-            controller.performRequests()
+        } catch {
+            isAuthenticating = false
+            appleSignInCompletion = nil
+            throw error
         }
+    }
+
+    /// Deliver an authorization outcome for a specific attempt `token`. Honors it only when
+    /// it matches the CURRENT authorization and a completion is still pending — so a late
+    /// callback from a cancelled/superseded attempt is ignored, and a duplicate callback
+    /// cannot complete twice. Resets ownership + per-callback state on the honored delivery.
+    /// Returns true iff the delivery was honored.
+    @discardableResult
+    func deliverAppleResult(token: Int, _ result: Result<AppleSignInResult, Error>) -> Bool {
+        guard token == currentAuthToken, let completion = appleSignInCompletion else {
+            return false
+        }
+        isAuthenticating = false
+        appleSignInCompletion = nil
+        activeAuthController = nil
+        completion(result)
+        return true
+    }
+
+    /// Build the result for the CURRENT authorization, stamping the per-attempt nonce +
+    /// attempt id captured at acquisition time so the callback carries its own attempt.
+    private func makeAppleResult(identityToken: String, userIdentifier: String,
+                                 email: String?, fullName: String?) -> AppleSignInResult {
+        AppleSignInResult(identityToken: identityToken, userIdentifier: userIdentifier,
+                          email: email, fullName: fullName,
+                          nonce: currentNonce, attemptId: currentAttemptId)
+    }
+
+    /// Token the delegate should stamp a callback with, derived from the controller it came
+    /// from. A callback from a controller that is no longer active yields a non-matching
+    /// token, so `deliverAppleResult` ignores it.
+    private func token(for controller: ASAuthorizationController) -> Int {
+        controller === activeAuthController ? currentAuthToken : -1
+    }
+
+    #if DEBUG
+    /// Test seam: register an in-flight authorization completion (mirrors the continuation
+    /// setup in `signInWithApple`) and return its token. Lets tests drive the real
+    /// `deliverAppleResult` dispatch without Apple/UI.
+    func _testRegisterAuthorization(_ completion: @escaping (Result<AppleSignInResult, Error>) -> Void) -> Int {
+        currentAuthToken += 1
+        isAuthenticating = true
+        appleSignInCompletion = completion
+        return currentAuthToken
+    }
+    var _testIsAuthenticating: Bool { isAuthenticating }
+    var _testHasPendingCompletion: Bool { appleSignInCompletion != nil }
+    func _testMakeAppleResult(identityToken: String, userIdentifier: String,
+                              email: String?, fullName: String?) -> AppleSignInResult {
+        makeAppleResult(identityToken: identityToken, userIdentifier: userIdentifier,
+                        email: email, fullName: fullName)
+    }
+    #endif
+
+    /// Take exclusive authorization ownership and acquire a fresh server-bound attempt.
+    /// Throws `.authorizationInProgress` — BEFORE creating another attempt — if one is
+    /// already in flight, so the per-attempt nonce/attemptId can never be clobbered by a
+    /// concurrent request. On any attempt-fetch failure it releases ownership and clears
+    /// per-attempt state so a subsequent fresh login starts clean. Isolated from the UI so
+    /// the ownership/reset logic is unit-testable.
+    func acquireAppleAttempt() async throws -> (attemptId: String, nonce: String) {
+        guard !isAuthenticating else { throw OAuthError.authorizationInProgress }
+        isAuthenticating = true
+        do {
+            let attempt = try await attemptProvider()
+            currentNonce = attempt.nonce
+            currentAttemptId = attempt.attemptId
+            return attempt
+        } catch {
+            isAuthenticating = false
+            currentNonce = nil
+            currentAttemptId = nil
+            throw error
+        }
+    }
+
+    /// Mint a server-bound authentication attempt before invoking Apple. Returns the
+    /// unpredictable attempt id + raw nonce the backend will require the id_token to bind to.
+    private func beginAppleAttempt() async throws -> (attemptId: String, nonce: String) {
+        struct _Empty: Codable {}
+        let resp: AppleAttemptResponse = try await APIClient.shared.post(
+            "/auth/oauth/apple/attempt", body: _Empty(), requiresAuth: false)
+        return (resp.attemptId, resp.nonce)
     }
     
     // MARK: - Google Sign In
@@ -79,7 +197,8 @@ class OAuthManager: NSObject, ObservableObject {
         let request = OAuthLoginRequest(
             provider: "apple",
             idToken: appleResult.identityToken,
-            nonce: currentNonce,
+            attemptId: appleResult.attemptId,   // redeem the server-bound attempt
+            nonce: appleResult.nonce,           // raw nonce (server compares to its stored attempt nonce)
             email: appleResult.email,
             fullName: appleResult.fullName,
             dateOfBirth: dateOfBirth
@@ -169,14 +288,15 @@ class OAuthManager: NSObject, ObservableObject {
 // MARK: - ASAuthorizationControllerDelegate
 extension OAuthManager: ASAuthorizationControllerDelegate {
     func authorizationController(controller: ASAuthorizationController, didCompleteWithAuthorization authorization: ASAuthorization) {
+        let authToken = token(for: controller)   // callback is bound to its originating attempt
         guard let appleIDCredential = authorization.credential as? ASAuthorizationAppleIDCredential,
               let identityToken = appleIDCredential.identityToken,
               let tokenString = String(data: identityToken, encoding: .utf8) else {
-            appleSignInCompletion?(.failure(OAuthError.invalidCredentials))
+            deliverAppleResult(token: authToken, .failure(OAuthError.invalidCredentials))
             return
         }
-        
-        let result = AppleSignInResult(
+
+        let result = makeAppleResult(
             identityToken: tokenString,
             userIdentifier: appleIDCredential.user,
             email: appleIDCredential.email,
@@ -184,12 +304,12 @@ extension OAuthManager: ASAuthorizationControllerDelegate {
                 .compactMap { $0 }
                 .joined(separator: " ")
         )
-        
-        appleSignInCompletion?(.success(result))
+
+        deliverAppleResult(token: authToken, .success(result))
     }
-    
+
     func authorizationController(controller: ASAuthorizationController, didCompleteWithError error: Error) {
-        appleSignInCompletion?(.failure(error))
+        deliverAppleResult(token: token(for: controller), .failure(error))
     }
 }
 
@@ -209,6 +329,23 @@ struct AppleSignInResult {
     let userIdentifier: String
     let email: String?
     let fullName: String?
+    /// RAW per-authorization nonce whose SHA-256 was placed in the ASAuthorization
+    /// request; travels WITH the token so the server nonce-binding check does not depend
+    /// on mutable singleton state across the two-phase (DOB) flow.
+    var nonce: String? = nil
+    /// Server-bound attempt id this token must redeem (Gate 1.3). Travels with the result
+    /// so the same attempt is used across the two-phase DOB completion.
+    var attemptId: String? = nil
+}
+
+// MARK: - Server-bound attempt response
+struct AppleAttemptResponse: Codable {
+    let attemptId: String
+    let nonce: String
+    enum CodingKeys: String, CodingKey {
+        case attemptId = "attempt_id"
+        case nonce
+    }
 }
 
 struct GoogleSignInResult {
@@ -221,6 +358,7 @@ struct GoogleSignInResult {
 struct OAuthLoginRequest: Codable {
     let provider: String
     let idToken: String
+    var attemptId: String? = nil     // server-bound attempt id (Gate 1.3)
     let nonce: String?
     let email: String?
     let fullName: String?
@@ -229,6 +367,7 @@ struct OAuthLoginRequest: Codable {
     enum CodingKeys: String, CodingKey {
         case provider
         case idToken = "id_token"
+        case attemptId = "attempt_id"
         case nonce
         case email
         case fullName = "full_name"
@@ -316,7 +455,8 @@ enum OAuthError: LocalizedError {
     case invalidCredentials
     case notImplemented(String)
     case cancelled
-    
+    case authorizationInProgress
+
     var errorDescription: String? {
         switch self {
         case .invalidCredentials:
@@ -325,6 +465,8 @@ enum OAuthError: LocalizedError {
             return message
         case .cancelled:
             return "Sign in was cancelled"
+        case .authorizationInProgress:
+            return "A sign-in is already in progress. Please wait."
         }
     }
 }

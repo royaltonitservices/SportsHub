@@ -390,7 +390,7 @@ class AppleEndpointFailClosedTests(unittest.TestCase):
             oauth_mod._verify_apple_id_token = orig
 
     def test_expired_apple_token_fails_closed(self):
-        async def _expired(_token):
+        async def _expired(_token, expected_nonce=None):
             raise ValueError("Apple identity token has expired")
         db, eng, path = _fresh_session()
         try:
@@ -403,7 +403,7 @@ class AppleEndpointFailClosedTests(unittest.TestCase):
             db.close(); os.remove(path)
 
     def test_tampered_apple_token_fails_closed(self):
-        async def _bad(_token):
+        async def _bad(_token, expected_nonce=None):
             raise ValueError("Apple identity token verification failed")
         db, eng, path = _fresh_session()
         try:
