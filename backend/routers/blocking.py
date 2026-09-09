@@ -9,6 +9,7 @@ from uuid import UUID
 
 from database import get_db
 from dependencies import get_current_user
+from blocking_policy import apply_block, remove_block
 import models
 import schemas
 
@@ -42,45 +43,9 @@ async def block_user(
             detail="User not found"
         )
 
-    # Check if already blocked
-    existing_block = db.query(models.BlockedUser).filter(
-        and_(
-            models.BlockedUser.blocker_id == current_user.id,
-            models.BlockedUser.blocked_id == block_data.blocked_user_id
-        )
-    ).first()
-
-    if existing_block:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="User already blocked"
-        )
-
-    # Create block
-    new_block = models.BlockedUser(
-        blocker_id=current_user.id,
-        blocked_id=block_data.blocked_user_id
-    )
-
-    # Remove friendship if exists
-    friendship = db.query(models.Friendship).filter(
-        or_(
-            and_(
-                models.Friendship.user_a_id == current_user.id,
-                models.Friendship.user_b_id == block_data.blocked_user_id
-            ),
-            and_(
-                models.Friendship.user_a_id == block_data.blocked_user_id,
-                models.Friendship.user_b_id == current_user.id
-            )
-        )
-    ).first()
-
-    if friendship:
-        db.delete(friendship)
-
-    db.add(new_block)
-    db.commit()
+    # Canonical, idempotent block: creates the directed BlockedUser (no duplicate), ends
+    # accepted friendship and cancels pending requests in both directions.
+    apply_block(db, current_user.id, block_data.blocked_user_id)
 
     return {"message": "User blocked successfully"}
 
@@ -94,21 +59,13 @@ async def unblock_user(
     """
     Unblock a user
     """
-    block = db.query(models.BlockedUser).filter(
-        and_(
-            models.BlockedUser.blocker_id == current_user.id,
-            models.BlockedUser.blocked_id == blocked_user_id
-        )
-    ).first()
-
-    if not block:
+    # Removes ONLY the caller's directed block; a reverse block keeps enforcing, and this
+    # never restores friendship, requests, or contact permission.
+    if not remove_block(db, current_user.id, blocked_user_id):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Block not found"
         )
-
-    db.delete(block)
-    db.commit()
 
     return {"message": "User unblocked successfully"}
 

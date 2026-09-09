@@ -8,6 +8,7 @@ from typing import List, Dict, Any
 
 from database import get_db
 from dependencies import get_current_user
+from blocking_policy import is_blocked as is_blocked_between
 import models
 import schemas
 
@@ -102,30 +103,12 @@ async def search_user_by_username(
         models.User.username == username
     ).first()
 
-    if not user:
+    # Non-disclosing 404 when the user is missing OR blocked in either direction — never a
+    # distinct "blocked" signal that would reveal the block or its direction.
+    if not user or is_blocked_between(db, current_user.id, user.id):
         raise HTTPException(
             status_code=404,
             detail="User not found"
-        )
-
-    # Check if blocked
-    is_blocked = db.query(models.BlockedUser).filter(
-        or_(
-            and_(
-                models.BlockedUser.blocker_id == current_user.id,
-                models.BlockedUser.blocked_id == user.id
-            ),
-            and_(
-                models.BlockedUser.blocker_id == user.id,
-                models.BlockedUser.blocked_id == current_user.id
-            )
-        )
-    ).first()
-
-    if is_blocked:
-        raise HTTPException(
-            status_code=403,
-            detail="User not accessible"
         )
 
     return user

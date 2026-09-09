@@ -551,6 +551,14 @@ class BlockedUser(Base):
     blocked_id = Column(UUID(), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
+    # One directed block per (blocker, blocked). Prevents duplicate block rows; the canonical
+    # block policy (blocking_policy.apply_block) is also idempotent in code. Fresh DBs get the
+    # constraint via create_all; existing DBs are deduped by migrate_gate14_blocking.py (the
+    # constraint itself on an existing SQLite table needs an Alembic rebuild — Gate 2.1A).
+    __table_args__ = (
+        UniqueConstraint("blocker_id", "blocked_id", name="uq_blocked_directed"),
+    )
+
 
 class Comment(Base):
     __tablename__ = "comments"

@@ -9,10 +9,29 @@ from uuid import UUID
 from datetime import datetime
 from database import get_db
 from dependencies import get_current_active_user
+from blocking_policy import apply_block, remove_block, directed_block, is_blocked
 import models
 import schemas
 
 router = APIRouter(prefix="/friends", tags=["friends"])
+
+
+def _block_as_friendship(block: "models.BlockedUser",
+                         blocker: "models.User", blocked: "models.User") -> dict:
+    """Render a canonical BlockedUser row in the legacy FriendshipResponse shape so the
+    existing block/blocked API stays wire-compatible. FriendshipResponse's validator
+    returns dicts unchanged, so this dict is validated directly."""
+    return {
+        "id": block.id,
+        "user_a_id": block.blocker_id,
+        "user_b_id": block.blocked_id,
+        "user_a_username": blocker.username if blocker else None,
+        "user_b_username": blocked.username if blocked else None,
+        "user_a_display_name": blocker.display_name if blocker else None,
+        "user_b_display_name": blocked.display_name if blocked else None,
+        "status": models.FriendshipStatus.BLOCKED,
+        "created_at": block.created_at,
+    }
 
 
 @router.post("/request", response_model=schemas.FriendshipResponse, status_code=status.HTTP_201_CREATED)
@@ -36,6 +55,13 @@ async def send_friend_request(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found"
+        )
+
+    # Deny if either party has blocked the other (generic message — never reveals direction).
+    if is_blocked(db, current_user.id, request.target_user_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Unable to send a friend request to this user."
         )
 
     # Check if friendship already exists
@@ -96,6 +122,14 @@ async def accept_friend_request(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Cannot accept this friend request"
+        )
+
+    # Deny stale acceptance if a block now exists in either direction. (A block also severs
+    # the pending row, so this is belt-and-suspenders against a concurrent block.)
+    if is_blocked(db, current_user.id, friendship.user_a_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This friend request is no longer available."
         )
 
     if friendship.status != models.FriendshipStatus.PENDING:
@@ -260,7 +294,7 @@ async def block_user(
     current_user: models.User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
-    """Block a user (prevents all interactions)"""
+    """Block a user (prevents all interactions). Canonical store is BlockedUser."""
 
     # Can't block yourself
     if user_id == current_user.id:
@@ -277,39 +311,10 @@ async def block_user(
             detail="User not found"
         )
 
-    # Check if relationship already exists
-    existing = db.query(models.Friendship).filter(
-        or_(
-            and_(
-                models.Friendship.user_a_id == current_user.id,
-                models.Friendship.user_b_id == user_id
-            ),
-            and_(
-                models.Friendship.user_a_id == user_id,
-                models.Friendship.user_b_id == current_user.id
-            )
-        )
-    ).first()
-
-    if existing:
-        # Update existing relationship to blocked
-        existing.status = models.FriendshipStatus.BLOCKED
-        existing.initiated_by = current_user.id  # Track who blocked
-        db.commit()
-        db.refresh(existing)
-        return existing
-    else:
-        # Create new blocked relationship
-        block = models.Friendship(
-            user_a_id=current_user.id,
-            user_b_id=user_id,
-            status=models.FriendshipStatus.BLOCKED,
-            initiated_by=current_user.id
-        )
-        db.add(block)
-        db.commit()
-        db.refresh(block)
-        return block
+    # Canonical, idempotent: create the directed BlockedUser (no duplicate), end friendship,
+    # cancel pending requests. Return in the legacy FriendshipResponse shape for compat.
+    block = apply_block(db, current_user.id, user_id)
+    return _block_as_friendship(block, current_user, target_user)
 
 
 @router.delete("/unblock/{user_id}")
@@ -318,39 +323,14 @@ async def unblock_user(
     current_user: models.User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
-    """Unblock a previously blocked user"""
+    """Unblock a previously blocked user. Removes ONLY the caller's directed block; a reverse
+    block keeps enforcing and friendship/contact is NOT restored."""
 
-    # Find the block relationship
-    block = db.query(models.Friendship).filter(
-        or_(
-            and_(
-                models.Friendship.user_a_id == current_user.id,
-                models.Friendship.user_b_id == user_id
-            ),
-            and_(
-                models.Friendship.user_a_id == user_id,
-                models.Friendship.user_b_id == current_user.id
-            )
-        ),
-        models.Friendship.status == models.FriendshipStatus.BLOCKED
-    ).first()
-
-    if not block:
+    if not remove_block(db, current_user.id, user_id):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User is not blocked"
         )
-
-    # Only the blocker can unblock
-    if block.initiated_by != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Cannot unblock this user"
-        )
-
-    # Remove the block relationship entirely
-    db.delete(block)
-    db.commit()
 
     return {"message": "User unblocked"}
 
@@ -360,18 +340,21 @@ async def get_blocked_users(
     current_user: models.User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
-    """Get all users blocked by current user"""
+    """Get all users the current user has blocked (canonical BlockedUser store)."""
 
-    blocks = db.query(models.Friendship).filter(
-        or_(
-            models.Friendship.user_a_id == current_user.id,
-            models.Friendship.user_b_id == current_user.id
-        ),
-        models.Friendship.status == models.FriendshipStatus.BLOCKED,
-        models.Friendship.initiated_by == current_user.id
+    blocks = db.query(models.BlockedUser).filter(
+        models.BlockedUser.blocker_id == current_user.id
     ).all()
+    if not blocks:
+        return []
 
-    return blocks
+    blocked_users = {
+        u.id: u for u in db.query(models.User).filter(
+            models.User.id.in_([b.blocked_id for b in blocks])
+        ).all()
+    }
+    return [_block_as_friendship(b, current_user, blocked_users.get(b.blocked_id))
+            for b in blocks]
 
 
 @router.get("/status/{user_id}", response_model=schemas.FriendStatusResponse)
@@ -380,7 +363,18 @@ async def get_friend_status(
     current_user: models.User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
-    """Check friendship status with a specific user"""
+    """Check friendship status with a specific user. Block state reflects the canonical
+    BlockedUser store (bidirectional); `initiated_by_me` = the caller's own directed block."""
+
+    blocked_either = is_blocked(db, current_user.id, user_id)
+    if blocked_either:
+        return schemas.FriendStatusResponse(
+            status="blocked",
+            is_friend=False,
+            is_pending=False,
+            is_blocked=True,
+            initiated_by_me=directed_block(db, current_user.id, user_id) is not None
+        )
 
     friendship = db.query(models.Friendship).filter(
         or_(
@@ -408,6 +402,6 @@ async def get_friend_status(
         status=friendship.status.value,
         is_friend=friendship.status == models.FriendshipStatus.ACCEPTED,
         is_pending=friendship.status == models.FriendshipStatus.PENDING,
-        is_blocked=friendship.status == models.FriendshipStatus.BLOCKED,
+        is_blocked=False,
         initiated_by_me=friendship.initiated_by == current_user.id
     )

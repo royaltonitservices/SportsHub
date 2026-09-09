@@ -9,6 +9,7 @@ from uuid import UUID
 from datetime import datetime
 from database import get_db
 from dependencies import get_current_active_user
+from blocking_policy import is_blocked
 import models
 import schemas
 
@@ -57,6 +58,14 @@ async def send_message(
             detail="User not found"
         )
 
+    # Block wins over any relationship (defensive: block also severs friendship). Generic
+    # message reuses the friends-only wording so it never reveals a block or its direction.
+    if is_blocked(db, current_user.id, message_data.receiver_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Can only message friends"
+        )
+
     # Verify friendship
     if not are_friends(current_user.id, message_data.receiver_id, db):
         raise HTTPException(
@@ -88,6 +97,14 @@ async def get_conversation(
     limit: int = 50
 ):
     """Get message history with a specific user"""
+
+    # Block denies live conversation access (history rows are retained in the DB for
+    # moderation/evidence; they are simply not served through the normal contact route).
+    if is_blocked(db, current_user.id, user_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Can only view messages with friends"
+        )
 
     # Verify friendship
     if not are_friends(current_user.id, user_id, db):

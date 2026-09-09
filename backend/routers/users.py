@@ -7,6 +7,7 @@ from typing import List
 from uuid import UUID
 from database import get_db
 from dependencies import get_current_active_user
+from blocking_policy import is_blocked
 import models
 import schemas
 import os
@@ -33,7 +34,9 @@ async def get_user_by_id(
     """Get user profile by ID"""
     user = db.query(models.User).filter(models.User.id == user_id).first()
 
-    if not user:
+    # Hide a blocked counterpart's profile. Return 404 (indistinguishable from a missing
+    # user) so the response never discloses the block or its direction.
+    if not user or is_blocked(db, current_user.id, user_id):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found"
@@ -51,7 +54,8 @@ async def get_user_by_username(
     """Get user profile by username"""
     user = db.query(models.User).filter(models.User.username == username).first()
 
-    if not user:
+    # Same non-disclosing 404 when a block exists in either direction.
+    if not user or is_blocked(db, current_user.id, user.id):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found"
