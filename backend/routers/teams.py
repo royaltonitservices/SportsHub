@@ -12,6 +12,7 @@ from pydantic import BaseModel
 from database import get_db
 from dependencies import get_current_user
 from elo_service import EloService
+from blocking_policy import blocked_user_ids, cross_blocked
 import models
 
 router = APIRouter(prefix="/teams", tags=["teams"])
@@ -151,6 +152,15 @@ async def add_team_member(
     if existing:
         raise HTTPException(status_code=400, detail="User already in team")
 
+    # Refuse if the candidate is blocked (either direction) with any current team member.
+    current_member_ids = [m.user_id for m in db.query(models.TeamMember).filter(
+        models.TeamMember.team_id == team_id).all()]
+    if blocked_user_ids(db, user_id) & set(current_member_ids):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This player can't be added to the team."
+        )
+
     # Add member
     member = models.TeamMember(
         team_id=team_id,
@@ -223,6 +233,20 @@ async def create_team_challenge(
     team2 = db.query(models.Team).filter(models.Team.id == team2_id).first()
     if not team2:
         raise HTTPException(status_code=404, detail="Opponent team not found")
+
+    # Refuse a NEW team-vs-team challenge if any cross-team pair is blocked (either direction).
+    # NOTE: TeamChallenge has no separate "accept" route (create -> complete); enforcement is
+    # at CREATION against current memberships. Already-created/completed challenges, results
+    # and disputes are untouched.
+    team1_ids = [m.user_id for m in db.query(models.TeamMember).filter(
+        models.TeamMember.team_id == team1_id).all()]
+    team2_ids = [m.user_id for m in db.query(models.TeamMember).filter(
+        models.TeamMember.team_id == team2_id).all()]
+    if cross_blocked(db, team1_ids, team2_ids):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="These teams can't be matched right now."
+        )
 
     # Create challenge
     challenge = models.TeamChallenge(

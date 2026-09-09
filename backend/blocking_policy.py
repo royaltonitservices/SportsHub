@@ -76,6 +76,60 @@ def apply_block(db: Session, blocker_id, blocked_id) -> "models.BlockedUser":
     return block
 
 
+def blocked_user_ids(db: Session, user_id) -> set:
+    """All user ids that are blocked WITH `user_id` in either direction. Used to suppress a
+    blocked counterpart's content from a viewer's group reads/previews, and to detect blocked
+    pairs when composing a membership."""
+    rows = db.query(models.BlockedUser).filter(
+        or_(models.BlockedUser.blocker_id == user_id,
+            models.BlockedUser.blocked_id == user_id)
+    ).all()
+    out = set()
+    for r in rows:
+        out.add(r.blocked_id if r.blocker_id == user_id else r.blocker_id)
+    return out
+
+
+def first_blocked_pair(db: Session, member_ids) -> Optional[tuple]:
+    """Return the first (a, b) among `member_ids` that is blocked in either direction, else
+    None. Checks EVERY pair — not just against one inviter."""
+    ids = list(dict.fromkeys(member_ids))     # de-dup, preserve order
+    for i, a in enumerate(ids):
+        blocked = blocked_user_ids(db, a)
+        for b in ids[i + 1:]:
+            if b in blocked:
+                return (a, b)
+    return None
+
+
+def blocked_pair_with_new(db: Session, existing_ids, new_ids) -> Optional[tuple]:
+    """Return the first blocked pair (either direction) that INVOLVES at least one member of
+    `new_ids` — i.e. new-vs-existing or new-vs-new — else None.
+
+    Existing-vs-existing pairs are DELIBERATELY ignored: a blocked pair already retained inside a
+    group (e.g. two members who blocked each other after both had joined) must not, by itself,
+    prevent an unrelated eligible member from joining. Callers pass only genuinely-new ids (ids
+    not already in the group) as `new_ids`."""
+    new = list(dict.fromkeys(new_ids))                # de-dup, preserve order
+    # new-vs-new
+    pair = first_blocked_pair(db, new)
+    if pair is not None:
+        return pair
+    # new-vs-existing (skip any existing id that is itself in `new`)
+    existing_set = set(existing_ids) - set(new)
+    for n in new:
+        hit = blocked_user_ids(db, n) & existing_set
+        if hit:
+            return (n, next(iter(hit)))
+    return None
+
+
+def cross_blocked(db: Session, ids_a, ids_b) -> bool:
+    """True if any member of group A is blocked (either direction) with any member of group B."""
+    set_b = set(ids_b)
+    return any(blocked_user_ids(db, a) & set_b for a in set(ids_a))
+
+
 def remove_block(db: Session, blocker_id, blocked_id) -> bool:
     """Remove ONLY the caller's directed block. A reverse block is untouched, and this never
     restores friendship, pending requests, or contact permission. Returns True if removed."""

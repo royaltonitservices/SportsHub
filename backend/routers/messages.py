@@ -9,7 +9,7 @@ from uuid import UUID
 from datetime import datetime
 from database import get_db
 from dependencies import get_current_active_user
-from blocking_policy import is_blocked
+from blocking_policy import is_blocked, blocked_user_ids, first_blocked_pair, blocked_pair_with_new
 import models
 import schemas
 
@@ -249,6 +249,15 @@ async def create_group_chat(
     import random
     import string
 
+    # Refuse to create a group whose membership would contain a blocked pair (any two
+    # proposed members, not just the creator). Generic message — does not reveal the pair.
+    proposed = [current_user.id] + [uuid_pkg.UUID(m) for m in group_data.member_ids]
+    if first_blocked_pair(db, proposed) is not None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This group can't be created because some members can't be added together."
+        )
+
     # Generate avatar seed for consistent group avatars
     avatar_seed = ''.join(random.choices(string.ascii_letters + string.digits, k=10))
 
@@ -313,6 +322,12 @@ async def get_user_groups(
         models.GroupChatMember.user_id == current_user.id
     ).all()
 
+    # Suppress messages authored by a blocked counterpart from THIS reader's preview + unread.
+    blocked = blocked_user_ids(db, current_user.id)
+
+    def _visible(q):
+        return q.filter(~models.Message.sender_id.in_(blocked)) if blocked else q
+
     group_responses = []
     for membership in memberships:
         group = db.query(models.GroupChat).filter(
@@ -327,25 +342,24 @@ async def get_user_groups(
             models.GroupChatMember.group_id == group.id
         ).count()
 
-        # Get last message
-        last_message = db.query(models.Message).filter(
+        # Get last message VISIBLE to this reader (blocked-authored messages excluded)
+        last_message = _visible(db.query(models.Message).filter(
             models.Message.group_id == group.id
-        ).order_by(models.Message.sent_at.desc()).first()
+        )).order_by(models.Message.sent_at.desc()).first()
 
-        # Get unread count (messages after user's last_read_at)
-        unread_count = 0
+        # Get unread count (visible messages after user's last_read_at)
         if membership.last_read_at:
-            unread_count = db.query(models.Message).filter(
+            unread_count = _visible(db.query(models.Message).filter(
                 and_(
                     models.Message.group_id == group.id,
                     models.Message.sent_at > membership.last_read_at
                 )
-            ).count()
+            )).count()
         else:
-            # If never read, count all messages
-            unread_count = db.query(models.Message).filter(
+            # If never read, count all VISIBLE messages
+            unread_count = _visible(db.query(models.Message).filter(
                 models.Message.group_id == group.id
-            ).count()
+            )).count()
 
         group_responses.append(schemas.GroupChatResponse(
             id=group.id,
@@ -389,10 +403,15 @@ async def get_group_messages(
             detail="Not a member of this group"
         )
 
-    # Get messages
-    messages = db.query(models.Message).filter(
-        models.Message.group_id == group_uuid
-    ).order_by(models.Message.sent_at.desc()).limit(limit).all()
+    # Get messages VISIBLE to this reader — messages authored by a blocked counterpart (either
+    # direction) are excluded server-side (including historical), so pagination never leaks
+    # suppressed content and the client is not relied on to hide it. Rows are RETAINED in the
+    # DB for moderation/evidence.
+    blocked = blocked_user_ids(db, current_user.id)
+    msg_query = db.query(models.Message).filter(models.Message.group_id == group_uuid)
+    if blocked:
+        msg_query = msg_query.filter(~models.Message.sender_id.in_(blocked))
+    messages = msg_query.order_by(models.Message.sent_at.desc()).limit(limit).all()
 
     # Update last_read_at
     membership.last_read_at = datetime.utcnow()
@@ -487,6 +506,21 @@ async def add_group_members(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only admins can add members"
+        )
+
+    # Refuse only for a blocked pair that INVOLVES a genuinely-new member — new-vs-existing or
+    # new-vs-new. A blocked pair already retained among current members must NOT, by itself, block
+    # an unrelated eligible candidate from joining. Candidates are checked against ALL existing
+    # members and each other; add none on conflict (all-or-nothing) so a partial add can't smuggle
+    # in a blocked pair.
+    existing_ids = [m.user_id for m in db.query(models.GroupChatMember).filter(
+        models.GroupChatMember.group_id == group_uuid).all()]
+    existing_set = set(existing_ids)
+    new_ids = [uid for uid in (uuid_pkg.UUID(m) for m in member_ids) if uid not in existing_set]
+    if blocked_pair_with_new(db, existing_ids, new_ids) is not None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="These members can't be added together."
         )
 
     # Add members
