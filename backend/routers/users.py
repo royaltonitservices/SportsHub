@@ -12,6 +12,7 @@ import models
 import schemas
 import os
 import upload_validation as uv
+import text_policy
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -127,6 +128,11 @@ async def update_username(
             detail="Username can only contain letters, numbers, and underscores"
         )
 
+    # Server-side text policy on the user-chosen, publicly-displayed username. Runs after format
+    # validation and before the uniqueness check (so a banned name never probes availability);
+    # canonicalization/uniqueness below are unchanged.
+    text_policy.enforce(new_username, field="username")
+
     # Check if username is already taken
     existing_user = db.query(models.User).filter(
         models.User.username == new_username
@@ -166,6 +172,10 @@ async def update_display_name(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Display name must be 100 characters or less"
         )
+
+    # Server-side text policy on edit runs BEFORE persistence; on rejection the previously
+    # accepted display name is preserved unchanged.
+    text_policy.enforce(new_display_name, field="display_name")
 
     # Update display name
     current_user.display_name = new_display_name
@@ -215,6 +225,9 @@ async def update_pronouns(
     db: Session = Depends(get_db)
 ):
     """Update user pronouns"""
+    # Pronouns are user-authored free text shown on the public profile and were previously
+    # unbounded — the text policy both filters disallowed language and bounds the length.
+    text_policy.enforce(pronouns, field="pronouns")
     current_user.pronouns = pronouns
     db.commit()
 
@@ -266,7 +279,11 @@ async def update_bio(
     db: Session = Depends(get_db)
 ):
     """Update current user's bio"""
-    current_user.bio = bio_data.bio.strip()
+    new_bio = bio_data.bio.strip()
+    # Server-side text policy on edit runs BEFORE persistence; on rejection the previously
+    # accepted bio is preserved unchanged.
+    text_policy.enforce(new_bio, field="bio")
+    current_user.bio = new_bio
     db.commit()
     return {"message": "Bio updated successfully"}
 

@@ -16,6 +16,7 @@ from email_service import generate_verification_code, hash_code, send_verificati
 from config import get_settings
 import models
 import schemas
+import text_policy
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
 
@@ -116,6 +117,11 @@ async def signup(user_data: schemas.UserSignup, db: Session = Depends(get_db)):
         # Canonical email — one account per normalized email (DB-unique + persistence
         # -boundary @validates). Pre-check is UX only; the DB constraint is authoritative.
         norm_email = normalize_email(user_data.email)
+
+        # Server-side text policy on the user-chosen, publicly-displayed identity fields at
+        # CREATION. Rejection raises 400 (re-raised below) before any account is created.
+        text_policy.enforce(user_data.username, field="username")
+        text_policy.enforce(user_data.display_name, field="display_name")
 
         # Check if username already exists
         existing_username = db.query(models.User).filter(models.User.username == user_data.username).first()

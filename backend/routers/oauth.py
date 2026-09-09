@@ -22,6 +22,7 @@ from models import AuthAttempt, AuthAttemptStatus
 from auth import create_access_token
 from schemas import Token
 from identity import normalize_email, canonical_provider, is_valid_signup_dob
+import text_policy
 
 router = APIRouter(prefix="/auth/oauth", tags=["OAuth"])
 
@@ -262,14 +263,27 @@ def _session_for(user: "models.User") -> dict:
     }
 
 
-def _unique_username_from_email(db: Session, email: str) -> str:
-    base = (email.split("@")[0].replace(".", "_").replace("+", "_")[:40]) or "athlete"
+def _uniquify_username(db: Session, base: str) -> str:
+    """Return `base`, or `base{n}` for the smallest free n — the existing collision-recovery
+    contract shared by every generated username."""
     username = base
     counter = 1
     while db.query(models.User).filter(models.User.username == username).first():
         username = f"{base}{counter}"
         counter += 1
     return username
+
+
+def _unique_username_from_email(db: Session, email: str) -> str:
+    base = (email.split("@")[0].replace(".", "_").replace("+", "_")[:40]) or "athlete"
+    return _uniquify_username(db, base)
+
+
+def _neutral_username(db: Session) -> str:
+    """A policy-safe username generated INDEPENDENTLY of email contents, used as the fallback when
+    the email-derived candidate would publish objectionable language. Same format + uniqueness +
+    counter-based collision recovery."""
+    return _uniquify_username(db, "athlete")
 
 
 def resolve_or_onboard_oauth(
@@ -333,11 +347,21 @@ def resolve_or_onboard_oauth(
         )
 
     # STEP 5 — atomic create: User (no password) + AuthIdentity, or neither.
+    # New-account public-profile initialization: evaluate the proposed public username and
+    # display name BEFORE first persistence. A provider/email value that fails policy (or an
+    # oversized display name) is replaced with a neutral, policy-valid fallback — authentication
+    # is NEVER rejected over a name, and the rejected value is never logged. Returning identities
+    # (STEP 1) never reach here, so existing users' names are never overwritten on repeat login.
     username = _unique_username_from_email(db, email)
+    if not text_policy.evaluate(username).allowed:
+        username = _neutral_username(db)          # neutral fallback, independent of email contents
+    proposed_display = display_name or username
+    if not text_policy.evaluate(proposed_display).allowed:
+        proposed_display = username               # neutral, policy-valid fallback (already checked)
     user = models.User(
         email=email,
         username=username,
-        display_name=display_name or username,
+        display_name=proposed_display,
         password_hash=None,                # provider-only account: no local credential
         date_of_birth=date_of_birth,
         age_verified=True,                 # only AFTER passing the same >=13 gate as signup

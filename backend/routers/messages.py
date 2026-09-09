@@ -12,6 +12,7 @@ from dependencies import get_current_active_user
 from blocking_policy import is_blocked, blocked_user_ids, first_blocked_pair, blocked_pair_with_new
 import models
 import schemas
+import text_policy
 
 router = APIRouter(prefix="/messages", tags=["messages"])
 
@@ -72,6 +73,10 @@ async def send_message(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Can only message friends"
         )
+
+    # Text policy runs AFTER the frozen block/friends-only checks (so block denial is unchanged)
+    # and BEFORE persistence; rejection creates nothing.
+    text_policy.enforce(message_data.content, field="content")
 
     # Create message
     message = models.Message(
@@ -257,6 +262,11 @@ async def create_group_chat(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="This group can't be created because some members can't be added together."
         )
+
+    # Server-side text policy on the group's own free text (name + description) — after the
+    # frozen blocked-pair check, before any persistence. Validated together so a bad name or
+    # description creates nothing.
+    text_policy.enforce_all({"name": group_data.name, "description": group_data.description})
 
     # Generate avatar seed for consistent group avatars
     avatar_seed = ''.join(random.choices(string.ascii_letters + string.digits, k=10))
@@ -458,6 +468,10 @@ async def send_group_message(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not a member of this group"
         )
+
+    # Text policy runs AFTER membership authorization and BEFORE persistence; rejection
+    # creates nothing.
+    text_policy.enforce(message_data.content, field="content")
 
     # Create message
     message = models.Message(

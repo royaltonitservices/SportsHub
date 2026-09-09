@@ -14,6 +14,7 @@ from dependencies import get_current_user
 from elo_service import EloService
 from blocking_policy import blocked_user_ids, cross_blocked
 import models
+import text_policy
 
 router = APIRouter(prefix="/teams", tags=["teams"])
 
@@ -78,6 +79,8 @@ async def create_team(
     except ValueError:
         raise HTTPException(status_code=400, detail=f"Invalid sport: {request.sport}")
     name = request.name
+    # Server-side text policy on the team name runs BEFORE persistence; rejection creates nothing.
+    text_policy.enforce(name, field="name")
     # Check if user is already captain of a team for this sport
     existing = db.query(models.Team).filter(
         and_(

@@ -9,6 +9,7 @@ from database import get_db
 from dependencies import get_current_active_user
 import models
 import schemas
+import text_policy
 
 router = APIRouter(prefix="/posts", tags=["posts"])
 
@@ -47,6 +48,9 @@ async def create_post(
     db: Session = Depends(get_db)
 ):
     """Create a new post"""
+
+    # Server-side text policy runs BEFORE persistence; rejection creates nothing.
+    text_policy.enforce(post_data.content, field="content")
 
     post = models.Post(
         author_id=current_user.id,

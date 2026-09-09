@@ -9,6 +9,7 @@ from database import get_db
 from dependencies import get_current_active_user
 import models
 import schemas
+import text_policy
 
 router = APIRouter(prefix="/clips", tags=["clips"])
 
@@ -51,6 +52,9 @@ async def create_clip(
     db: Session = Depends(get_db)
 ):
     """Create a new clip"""
+
+    # Server-side text policy runs BEFORE persistence; rejection creates nothing.
+    text_policy.enforce(clip_data.title, field="title")
 
     clip = models.Clip(
         author_id=current_user.id,
@@ -282,6 +286,10 @@ async def upload_clip(
     """
 
     import upload_validation as uv
+
+    # Text policy FIRST — before reading/uploading the video — so a rejected title/description
+    # never leaves an orphan CDN file and nothing is persisted. Both fields validated together.
+    text_policy.enforce_all({"title": title, "description": description})
 
     # Bounded read (memory-safe up to the 100 MB cap) + content-based validation
     # (magic bytes). iOS declares "video/mp4" even for QuickTime .mov, so we

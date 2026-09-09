@@ -12,6 +12,7 @@ import os
 import uuid as uuid_pkg
 from database import get_db
 from dependencies import get_current_active_user
+import text_policy
 
 router = APIRouter(prefix="/highlights", tags=["highlights"])
 
@@ -51,6 +52,9 @@ async def create_highlight(
     """
     Create a new highlight that expires after 24 hours
     """
+    # Server-side text policy runs BEFORE persistence; rejection creates nothing.
+    text_policy.enforce(highlight_data.caption, field="caption")
+
     # Set expiration to 24 hours from now
     expires_at = datetime.utcnow() + timedelta(hours=24)
 

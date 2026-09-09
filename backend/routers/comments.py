@@ -10,6 +10,7 @@ from database import get_db
 from dependencies import get_current_user
 import models
 import schemas
+import text_policy
 
 router = APIRouter(prefix="/comments", tags=["comments"])
 
@@ -23,6 +24,9 @@ async def create_comment(
     """
     Create a comment on a post
     """
+    # Server-side text policy runs BEFORE persistence; rejection creates nothing.
+    text_policy.enforce(comment_data.content, field="content")
+
     # Verify post exists
     post = db.query(models.Post).filter(
         models.Post.id == comment_data.post_id
