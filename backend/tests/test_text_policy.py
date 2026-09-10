@@ -389,12 +389,13 @@ class WriteBoundaryTests(unittest.TestCase):
 
     # excluded surface: report narrative must accept abusive evidence --------
     def test_report_narrative_with_abuse_is_accepted(self):
-        p = self._a_post()
-        # reporter documents the abuse verbatim; the report must NOT be text-filtered.
+        p = self._a_post()   # authored by self.a
+        # A DIFFERENT user (self.b) documents the abuse verbatim; the report reason must NOT be
+        # text-filtered. (Reporter must differ from the author — self-report is rejected 1.4E.)
         _run(moderation_r.report_content(
-            "post", p.id, "they called me a fucking loser", self.a, self.db))
+            "post", p.id, "they called me a fucking loser", self.b, self.db))
         self.assertEqual(self.db.query(models.ModerationFlag).filter_by(
-            content_id=p.id, reporter_id=self.a.id).count(), 1)
+            content_id=p.id, reporter_id=self.b.id).count(), 1)
 
 
 class SignupIdentityTests(unittest.TestCase):

@@ -64,8 +64,18 @@ class ReportHttpContractTests(unittest.TestCase):
             post = models.Post(author_id=cls.author.id, content=_PREFIX + "post",
                                sport=models.Sport.BASKETBALL)
             db.add(post)
+            db.flush()
+            comment = models.Comment(post_id=post.id, author_id=cls.author.id,
+                                     content=_PREFIX + "comment")
+            db.add(comment)
+            # A comment authored by the REPORTER — used to prove self-report is rejected server-side.
+            own_comment = models.Comment(post_id=post.id, author_id=cls.reporter.id,
+                                         content=_PREFIX + "own")
+            db.add(own_comment)
             db.commit()
             cls.post_id = str(post.id)
+            cls.comment_id = str(comment.id)
+            cls.own_comment_id = str(own_comment.id)
             cls.token = create_access_token({"sub": str(cls.reporter.id)})
         finally:
             db.close()
@@ -89,6 +99,7 @@ class ReportHttpContractTests(unittest.TestCase):
         db = sqlite3.connect(_DB)
         for uid, in db.execute("SELECT id FROM users WHERE username LIKE ?", (_PREFIX + "%",)).fetchall():
             db.execute("DELETE FROM moderation_flags WHERE reporter_id=?", (uid,))
+            db.execute("DELETE FROM comments WHERE author_id=?", (uid,))
             db.execute("DELETE FROM posts WHERE author_id=?", (uid,))
             db.execute("DELETE FROM users WHERE id=?", (uid,))
         db.commit()
@@ -123,6 +134,54 @@ class ReportHttpContractTests(unittest.TestCase):
             json_body={"content_type": "post", "content_id": self.post_id, "reason": "x"},
         )
         self.assertEqual(status, 422, "JSON body (no query params) must not satisfy the contract")
+
+    # Gate 1.4E: comment reporting is a first-class content type end-to-end.
+    def test_report_http_comment_contract(self):
+        status, body = _request(
+            "POST",
+            f"/moderation/report?content_type=comment&content_id={self.comment_id}"
+            f"&reason={_PREFIX}they%20harassed%20me",
+            token=self.token,
+        )
+        self.assertEqual(status, 201, f"comment report should create; got {status} {body}")
+        db = SessionLocal()
+        try:
+            flag = db.query(models.ModerationFlag).filter(
+                models.ModerationFlag.content_id == uuid.UUID(self.comment_id),
+                models.ModerationFlag.reporter_id == self.reporter.id,
+            ).first()
+            self.assertIsNotNone(flag, "comment report must persist a flag")
+            self.assertEqual(flag.content_type, "comment")
+        finally:
+            db.close()
+
+    def test_report_http_comment_missing_content(self):
+        status, _ = _request(
+            "POST",
+            f"/moderation/report?content_type=comment&content_id={uuid.uuid4()}&reason=x",
+            token=self.token,
+        )
+        self.assertEqual(status, 404)
+
+    # Gate 1.4E: self-report is rejected server-side (authoritative — direct API bypass of the UI
+    # guard). Generic 400, no sensitive detail. Reporting SOMEONE ELSE stays allowed (201 above).
+    def test_self_report_account_rejected(self):
+        reporter_id = str(self.reporter.id)
+        status, _ = _request(
+            "POST", f"/moderation/report?content_type=user&content_id={reporter_id}&reason=x",
+            token=self.token)
+        self.assertEqual(status, 400, "reporting your own account must be rejected")
+
+    def test_self_report_own_comment_rejected(self):
+        status, _ = _request(
+            "POST", f"/moderation/report?content_type=comment&content_id={self.own_comment_id}&reason=x",
+            token=self.token)
+        self.assertEqual(status, 400, "reporting your own comment must be rejected")
+
+    # Gate 1.4E: the admin moderation destination is not reachable by an ordinary user.
+    def test_moderation_flags_requires_admin(self):
+        status, _ = _request("GET", "/moderation/flags", token=self.token)
+        self.assertEqual(status, 403, "non-admin must not reach the admin moderation queue")
 
     def test_report_http_requires_auth(self):
         status, _ = _request(

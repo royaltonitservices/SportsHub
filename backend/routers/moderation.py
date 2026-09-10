@@ -23,8 +23,9 @@ async def report_content(
 ):
     """Report content for moderation"""
 
-    # Validate content type
-    valid_types = ["post", "clip", "message", "user"]
+    # Validate content type. "comment" was added for Gate 1.4E (iOS comment reporting); the
+    # report payload/flow is identical to other content types.
+    valid_types = ["post", "clip", "comment", "message", "user"]
     if content_type not in valid_types:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -36,6 +37,8 @@ async def report_content(
         content = db.query(models.Post).filter(models.Post.id == content_id).first()
     elif content_type == "clip":
         content = db.query(models.Clip).filter(models.Clip.id == content_id).first()
+    elif content_type == "comment":
+        content = db.query(models.Comment).filter(models.Comment.id == content_id).first()
     elif content_type == "message":
         content = db.query(models.Message).filter(models.Message.id == content_id).first()
     elif content_type == "user":
@@ -45,6 +48,21 @@ async def report_content(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"{content_type.capitalize()} not found"
+        )
+
+    # Self-report is not a valid moderation signal. The iOS UI already hides self-report controls;
+    # enforce the SAME invariant on the server (authoritative) so a direct API caller can't file
+    # reports against their own account or content. Generic, non-sensitive 400.
+    if content_type == "user":
+        owner_id = content.id
+    elif content_type == "message":
+        owner_id = content.sender_id
+    else:  # post / clip / comment
+        owner_id = content.author_id
+    if owner_id == current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You can't report your own content."
         )
 
     # Create moderation flag

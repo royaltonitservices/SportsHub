@@ -20,6 +20,11 @@ struct ReportContentView: View {
     @State private var errorMessage: String?
     @State private var showingSuccess = false
 
+    // Reporting an ACCOUNT (a person) reads differently from reporting a piece of CONTENT.
+    private var isAccountReport: Bool { contentType == "user" }
+    private var screenTitle: String { isAccountReport ? "Report Account" : "Report Content" }
+    private var subjectHeader: String { isAccountReport ? "Account Being Reported" : "Content Being Reported" }
+
     enum ReportReason: String, CaseIterable {
         case spam = "Spam"
         case harassment = "Harassment or Bullying"
@@ -61,7 +66,7 @@ struct ReportContentView: View {
                     reportForm
                 }
             }
-            .navigationTitle("Report Content")
+            .navigationTitle(screenTitle)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -91,7 +96,7 @@ struct ReportContentView: View {
                     .foregroundColor(.secondary)
                     .padding(.vertical, Spacing.sm)
             } header: {
-                Text("Content Being Reported")
+                Text(subjectHeader)
             }
 
             Section {
