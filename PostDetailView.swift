@@ -463,27 +463,57 @@ struct PostDetailView: View {
 
 // MARK: - Comment Row
 
+/// Identifies which comment/reply a report sheet is targeting (drives `.sheet(item:)`).
+private struct ReportContext: Identifiable {
+    let id: String          // the comment id — also the sheet item identity
+    let preview: String
+}
+
 struct CommentRow: View {
     let comment: CommentResponse
     let replies: [CommentResponse]
     let onReply: () -> Void
     let onLike: () -> Void
-    
+
+    @State private var reportTarget: ReportContext?
+
+    // Reporting targets content, never yourself. Comments are content (not an account report).
+    private func canReport(_ c: CommentResponse) -> Bool {
+        !SessionManager.shared.isCurrentUser(c.authorId)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
             HStack(alignment: .top, spacing: Spacing.sm) {
                 AvatarView(name: comment.authorUsername ?? "User", size: 32)
-                
+
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
                         Text("@\(comment.authorUsername ?? "user")")
                             .font(.subheadline)
                             .fontWeight(.semibold)
                             .foregroundStyle(Color.appTextPrimary)
-                        
+
                         Text(formatRelativeTime(comment.createdAt))
                             .font(.caption)
                             .foregroundStyle(Color.appTextSecondary)
+
+                        Spacer()
+
+                        if canReport(comment) {
+                            Menu {
+                                Button(role: .destructive) {
+                                    reportTarget = ReportContext(id: comment.id, preview: comment.content)
+                                } label: {
+                                    Label("Report Comment", systemImage: "flag")
+                                }
+                            } label: {
+                                Image(systemName: "ellipsis")
+                                    .font(.caption)
+                                    .foregroundStyle(Color.appTextSecondary)
+                            }
+                            .accessibilityLabel("Report this comment")
+                        }
                     }
                     
                     Text(comment.content)
@@ -543,6 +573,16 @@ struct CommentRow: View {
                                     .foregroundStyle(Color.appTextPrimary)
                             }
                         }
+                        // Replies are compact; report via long-press (content report, not self).
+                        .contextMenu {
+                            if canReport(reply) {
+                                Button(role: .destructive) {
+                                    reportTarget = ReportContext(id: reply.id, preview: reply.content)
+                                } label: {
+                                    Label("Report Comment", systemImage: "flag")
+                                }
+                            }
+                        }
                     }
                 }
                 .padding(.leading, 40)
@@ -551,6 +591,9 @@ struct CommentRow: View {
         .padding(Spacing.sm)
         .background(Color.appSurface.opacity(0.5))
         .cornerRadius(CornerRadius.md)
+        .sheet(item: $reportTarget) { target in
+            ReportContentView(contentType: "comment", contentId: target.id, contentPreview: target.preview)
+        }
     }
     
     private func formatRelativeTime(_ dateString: String) -> String {

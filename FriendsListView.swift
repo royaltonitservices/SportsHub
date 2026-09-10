@@ -270,6 +270,12 @@ struct FriendRowView: View {
         friendship.otherUserId(currentUserId: currentUserId) ?? ""
     }
 
+    // Real handle for report/block labels when the backend enriched the row; falls back to the
+    // short id so the control still reads sensibly on older payloads.
+    private var friendUsername: String {
+        friendship.otherSide(currentUserId: currentUserId).username ?? String(friendUserId.prefix(8))
+    }
+
     var body: some View {
         HStack(spacing: Spacing.md) {
             // Avatar placeholder
@@ -292,15 +298,27 @@ struct FriendRowView: View {
 
             Spacer()
 
-            Menu {
-                Button(role: .destructive) {
-                    onRemove()
-                } label: {
-                    Label("Remove Friend", systemImage: "person.fill.xmark")
+            // Report / Block (+ Remove Friend) in one menu. A confirmed block refreshes the list
+            // via the .friendListDidChange notification the controller posts.
+            if SafetyGuard.canActOn(targetUserId: friendUserId, currentUserId: currentUserId) {
+                UserSafetyMenu(userId: friendUserId, username: friendUsername) {
+                    Button(role: .destructive) {
+                        onRemove()
+                    } label: {
+                        Label("Remove Friend", systemImage: "person.fill.xmark")
+                    }
                 }
-            } label: {
-                Image(systemName: "ellipsis.circle")
-                    .foregroundColor(.secondary)
+            } else {
+                Menu {
+                    Button(role: .destructive) {
+                        onRemove()
+                    } label: {
+                        Label("Remove Friend", systemImage: "person.fill.xmark")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                        .foregroundColor(.secondary)
+                }
             }
         }
         .padding(.vertical, Spacing.sm)
@@ -538,9 +556,17 @@ struct AddFriendView: View {
                         .frame(maxHeight: .infinity)
                 } else {
                     List(searchResults, id: \.id) { user in
-                        UserSearchRowView(user: user) {
-                            await sendFriendRequest(to: user)
-                        }
+                        UserSearchRowView(
+                            user: user,
+                            currentUserId: SessionManager.shared.currentUser?.id.uuidString ?? "",
+                            onAddFriend: {
+                                await sendFriendRequest(to: user)
+                            },
+                            onBlocked: {
+                                // Don't leave a just-blocked account sitting in the results.
+                                searchResults.removeAll { $0.id == user.id }
+                            }
+                        )
                     }
                     .listStyle(.plain)
                 }
@@ -596,7 +622,9 @@ struct AddFriendView: View {
 // MARK: - User Search Row View
 struct UserSearchRowView: View {
     let user: UserResponse
+    let currentUserId: String
     let onAddFriend: () async -> Void
+    var onBlocked: () -> Void = {}
     @State private var isLoading = false
 
     var body: some View {
@@ -623,15 +651,23 @@ struct UserSearchRowView: View {
             if isLoading {
                 ProgressView()
             } else {
-                Button {
-                    isLoading = true
-                    Task {
-                        await onAddFriend()
-                        isLoading = false
+                HStack(spacing: Spacing.md) {
+                    Button {
+                        isLoading = true
+                        Task {
+                            await onAddFriend()
+                            isLoading = false
+                        }
+                    } label: {
+                        Image(systemName: "person.badge.plus")
+                            .foregroundColor(.blue)
                     }
-                } label: {
-                    Image(systemName: "person.badge.plus")
-                        .foregroundColor(.blue)
+                    .accessibilityLabel("Add \(user.username) as friend")
+
+                    // Report / Block from search — never on yourself.
+                    if SafetyGuard.canActOn(targetUserId: user.id, currentUserId: currentUserId) {
+                        UserSafetyMenu(userId: user.id, username: user.username, onBlocked: onBlocked)
+                    }
                 }
             }
         }

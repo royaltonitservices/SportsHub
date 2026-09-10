@@ -12,13 +12,13 @@ struct DirectMessageView: View {
     let friendUsername: String
     let friendDisplayName: String
 
+    @Environment(\.dismiss) private var dismiss
     @StateObject private var sessionManager = SessionManager.shared
     @State private var messages: [DirectMessageResponse] = []
     @State private var messageText = ""
     @State private var isLoading = false
     @State private var isSending = false
     @State private var errorMessage: String?
-    @State private var showReport = false
     @FocusState private var isTextFieldFocused: Bool
 
     // You can report the person you're messaging, never yourself. (Messaging is
@@ -49,25 +49,13 @@ struct DirectMessageView: View {
         .toolbar {
             if !isOwnUser {
                 ToolbarItem(placement: .primaryAction) {
-                    Menu {
-                        Button(role: .destructive) {
-                            showReport = true
-                        } label: {
-                            Label("Report User", systemImage: "flag")
-                        }
-                    } label: {
-                        Image(systemName: "ellipsis.circle")
-                            .foregroundStyle(Color.appTextSecondary)
-                    }
+                    // Report + Block for the person you're messaging. On a confirmed block the
+                    // friendship is severed server-side, so leave this conversation.
+                    UserSafetyMenu(userId: friendId, username: friendUsername, onBlocked: {
+                        dismiss()
+                    })
                 }
             }
-        }
-        .sheet(isPresented: $showReport) {
-            ReportContentView(
-                contentType: "user",
-                contentId: friendId,
-                contentPreview: "@\(friendUsername)"
-            )
         }
         .task {
             loadMessages()
